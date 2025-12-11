@@ -1,93 +1,96 @@
 # 🗡️ SwissKnife for Microsoft Graph
 
-**SwissKnife** is a lightweight, offline, cross-platform desktop client for **Microsoft Graph API**, designed primarily for IT administrators who prefer buttons over endless PowerShell scripts.
+SwissKnife is a lightweight, cross-platform desktop client for **Microsoft Graph API**, built for IT administrators who prefer clean buttons instead of bulky PowerShell scripts.
 
-The tool wraps dozens of common Graph operations into a clean GUI:  
-Teams, Channels, Groups, OneDrive, SharePoint, Intune, Admin, Audit & Raw requests — all in one place.
+Supports Teams, OneDrive, SharePoint, Groups, Admin, Intune, Audit logs & raw Graph queries — all in one place.
 
 ---
 
 ## 🚀 Features
 
-### 🛠️ Core Capabilities
-- **Authentication via App Registration**  
-  Tenant ID · Client ID · Client Secret · `.default` permissions.
+### 🛠 Core
+- Client Credentials authentication (App Registration)
+- Dark/Light theme switching
+- Multiple result views: **Table / Details / Tree / Raw JSON**
+- JSON syntax highlighting
 
-### 👥 Microsoft Teams & Groups
-- List user’s Teams  
-- List channels in a Team  
+### 👥 Teams & Groups
+- List user joined Teams  
+- List Team channels  
 - Create Standard / Private / Shared channels  
-- Add members & owners to Teams and Channels  
+- Add members & owners  
 - Create Microsoft 365 Groups  
-- Add group members / owners  
-- Convert Microsoft 365 Group to a Team (Teamify)
+- Add owners & members  
+- Convert Group → Team ("Teamify")
 
 ### 📁 OneDrive
 - List root folder  
-- Download files  
-- Upload files  
-- Work with any user’s OneDrive (delegated via application permissions)
+- Upload / download files  
+- Works with any user’s OneDrive
 
 ### 🏢 SharePoint
-- List all sites / search by keyword  
-- List drive root  
-- Upload / download files  
-- Work with any site by ID
+- List sites  
+- Search sites  
+- List site drive  
+- Upload / download files
 
-### 👤 Admin Console
-- Get user info  
-- Block / Unblock user accounts
+### 👤 Admin
+- User info  
+- Block / unblock users  
 
-### 📱 Intune (Device Management)
+### 📱 Intune
 - List managed devices  
 - Device info  
-- Wipe  
-- Retire  
-*(requires appropriate permissions; can’t be fully tested without Intune license)*
+- Wipe & retire devices  
 
-### 📊 Audit Logs
+### 📊 Audit
 - Sign-in logs  
 - Directory audit logs  
-*(requires appropriate permissions)*
 
-### 🧪 Raw Graph Explorer
-- Full manual request tool  
-- Supports GET / POST / PATCH / PUT / DELETE  
-- Supports JSON bodies  
-- Preloaded example queries
+### 🧪 Raw Graph Editor
+- Manual GET / POST / PATCH / PUT / DELETE  
+- JSON body support  
+- Preloaded example queries  
 
 ---
 
-## 🎨 GUI Highlights
+# 🔐 Azure App Registration Setup
 
-- **Dark & Light themes**
-- **Four result views:**  
-  - Table  
-  - Details (pretty JSON)  
-  - Tree  
-  - Raw JSON (with syntax highlighting)
-- Modern clean design based on `#2E2E2E` dark grey palette  
-- Fully cross-platform (Windows / macOS / Linux)
+Full guide: **SETUP_AZURE_APP.md**
+
+### Quick version:
+
+1. Go to **Azure Portal → Azure Active Directory → App registrations → New registration**
+2. Name:  
+   `SwissKnife Graph`
+3. Supported account type:  
+   ✔ Single tenant
+4. Redirect URI:  
+   _(not required for client credentials)_
+
+### Add a client secret:
+- Certificates & secrets → New client secret  
+- Copy the value — you’ll need it.
+
+### Add API permissions (Application permissions):
+
+| Area | Permissions |
+|-----|-------------|
+| Teams & Groups | `Group.ReadWrite.All`, `Directory.ReadWrite.All`, `Team.ReadBasic.All`, `Channel.Create`, `Channel.ReadWrite.All` |
+| OneDrive | `Files.ReadWrite.All` |
+| SharePoint | `Sites.ReadWrite.All` |
+| Mail | `Mail.ReadWrite`, `Mail.Send` |
+| Admin | `Directory.ReadWrite.All` |
+| Audit | `AuditLog.Read.All` |
+| Intune | `DeviceManagementManagedDevices.ReadWrite.All` |
+
+📌 **Click “Grant admin consent”** (important!)
 
 ---
 
-## 📦 Downloads
+# 📦 Installation
 
-See the **Releases** section for pre-built binaries:
-
-### ✔ Windows — `.exe`  
-### ✔ macOS — `.app`  
-### ✔ Linux — standalone binary
-
-> If macOS warns that the developer is unknown, right-click → “Open”, or run:  
-> `xattr -dr com.apple.quarantine SwissKnifeGraph.app`
-
----
-
-## 🧰 Installation (from source)
-
+### Run from source:
 ```bash
-git clone https://github.com/Nemu-x/SwissKnife-for-MS-Graph
-cd SwissKnife-for-MS-Graph
 pip install -r requirements.txt
 python gui_qt.py
