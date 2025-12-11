@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build system
+dist/
+build/
+*.spec
+
+# IDE files
+.vscode/
+.idea/
+
+# MacOS
+.DS_Store
+
+# PyInstaller temp
+*.log
+
+# Virtualenv
+venv/
+.env/
