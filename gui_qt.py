@@ -2,6 +2,8 @@ import sys
 import json
 import traceback
 import requests
+import os
+import tempfile
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from pathlib import Path
@@ -227,8 +229,13 @@ class MainWindow(QMainWindow):
         self.json_view = QPlainTextEdit()
         self.json_view.setReadOnly(True)
 
+        self._last_rows: List[Any] = []
+        self.table_view.itemSelectionChanged.connect(self._update_details_from_selection)
+        
         self.details_highlighter = JsonHighlighter(self.details_view.document())
         self.json_highlighter = JsonHighlighter(self.json_view.document())
+        
+        
 
         self.view_tabs.addTab(self.table_view, "Table")
         self.view_tabs.addTab(self.details_view, "Details")
@@ -248,12 +255,12 @@ class MainWindow(QMainWindow):
         self._build_raw_tab()
         self._build_about_tab()
 
-        splitter = QSplitter(Qt.Vertical)
+        splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.tabs)
         splitter.addWidget(self.view_tabs)
-        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
-        splitter.setSizes([350, 500])
+        splitter.setSizes([800, 500])
 
         root_layout.addWidget(splitter, stretch=1)
 
@@ -423,15 +430,91 @@ class MainWindow(QMainWindow):
     def _build_chats_tab(self) -> None:
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        label = QLabel("Chats functionality can be used via Raw tab for now.")
-        layout.addWidget(label)
+
+        # --- List chats for user ---
+        group_list = QGroupBox("Find chats")
+        g1 = QGridLayout(group_list)
+
+        self.ed_chat_user = QLineEdit()
+        self.sp_chat_top = QSpinBox()
+        self.sp_chat_top.setRange(1, 100)
+        self.sp_chat_top.setValue(20)
+        btn_list_user_chats = QPushButton("List user chats")
+        btn_list_user_chats.clicked.connect(self.on_list_user_chats)
+
+        g1.addWidget(QLabel("User UPN:"), 0, 0)
+        g1.addWidget(self.ed_chat_user, 0, 1)
+        g1.addWidget(QLabel("Top:"), 1, 0)
+        g1.addWidget(self.sp_chat_top, 1, 1)
+        g1.addWidget(btn_list_user_chats, 0, 2, 2, 1)
+
+        # --- Messages in a chat ---
+        group_msgs = QGroupBox("Chat messages")
+        g2 = QGridLayout(group_msgs)
+
+        self.ed_chat_id = QLineEdit()
+        self.sp_chat_msgs_top = QSpinBox()
+        self.sp_chat_msgs_top.setRange(1, 200)
+        self.sp_chat_msgs_top.setValue(50)
+        self.chk_chat_include_deleted = QCheckBox("Include deleted (beta endpoint)")
+
+        btn_list_msgs = QPushButton("List messages")
+        btn_list_msgs.clicked.connect(self.on_list_chat_messages)
+
+        g2.addWidget(QLabel("Chat ID:"), 0, 0)
+        g2.addWidget(self.ed_chat_id, 0, 1, 1, 2)
+        g2.addWidget(QLabel("Top:"), 1, 0)
+        g2.addWidget(self.sp_chat_msgs_top, 1, 1)
+        g2.addWidget(self.chk_chat_include_deleted, 1, 2)
+        g2.addWidget(btn_list_msgs, 2, 2)
+
+        # --- Add member to chat ---
+        group_add = QGroupBox("Add member to chat")
+        g3 = QGridLayout(group_add)
+
+        self.ed_chat_member_upn = QLineEdit()
+        self.cb_chat_member_role = QComboBox()
+        self.cb_chat_member_role.addItems(["member", "owner"])
+
+        btn_add_chat_member = QPushButton("Add member")
+        btn_add_chat_member.clicked.connect(self.on_add_chat_member)
+
+        g3.addWidget(QLabel("Chat ID:"), 0, 0)
+        g3.addWidget(self.ed_chat_id, 0, 1, 1, 2)  # тот же QLineEdit, что и выше
+        g3.addWidget(QLabel("User UPN:"), 1, 0)
+        g3.addWidget(self.ed_chat_member_upn, 1, 1, 1, 2)
+        g3.addWidget(QLabel("Role:"), 2, 0)
+        g3.addWidget(self.cb_chat_member_role, 2, 1)
+        g3.addWidget(btn_add_chat_member, 2, 2)
+
+        # --- Create group chat ---
+        group_create = QGroupBox("Create group chat")
+        g4 = QGridLayout(group_create)
+
+        self.ed_chat_topic = QLineEdit()
+        self.ed_chat_members = QLineEdit()
+        btn_create_chat = QPushButton("Create chat")
+        btn_create_chat.clicked.connect(self.on_create_chat)
+
+        g4.addWidget(QLabel("Topic (optional):"), 0, 0)
+        g4.addWidget(self.ed_chat_topic, 0, 1, 1, 2)
+        g4.addWidget(QLabel("Members UPNs (comma separated):"), 1, 0)
+        g4.addWidget(self.ed_chat_members, 1, 1, 1, 2)
+        g4.addWidget(btn_create_chat, 2, 2)
+
+        layout.addWidget(group_list)
+        layout.addWidget(group_msgs)
+        layout.addWidget(group_add)
+        layout.addWidget(group_create)
         layout.addStretch(1)
+
         self.tabs.addTab(tab, "Chats")
 
     def _build_mail_calendar_tab(self) -> None:
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
+        # --- Mail: list messages ---
         grid = QGridLayout()
         self.ed_mail_user = QLineEdit()
         self.sp_mail_top = QSpinBox()
@@ -446,6 +529,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.sp_mail_top, 0, 3)
         grid.addWidget(btn_list_mail, 0, 4)
 
+        # --- Mail: send message ---
         self.ed_mail_to = QLineEdit()
         self.ed_mail_subject = QLineEdit()
         self.ed_mail_body = QPlainTextEdit()
@@ -461,16 +545,50 @@ class MainWindow(QMainWindow):
         grid2.addWidget(self.ed_mail_body, 2, 1, 1, 3)
         grid2.addWidget(btn_send_mail, 3, 3)
 
+        # --- Calendar: create event ---
+        group_event = QGroupBox("Create calendar event")
+        g3 = QGridLayout(group_event)
+
+        self.ed_ev_user = QLineEdit()
+        self.ed_ev_subject = QLineEdit()
+        self.ed_ev_body = QPlainTextEdit()
+        self.ed_ev_start = QLineEdit()
+        self.ed_ev_end = QLineEdit()
+        self.ed_ev_timezone = QLineEdit()
+        self.ed_ev_attendees = QLineEdit()
+
+        g3.addWidget(QLabel("User UPN (calendar owner):"), 0, 0)
+        g3.addWidget(self.ed_ev_user, 0, 1, 1, 3)
+        g3.addWidget(QLabel("Subject:"), 1, 0)
+        g3.addWidget(self.ed_ev_subject, 1, 1, 1, 3)
+        g3.addWidget(QLabel("Start (ISO, e.g. 2025-01-01T10:00:00):"), 2, 0)
+        g3.addWidget(self.ed_ev_start, 2, 1, 1, 3)
+        g3.addWidget(QLabel("End (ISO):"), 3, 0)
+        g3.addWidget(self.ed_ev_end, 3, 1, 1, 3)
+        g3.addWidget(QLabel("Time zone (e.g. Europe/Berlin, UTC by default):"), 4, 0)
+        g3.addWidget(self.ed_ev_timezone, 4, 1, 1, 3)
+        g3.addWidget(QLabel("Attendees (UPNs, comma separated):"), 5, 0)
+        g3.addWidget(self.ed_ev_attendees, 5, 1, 1, 3)
+        g3.addWidget(QLabel("Body:"), 6, 0)
+        g3.addWidget(self.ed_ev_body, 6, 1, 1, 3)
+
+        btn_create_event = QPushButton("Create event")
+        btn_create_event.clicked.connect(self.on_create_event)
+        g3.addWidget(btn_create_event, 7, 3)
+
         layout.addLayout(grid)
         layout.addLayout(grid2)
+        layout.addWidget(group_event)
         layout.addStretch(1)
 
         self.tabs.addTab(tab, "Mail/Calendar")
+
 
     def _build_onedrive_tab(self) -> None:
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
+        # --- Basic operations ---
         grid = QGridLayout()
         self.ed_od_user = QLineEdit()
         self.ed_od_item = QLineEdit()
@@ -506,9 +624,88 @@ class MainWindow(QMainWindow):
         grid2.addWidget(btn_download, 0, 0)
         grid2.addWidget(btn_upload, 0, 1)
         layout.addLayout(grid2)
+
+        # --- Copy between users ---
+        group_copy = QGroupBox("Copy between users (download → upload)")
+        g3 = QGridLayout(group_copy)
+
+        self.ed_od_src_user = QLineEdit()
+        self.ed_od_src_item = QLineEdit()
+        self.ed_od_dst_user = QLineEdit()
+        self.ed_od_dst_remote = QLineEdit()
+
+        g3.addWidget(QLabel("Source user UPN:"), 0, 0)
+        g3.addWidget(self.ed_od_src_user, 0, 1, 1, 2)
+        g3.addWidget(QLabel("Source item ID:"), 1, 0)
+        g3.addWidget(self.ed_od_src_item, 1, 1, 1, 2)
+        g3.addWidget(QLabel("Target user UPN:"), 2, 0)
+        g3.addWidget(self.ed_od_dst_user, 2, 1, 1, 2)
+        g3.addWidget(QLabel("Target remote path:"), 3, 0)
+        g3.addWidget(self.ed_od_dst_remote, 3, 1, 1, 2)
+
+        btn_copy = QPushButton("Copy file")
+        btn_copy.clicked.connect(self.on_od_copy_between_users)
+        g3.addWidget(btn_copy, 4, 2)
+
+        layout.addWidget(group_copy)
         layout.addStretch(1)
 
         self.tabs.addTab(tab, "OneDrive")
+
+    def on_od_copy_between_users(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+
+        src_user = self.ed_od_src_user.text().strip()
+        src_item = self.ed_od_src_item.text().strip()
+        dst_user = self.ed_od_dst_user.text().strip()
+        dst_remote = self.ed_od_dst_remote.text().strip().lstrip("/")
+
+        if not src_user or not src_item or not dst_user or not dst_remote:
+            self._display_error(RuntimeError("All fields are required for copy"))
+            return
+
+        try:
+            if not client._access_token:
+                raise RuntimeError("Not authenticated")
+
+            # 1) Download from source
+            headers = {"Authorization": f"Bearer {client._access_token}"}
+            url = GRAPH_BASE_URL + f"/users/{src_user}/drive/items/{src_item}/content"
+            resp = requests.get(url, headers=headers, timeout=300)
+            if not resp.ok:
+                raise RuntimeError(f"Download failed: {resp.status_code} {resp.text}")
+
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp.write(resp.content)
+                tmp_path = tmp.name
+
+            try:
+                # 2) Upload to target user
+                with open(tmp_path, "rb") as f:
+                    content = f.read()
+
+                headers = {
+                    "Authorization": f"Bearer {client._access_token}",
+                    "Content-Type": "application/octet-stream",
+                }
+                url2 = GRAPH_BASE_URL + f"/users/{dst_user}/drive/root:/{dst_remote}:/content"
+                resp2 = requests.put(url2, headers=headers, data=content, timeout=300)
+                if not resp2.ok:
+                    raise RuntimeError(f"Upload failed: {resp2.status_code} {resp2.text}")
+
+                data = resp2.json()
+                self._display_result(data)
+            finally:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+        except Exception as exc:
+            self._display_error(exc)
+
 
     def _build_sharepoint_tab(self) -> None:
         tab = QWidget()
@@ -1094,6 +1291,8 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             rows = [data]
         else:
             rows = [{"value": data}]
+            
+        self._last_rows = rows
 
         if rows:
             # Collect columns
@@ -1114,12 +1313,40 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
                     item = QTableWidgetItem(text)
                     self.table_view.setItem(r, c, item)
 
-        # Details view – pretty JSON
-        self.details_view.setPlainText(json.dumps(data, indent=2, ensure_ascii=False))
+
 
         # Tree view
         self.tree_view.clear()
         self._fill_tree(self.tree_view.invisibleRootItem(), data)
+
+    def _update_details_from_selection(self) -> None:
+        """Update Details tab based on selected row in Table."""
+        row_idx = self.table_view.currentRow()
+        if row_idx < 0 or row_idx >= len(self._last_rows):
+            # fallback — показываем весь JSON, если нет строки
+            # (можно оставить пустым, но так полезнее)
+            # self.details_view.clear()
+            self.details_view.setPlainText(
+                self.json_view.toPlainText()
+            )
+            return
+
+        row = self._last_rows[row_idx]
+        if not isinstance(row, dict):
+            # если это не dict — просто показываем значение
+            self.details_view.setPlainText(str(row))
+            return
+
+        lines = []
+        for k, v in row.items():
+            if isinstance(v, (dict, list)):
+                val_str = json.dumps(v, ensure_ascii=False)
+            else:
+                val_str = str(v)
+            lines.append(f"{k}: {val_str}")
+
+        self.details_view.setPlainText("\n".join(lines))
+
 
     def _fill_tree(self, parent: QTreeWidgetItem, data: Any, key: str = "") -> None:
         if isinstance(data, dict):
@@ -1326,6 +1553,147 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
         except Exception as exc:
             self._display_error(exc)
 
+    # ---------- Chats ----------
+    def on_list_user_chats(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+        upn = self.ed_chat_user.text().strip()
+        if not upn:
+            self._display_error(RuntimeError("User UPN is required"))
+            return
+        top = self.sp_chat_top.value()
+        try:
+            data = client.get(f"/users/{upn}/chats", params={"$top": top})
+            self._display_result(data)
+        except Exception as exc:
+            self._display_error(exc)
+
+    def on_list_chat_messages(self) -> None:
+        """List messages in a chat, optionally including deleted via /beta."""
+        client = self._ensure_client()
+        if not client:
+            return
+        chat_id = self.ed_chat_id.text().strip()
+        if not chat_id:
+            self._display_error(RuntimeError("Chat ID is required"))
+            return
+
+        top = self.sp_chat_msgs_top.value()
+        include_deleted = self.chk_chat_include_deleted.isChecked()
+
+        try:
+            if include_deleted:
+                # beta + includeDeletedItems
+                url = f"https://graph.microsoft.com/beta/chats/{chat_id}/messages"
+                params = {"$top": top, "includeDeletedItems": "true"}
+                data = client.request("GET", url, params=params)
+            else:
+                data = client.get(f"/chats/{chat_id}/messages", params={"$top": top})
+
+            self._display_result(data)
+        except Exception as exc:
+            self._display_error(exc)
+
+    def on_add_chat_member(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+        chat_id = self.ed_chat_id.text().strip()
+        upn = self.ed_chat_member_upn.text().strip()
+        role = self.cb_chat_member_role.currentText()
+
+        if not chat_id or not upn:
+            self._display_error(RuntimeError("Chat ID and User UPN are required"))
+            return
+
+        member = {
+            "@odata.type": "#microsoft.graph.aadUserConversationMember",
+            "roles": ["owner"] if role == "owner" else [],
+            "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{upn}')",
+        }
+
+        try:
+            data = client.post(f"/chats/{chat_id}/members", json_data=member)
+            self._display_result(data)
+        except Exception as exc:
+            self._display_error(exc)
+
+    def on_create_chat(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+        members_raw = self.ed_chat_members.text().strip()
+        if not members_raw:
+            self._display_error(RuntimeError("Members UPNs are required"))
+            return
+
+        upns = [u.strip() for u in members_raw.split(",") if u.strip()]
+        if len(upns) < 2:
+            self._display_error(RuntimeError("Provide at least two members"))
+            return
+
+        topic = self.ed_chat_topic.text().strip()
+
+        members = []
+        for upn in upns:
+            members.append({
+                "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                "roles": ["owner"],
+                "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{upn}')",
+            })
+
+        body = {
+            "chatType": "group",
+            "members": members,
+        }
+        if topic:
+            body["topic"] = topic
+
+        try:
+            data = client.post("/chats", json_data=body)
+            self._display_result(data)
+        except Exception as exc:
+            self._display_error(exc)
+
+    def on_create_chat(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+        members_raw = self.ed_chat_members.text().strip()
+        if not members_raw:
+            self._display_error(RuntimeError("Members UPNs are required"))
+            return
+
+        upns = [u.strip() for u in members_raw.split(",") if u.strip()]
+        if len(upns) < 2:
+            self._display_error(RuntimeError("Provide at least two members"))
+            return
+
+        topic = self.ed_chat_topic.text().strip()
+
+        members = []
+        for upn in upns:
+            members.append({
+                "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                "roles": ["owner"],
+                "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{upn}')",
+            })
+
+        body = {
+            "chatType": "group",
+            "members": members,
+        }
+        if topic:
+            body["topic"] = topic
+
+        try:
+            data = client.post("/chats", json_data=body)
+            self._display_result(data)
+        except Exception as exc:
+            self._display_error(exc)
+
+
     # ---------- Mail / Calendar ----------
     def on_list_messages(self) -> None:
         client = self._ensure_client()
@@ -1364,6 +1732,60 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
         try:
             client.post(f"/users/{upn}/sendMail", json_data=msg)
             self._display_result({"status": "mail sent"})
+        except Exception as exc:
+            self._display_error(exc)
+
+    # ---------- Calendar ----------
+
+    def on_create_event(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+
+        upn = self.ed_ev_user.text().strip() or self.ed_mail_user.text().strip()
+        if not upn:
+            self._display_error(RuntimeError("User UPN is required"))
+            return
+
+        subject = self.ed_ev_subject.text().strip()
+        start = self.ed_ev_start.text().strip()
+        end = self.ed_ev_end.text().strip()
+        tz = (self.ed_ev_timezone.text().strip() or "UTC").strip()
+        body_text = self.ed_ev_body.toPlainText()
+        attendees_raw = self.ed_ev_attendees.text().strip()
+
+        if not subject or not start or not end:
+            self._display_error(RuntimeError("Subject, start and end are required"))
+            return
+
+        attendees = []
+        if attendees_raw:
+            for up in [u.strip() for u in attendees_raw.split(",") if u.strip()]:
+                attendees.append({
+                    "emailAddress": {"address": up},
+                    "type": "required",
+                })
+
+        event = {
+            "subject": subject,
+            "body": {
+                "contentType": "Text",
+                "content": body_text,
+            },
+            "start": {
+                "dateTime": start,
+                "timeZone": tz,
+            },
+            "end": {
+                "dateTime": end,
+                "timeZone": tz,
+            },
+            "attendees": attendees,
+        }
+
+        try:
+            data = client.post(f"/users/{upn}/events", json_data=event)
+            self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
 
