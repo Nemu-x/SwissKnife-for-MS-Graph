@@ -259,7 +259,6 @@ ETH:          0xD9333e859Fb74D885d22E27568589de61E4433b5
 
 Developed with ❤️ by **Nemu**
 GitHub: [https://github.com/Nemu-x](https://github.com/Nemu-x)
-
 Project repository:
 [https://github.com/Nemu-x/SwissKnife-for-MS-Graph](https://github.com/Nemu-x/SwissKnife-for-MS-Graph)
 
