@@ -94,3 +94,20 @@ Full guide: **[SETUP_AZURE_APP.md](https://github.com/Nemu-x/SwissKnife-for-MS-G
 ```bash
 pip install -r requirements.txt
 python gui_qt.py
+```
+
+🧡 Support the Project
+If the tool helps you automate your work, you can support development:
+USDT (TRC20): 0xD9333e859Fb74D885d22E27568589de61E4433b5
+BTC:          bc1qkkcgpqym967k2x73al6f7fpvkx52q4rzkut3we
+ETH:          0xD9333e859Fb74D885d22E27568589de61E4433b5
+
+🙌 Contributing
+Pull requests, feature suggestions, and issue reports are welcome.
+Feel free to contribute new modules (e.g., Licensing, Entra configuration, Intune apps, SharePoint sites management, etc.).
+
+
+✨ Author
+Developed with ❤️ by Nemu
+GitHub: https://github.com/Nemu-x
+Project: https://github.com/Nemu-x/SwissKnife-for-MS-Graph
