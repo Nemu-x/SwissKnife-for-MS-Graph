@@ -56,7 +56,7 @@ Supports Teams, OneDrive, SharePoint, Groups, Admin, Intune, Audit logs & raw Gr
 
 # 🔐 Azure App Registration Setup
 
-Full guide: **SETUP_AZURE_APP.md**
+Full guide: **[SETUP_AZURE_APP.md](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/blob/main/SETUP_AZURE_APP.md)**
 
 ### Quick version:
 
