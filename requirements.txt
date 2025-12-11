@@ -1,0 +1,5 @@
+requests
+PySide6
+msal
+typer[all]
+rich
