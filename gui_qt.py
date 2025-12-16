@@ -7,9 +7,10 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from pathlib import Path
-from PySide6.QtCore import Qt, QRegularExpression
-from PySide6.QtGui import QIcon, QColor, QTextCharFormat, QSyntaxHighlighter
+from swissknife import licensing as licensing_module
 
+from PySide6.QtCore import Qt, QRegularExpression, QStandardPaths, QSettings, QTimer
+from PySide6.QtGui import QIcon, QColor, QTextCharFormat, QSyntaxHighlighter, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -32,6 +33,8 @@ from PySide6.QtWidgets import (
     QTreeWidget,
     QTreeWidgetItem,
     QSplitter,
+    QMessageBox,
+    QStatusBar,
 )
 
 
@@ -138,13 +141,13 @@ class JsonHighlighter(QSyntaxHighlighter):
         super().__init__(document)
 
         self.fmt_key = QTextCharFormat()
-        self.fmt_key.setForeground(QColor("#60a5fa"))   # ключи
+        self.fmt_key.setForeground(QColor("#60a5fa"))   # keys
 
         self.fmt_string = QTextCharFormat()
-        self.fmt_string.setForeground(QColor("#22c55e"))  # строки
+        self.fmt_string.setForeground(QColor("#22c55e"))  # string
 
         self.fmt_number = QTextCharFormat()
-        self.fmt_number.setForeground(QColor("#facc15"))  # числа
+        self.fmt_number.setForeground(QColor("#facc15"))  # numbers
 
         self.fmt_bool = QTextCharFormat()
         self.fmt_bool.setForeground(QColor("#f97316"))    # true/false
@@ -159,13 +162,13 @@ class JsonHighlighter(QSyntaxHighlighter):
         self.re_null = QRegularExpression(r'\bnull\b')
 
     def highlightBlock(self, text: str) -> None:
-        # ключи
+        # keys
         it = self.re_key.globalMatch(text)
         while it.hasNext():
             m = it.next()
             self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_key)
 
-        # строки-значения
+        # string values
         it = self.re_string.globalMatch(text)
         while it.hasNext():
             m = it.next()
@@ -173,7 +176,7 @@ class JsonHighlighter(QSyntaxHighlighter):
             length = m.capturedLength(1)
             self.setFormat(start, length, self.fmt_string)
 
-        # числа
+        # numbers
         it = self.re_number.globalMatch(text)
         while it.hasNext():
             m = it.next()
@@ -208,7 +211,12 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
+        self.statusBar().showMessage("Ready", 1500)
+
         root_layout = QVBoxLayout(central)
+
+        self.setStatusBar(QStatusBar())
+        self.statusBar().showMessage("Ready", 3000)
 
         # Auth
         auth_group = self._build_auth_group()
@@ -216,31 +224,94 @@ class MainWindow(QMainWindow):
 
         # Tabs + result area via splitter
         self.tabs = QTabWidget()
-
-        self.view_tabs = QTabWidget()
-        self.view_tabs.setTabPosition(QTabWidget.South)
-
-        # Result views
+        # ---------- Result views container (TOOLS + SPLIT VIEW) ----------
+        # Top: Table/Tree tabs
+        # Bottom: Details/Raw JSON tabs
         self.table_view = QTableWidget()
-        self.details_view = QPlainTextEdit()
-        self.details_view.setReadOnly(True)
+
         self.tree_view = QTreeWidget()
         self.tree_view.setHeaderLabels(["Key", "Value"])
+
+        self.details_view = QPlainTextEdit()
+        self.details_view.setReadOnly(True)
+
         self.json_view = QPlainTextEdit()
         self.json_view.setReadOnly(True)
 
-        self._last_rows: List[Any] = []
-        self.table_view.itemSelectionChanged.connect(self._update_details_from_selection)
-        
         self.details_highlighter = JsonHighlighter(self.details_view.document())
         self.json_highlighter = JsonHighlighter(self.json_view.document())
-        
-        
 
-        self.view_tabs.addTab(self.table_view, "Table")
-        self.view_tabs.addTab(self.details_view, "Details")
-        self.view_tabs.addTab(self.tree_view, "Tree")
-        self.view_tabs.addTab(self.json_view, "Raw JSON")
+        self.top_tabs = QTabWidget()
+        self.top_tabs.addTab(self.table_view, "Table")
+        self.top_tabs.addTab(self.tree_view, "Tree")
+
+        self.bottom_tabs = QTabWidget()
+        self.bottom_tabs.addTab(self.details_view, "Details")
+        self.bottom_tabs.addTab(self.json_view, "Raw JSON")
+        # When user selects a row in Table -> update Details
+        self.table_view.itemSelectionChanged.connect(self._update_details_from_selection)
+        self.table_view.cellClicked.connect(lambda r, c: self._update_details_from_selection())
+
+        # Tools row (ALWAYS VISIBLE)
+        self.result_tools = QWidget()
+        tools_l = QHBoxLayout(self.result_tools)
+        tools_l.setContentsMargins(0, 0, 0, 0)
+        tools_l.setSpacing(6)
+
+        self.ed_table_filter = QLineEdit()
+        self.ed_table_filter.setPlaceholderText("Filter table…")
+        self.ed_table_filter.setFixedWidth(220)
+        self.ed_table_filter.textChanged.connect(self.on_table_filter_changed)
+
+        btn_export_csv = QPushButton("Export CSV")
+        btn_export_csv.clicked.connect(self.on_export_table_csv)
+
+        btn_copy_json = QPushButton("Copy JSON")
+        btn_copy_json.clicked.connect(self.on_copy_json_clicked)
+
+        btn_copy_table = QPushButton("Copy Table")
+        btn_copy_table.clicked.connect(self.on_copy_table_clicked)
+
+        self.cb_safe_mode = QCheckBox("Safe mode")
+        self.cb_safe_mode.setChecked(False)
+        self.cb_safe_mode.toggled.connect(lambda _: self._refresh_current_result_if_any())
+        tools_l.addWidget(self.cb_safe_mode)
+
+
+        self.cb_wrap = QCheckBox("Wrap")
+        self.cb_wrap.setChecked(False)
+        self.cb_wrap.toggled.connect(self.on_wrap_toggled)
+
+        btn_tree_expand = QPushButton("Expand")
+        btn_tree_expand.clicked.connect(self.tree_view.expandAll)
+
+        btn_tree_collapse = QPushButton("Collapse")
+        btn_tree_collapse.clicked.connect(self.tree_view.collapseAll)
+
+        tools_l.addWidget(self.ed_table_filter)
+        tools_l.addWidget(btn_export_csv)
+        tools_l.addWidget(btn_copy_json)
+        tools_l.addWidget(btn_copy_table)
+        tools_l.addWidget(self.cb_wrap)
+        tools_l.addWidget(btn_tree_expand)
+        tools_l.addWidget(btn_tree_collapse)
+        tools_l.addStretch(1)
+
+        # Split view (user-resizable)
+        self.results_splitter = QSplitter(Qt.Vertical)
+        self.results_splitter.addWidget(self.top_tabs)
+        self.results_splitter.addWidget(self.bottom_tabs)
+        self.results_splitter.setStretchFactor(0, 2)
+        self.results_splitter.setStretchFactor(1, 3)
+        self.results_splitter.setSizes([250, 350])
+
+        # Right panel = tools + split view
+        self.results_panel = QWidget()
+        rp_l = QVBoxLayout(self.results_panel)
+        rp_l.setContentsMargins(0, 0, 0, 0)
+        rp_l.setSpacing(6)
+        rp_l.addWidget(self.result_tools)
+        rp_l.addWidget(self.results_splitter, 1)
 
         # Build all tabs
         self._build_teams_tab()
@@ -255,14 +326,109 @@ class MainWindow(QMainWindow):
         self._build_raw_tab()
         self._build_about_tab()
 
+        # ---------- MAIN SPLITTER: left = feature tabs, right = results ----------
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.tabs)
-        splitter.addWidget(self.view_tabs)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-        splitter.setSizes([800, 500])
+        splitter.addWidget(self.results_panel)
+
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 3)
+        splitter.setSizes([780, 520])
 
         root_layout.addWidget(splitter, stretch=1)
+
+        self.setStatusBar(self.statusBar())
+        self._set_status("Ready")
+
+    def _mask_sensitive(self, obj):
+        # masks tokens/secrets and optionally emails
+        SENSITIVE_KEYS = ("token", "secret", "password", "authorization", "access", "refresh", "client_secret")
+        if isinstance(obj, dict):
+            out = {}
+            for k, v in obj.items():
+                kk = str(k).lower()
+                if any(x in kk for x in SENSITIVE_KEYS):
+                    out[k] = "***MASKED***"
+                else:
+                    out[k] = self._mask_sensitive(v)
+            return out
+        if isinstance(obj, list):
+            return [self._mask_sensitive(x) for x in obj]
+        return obj
+
+    def _refresh_current_result_if_any(self) -> None:
+        # if you store last result somewhere, refresh it.
+        if hasattr(self, "_last_result"):
+            self._display_result(self._last_result)
+       
+    def _set_status(self, text: str, timeout_ms: int = 4000) -> None:
+        sb = self.statusBar()
+        if sb:
+            sb.showMessage(text, timeout_ms)
+
+    def _notify_ok(self, text: str) -> None:
+        self._set_status(f"✅ {text}", 5000)
+
+    def _notify_err(self, text: str) -> None:
+        self._set_status(f"❌ {text}", 8000)
+
+    def _run_busy(self, title: str, fn, *args, **kwargs):
+        app = QApplication.instance()
+        if app:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+        self._set_status(f"⏳ {title} ...", 0)
+        try:
+            result = fn(*args, **kwargs)
+            self._notify_ok(title)
+            return result
+        except Exception as e:
+            self._notify_err(f"{title} failed")
+            raise
+        finally:
+            if app:
+                QApplication.restoreOverrideCursor()
+
+         # ---------- export csv ----------
+    def on_export_table_csv(self) -> None:
+        if self.table_view.rowCount() == 0 or self.table_view.columnCount() == 0:
+            QMessageBox.information(self, "Export CSV", "Table is empty — nothing to export.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save CSV",
+            "export.csv",
+            "CSV files (*.csv);;All files (*.*)",
+        )
+        if not path:
+            return
+
+        # Write UTF-8 with BOM so Excel opens it nicely
+        import csv
+
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+
+                # headers
+                headers = []
+                for c in range(self.table_view.columnCount()):
+                    h = self.table_view.horizontalHeaderItem(c)
+                    headers.append(h.text() if h else f"col_{c}")
+                writer.writerow(headers)
+
+                # rows
+                for r in range(self.table_view.rowCount()):
+                    row = []
+                    for c in range(self.table_view.columnCount()):
+                        item = self.table_view.item(r, c)
+                        row.append(item.text() if item else "")
+                    writer.writerow(row)
+
+            QMessageBox.information(self, "Export CSV", f"Saved:\n{path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Export CSV", f"Failed:\n{exc}")
+
 
     # ---------- Auth group ----------
     def _build_auth_group(self) -> QGroupBox:
@@ -480,7 +646,7 @@ class MainWindow(QMainWindow):
         btn_add_chat_member.clicked.connect(self.on_add_chat_member)
 
         g3.addWidget(QLabel("Chat ID:"), 0, 0)
-        g3.addWidget(self.ed_chat_id, 0, 1, 1, 2)  # тот же QLineEdit, что и выше
+        g3.addWidget(self.ed_chat_id, 0, 1, 1, 2) 
         g3.addWidget(QLabel("User UPN:"), 1, 0)
         g3.addWidget(self.ed_chat_member_upn, 1, 1, 1, 2)
         g3.addWidget(QLabel("Role:"), 2, 0)
@@ -666,11 +832,18 @@ class MainWindow(QMainWindow):
             self._display_error(RuntimeError("All fields are required for copy"))
             return
 
+        app = QApplication.instance()
+        tmp_path = None
+
         try:
+            if app:
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+            self._set_status("⏳ OneDrive copy between users...", 0)
+
             if not client._access_token:
                 raise RuntimeError("Not authenticated")
 
-            # 1) Download from source
+            # --- DOWNLOAD ---
             headers = {"Authorization": f"Bearer {client._access_token}"}
             url = GRAPH_BASE_URL + f"/users/{src_user}/drive/items/{src_item}/content"
             resp = requests.get(url, headers=headers, timeout=300)
@@ -681,31 +854,34 @@ class MainWindow(QMainWindow):
                 tmp.write(resp.content)
                 tmp_path = tmp.name
 
-            try:
-                # 2) Upload to target user
-                with open(tmp_path, "rb") as f:
-                    content = f.read()
+            # --- UPLOAD ---
+            with open(tmp_path, "rb") as f:
+                content = f.read()
 
-                headers = {
-                    "Authorization": f"Bearer {client._access_token}",
-                    "Content-Type": "application/octet-stream",
-                }
-                url2 = GRAPH_BASE_URL + f"/users/{dst_user}/drive/root:/{dst_remote}:/content"
-                resp2 = requests.put(url2, headers=headers, data=content, timeout=300)
-                if not resp2.ok:
-                    raise RuntimeError(f"Upload failed: {resp2.status_code} {resp2.text}")
+            headers = {
+                "Authorization": f"Bearer {client._access_token}",
+                "Content-Type": "application/octet-stream",
+            }
+            url2 = GRAPH_BASE_URL + f"/users/{dst_user}/drive/root:/{dst_remote}:/content"
+            resp2 = requests.put(url2, headers=headers, data=content, timeout=300)
+            if not resp2.ok:
+                raise RuntimeError(f"Upload failed: {resp2.status_code} {resp2.text}")
 
-                data = resp2.json()
-                self._display_result(data)
-            finally:
+            self._display_result(resp2.json())
+            self._notify_ok("OneDrive copy completed")
+
+        except Exception as exc:
+            self._display_error(exc)
+            self._notify_err("OneDrive copy failed")
+
+        finally:
+            if tmp_path:
                 try:
                     os.remove(tmp_path)
                 except OSError:
                     pass
-
-        except Exception as exc:
-            self._display_error(exc)
-
+            if app:
+                QApplication.restoreOverrideCursor()
 
     def _build_sharepoint_tab(self) -> None:
         tab = QWidget()
@@ -769,6 +945,31 @@ class MainWindow(QMainWindow):
         btn_unblock = QPushButton("Unblock")
         btn_unblock.clicked.connect(lambda: self.on_admin_block(False))
 
+        quick = QGroupBox("Quick actions")
+        ql = QGridLayout(quick)
+       
+        btn_snapshot = QPushButton("User snapshot (basic)")
+        btn_snapshot.clicked.connect(self.on_admin_user_snapshot)
+        layout.addWidget(btn_snapshot)
+
+        self.cb_admin_quick = QComboBox()
+        self.cb_admin_quick.addItems([
+            "User info",
+            "User license details",
+            "List user joined teams",
+            "List user's groups (memberOf)",
+        ])
+
+        btn_run_quick = QPushButton("Run")
+        btn_run_quick.clicked.connect(self.on_admin_quick_action)
+
+        ql.addWidget(QLabel("Action:"), 0, 0)
+        ql.addWidget(self.cb_admin_quick, 0, 1)
+        ql.addWidget(btn_run_quick, 0, 2)
+
+        layout.addWidget(quick)
+
+
         grid.addWidget(QLabel("User UPN:"), 0, 0)
         grid.addWidget(self.ed_admin_user, 0, 1, 1, 3)
         grid.addWidget(btn_user_info, 1, 0)
@@ -776,8 +977,66 @@ class MainWindow(QMainWindow):
         grid.addWidget(btn_unblock, 1, 2)
 
         layout.addLayout(grid)
+        
+        lic_group = QGroupBox("Licensing")
+        lic_layout = QGridLayout(lic_group)
+
+        btn_load_skus = QPushButton("Load tenant SKUs")
+        btn_load_skus.clicked.connect(self.on_list_subscribed_skus)
+
+        self.cb_lic_sku = QComboBox()
+        self.cb_lic_sku.setMinimumWidth(520)
+
+        btn_user_lic = QPushButton("User license details")
+        btn_user_lic.clicked.connect(self.on_user_license_details)
+
+        btn_assign = QPushButton("Assign selected SKU")
+        btn_assign.clicked.connect(self.on_assign_selected_sku)
+
+        btn_remove = QPushButton("Remove selected SKU")
+        btn_remove.clicked.connect(self.on_remove_selected_sku)
+
+        lic_layout.addWidget(btn_load_skus, 0, 0)
+        lic_layout.addWidget(self.cb_lic_sku, 0, 1, 1, 3)
+
+        lic_layout.addWidget(QLabel("Target User UPN (optional):"), 1, 0)
+        self.ed_lic_user_upn = QLineEdit()
+        self.ed_lic_user_upn.setPlaceholderText("leave empty to use Admin User UPN above")
+        lic_layout.addWidget(self.ed_lic_user_upn, 1, 1, 1, 3)
+
+        lic_layout.addWidget(btn_user_lic, 2, 0)
+        lic_layout.addWidget(btn_assign, 2, 1)
+        lic_layout.addWidget(btn_remove, 2, 2)
+        lic_layout.setColumnStretch(3, 1)
+
+        layout.addWidget(lic_group)
+
         layout.addStretch(1)
         self.tabs.addTab(tab, "Admin")
+
+    def on_admin_user_snapshot(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+
+        upn = self.ed_admin_user.text().strip()
+        if not upn:
+            self._display_error(RuntimeError("User UPN required"))
+            return
+
+        try:
+            user = self._run_busy("Snapshot: user", client.get, f"/users/{upn}")
+            teams = self._run_busy("Snapshot: joinedTeams", client.get, f"/users/{upn}/joinedTeams")
+            memberof = self._run_busy("Snapshot: memberOf", client.get, f"/users/{upn}/memberOf")
+
+            snap = {
+                "user": user,
+                "joinedTeams": teams.get("value", teams),
+                "memberOf": memberof.get("value", memberof),
+            }
+            self._display_result(snap)
+        except Exception as exc:
+            self._display_error(exc)
 
     def _build_intune_tab(self) -> None:
         tab = QWidget()
@@ -884,13 +1143,104 @@ class MainWindow(QMainWindow):
         layout.addWidget(examples)
         layout.addStretch(1)
 
+        QTimer.singleShot(0, self._raw_refresh_ui)
+
         self.tabs.addTab(tab, "Raw")
+ 
+        # --- Raw History / Favorites ---
+        hf = QGroupBox("History / Favorites")
+        hf_l = QGridLayout(hf)
+
+        self.cb_raw_history = QComboBox()
+        self.cb_raw_history.currentIndexChanged.connect(self.on_raw_history_selected)
+
+        self.cb_raw_fav = QComboBox()
+        self.cb_raw_fav.currentIndexChanged.connect(self.on_raw_fav_selected)
+
+        btn_add_fav = QPushButton("Add to favorites")
+        btn_add_fav.clicked.connect(self.on_raw_add_to_favorites)
+
+        btn_clear_hist = QPushButton("Clear history")
+        btn_clear_hist.clicked.connect(self.on_raw_clear_history)
+
+        btn_clear_fav = QPushButton("Clear favorites")
+        btn_clear_fav.clicked.connect(self.on_raw_clear_favorites)
+
+        hf_l.addWidget(QLabel("History:"), 0, 0)
+        hf_l.addWidget(self.cb_raw_history, 0, 1)
+        hf_l.addWidget(btn_clear_hist, 0, 2)
+
+        hf_l.addWidget(QLabel("Favorites:"), 1, 0)
+        hf_l.addWidget(self.cb_raw_fav, 1, 1)
+        hf_l.addWidget(btn_add_fav, 1, 2)
+
+        hf_l.addWidget(btn_clear_fav, 2, 2)
+
+        layout.addWidget(hf)
+
+    # ---------- Raw history / favorites handlers ----------
+    def on_raw_history_selected(self, idx: int) -> None:
+        if idx <= 0:
+            return
+        it = self.cb_raw_history.itemData(idx)
+        if not isinstance(it, dict):
+            return
+        self.cb_raw_method.setCurrentText(it.get("method", "GET"))
+        self.ed_raw_path.setText(it.get("path", ""))
+        self.ed_raw_body.setPlainText(it.get("body", "") or "")
+
+    def on_raw_fav_selected(self, idx: int) -> None:
+        if idx <= 0:
+            return
+        it = self.cb_raw_fav.itemData(idx)
+        if not isinstance(it, dict):
+            return
+        self.cb_raw_method.setCurrentText(it.get("method", "GET"))
+        self.ed_raw_path.setText(it.get("path", ""))
+        self.ed_raw_body.setPlainText(it.get("body", "") or "")
+
+    def on_raw_add_to_favorites(self) -> None:
+        entry = self._raw_entry_current()
+        if not entry.get("path"):
+            self._display_error(RuntimeError("Path / URL is required"))
+            return
+
+        name, ok = QInputDialog.getText(self, "Add to favorites", "Name (optional):")
+        if ok and name.strip():
+            entry["name"] = name.strip()
+
+        store = self._load_raw_store()
+        favs = store.get("favorites", [])
+
+        # dedupe by method+path+body
+        key = (entry.get("method"), entry.get("path"), entry.get("body"))
+        favs = [x for x in favs if (x.get("method"), x.get("path"), x.get("body")) != key]
+
+        favs.insert(0, entry)
+        store["favorites"] = favs[:50]
+        self._save_raw_store(store)
+        self._raw_refresh_ui()
+        self._toast("Added to favorites")
+
+    def on_raw_clear_history(self) -> None:
+        store = self._load_raw_store()
+        store["history"] = []
+        self._save_raw_store(store)
+        self._raw_refresh_ui()
+        self._toast("History cleared")
+
+    def on_raw_clear_favorites(self) -> None:
+        store = self._load_raw_store()
+        store["favorites"] = []
+        self._save_raw_store(store)
+        self._raw_refresh_ui()
+        self._toast("Favorites cleared")
+
 
     def _build_about_tab(self) -> None:
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # Заголовок
         title = QLabel("🗡️ SwissKnife for Microsoft Graph")
         title.setStyleSheet("font-size: 12pt; font-weight: bold;")
         layout.addWidget(title)
@@ -905,7 +1255,6 @@ class MainWindow(QMainWindow):
         sep = QLabel("────────────────────────────────────────")
         layout.addWidget(sep)
 
-        # Список возможностей
         features = QLabel(
             "🧰 What it can help with:\n"
             "  • Teams / Groups / Channels management\n"
@@ -925,13 +1274,13 @@ class MainWindow(QMainWindow):
         github.setWordWrap(True)
         layout.addWidget(github)
 
-        # Блок донатов — отдельным маленьким текстовым полем, чтобы удобно копировать
-        donate_label = QLabel("💰 Support the project (optional):")
+        
+        donate_label = QLabel("💰 Support the project:")
         layout.addWidget(donate_label)
 
         donate_box = QPlainTextEdit()
         donate_box.setReadOnly(True)
-        donate_box.setFixedHeight(90)  # чтобы не было гигантского поля и скролла
+        donate_box.setFixedHeight(90)
         donate_box.setPlainText(
             "USDT (TRC20): 0xD9333e859Fb74D885d22E27568589de61E4433b5\n"
             "BTC:          bc1qkkcgpqym967k2x73al6f7fpvkx52q4rzkut3we\n"
@@ -971,7 +1320,7 @@ QWidget {
     font-size: 9pt;
 }
 
-/* GroupBox – рамки секций */
+/* GroupBox – section frames */
 QGroupBox {
     border: 1px solid #555555;
     border-radius: 6px;
@@ -985,7 +1334,7 @@ QGroupBox::title {
     background-color: #2E2E2E;
 }
 
-/* Инпуты */
+/* Inputs */
 QLineEdit, QPlainTextEdit, QTextEdit, QComboBox {
     background-color: #262626;
     border: 1px solid #606060;
@@ -998,7 +1347,7 @@ QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus {
     border: 1px solid #AAAAAA;
 }
 
-/* Кнопки */
+/* Buttons */
 QPushButton {
     background-color: #383838;
     border: 1px solid #5A5A5A;
@@ -1018,7 +1367,7 @@ QPushButton:disabled {
     color: #888888;
 }
 
-/* Табы */
+/* Tabs */
 QTabWidget::pane {
     border: 1px solid #555555;
     top: -1px;
@@ -1039,7 +1388,7 @@ QTabBar::tab:hover {
     background: #353535;
 }
 
-/* Таблица */
+/* Table */
 QTableView {
     gridline-color: #555555;
     background-color: #262626;
@@ -1054,7 +1403,7 @@ QHeaderView::section {
     border: 1px solid #555555;
 }
 
-/* Дерево */
+/* Tree */
 QTreeView {
     background-color: #262626;
     alternate-background-color: #262626;
@@ -1063,7 +1412,7 @@ QTreeView {
     border: 1px solid #555555;
 }
 
-/* Скроллбары */
+/* Scrolbar */
 QScrollBar:vertical {
     background: #252525;
     width: 12px;
@@ -1245,13 +1594,13 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self.client = GraphClient(cfg)
             self.client.authenticate()
 
-            # 🔹 селф-тест: /organization
-            org = self.client.get("/organization")
+            # 🔹 self-test: /organization
+            org = self._run_busy("Auth self-test (/organization)", self.client.get, "/organization")
 
             self.lbl_status.setText("Connected")
             self.lbl_status.setStyleSheet("color: #22c55e;")
 
-            # 🔹 показать результат в нижней панели
+            # 🔹 show the result in the bottom panel
             self._display_result({
                 "message": "Connected successfully",
                 "organization": org,
@@ -1261,7 +1610,6 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self.lbl_status.setStyleSheet("color: #f97316;")
             self._display_error(exc)
 
-
     def _ensure_client(self) -> Optional[GraphClient]:
         if not self.client:
             self._display_error(RuntimeError("Not connected"))
@@ -1269,81 +1617,261 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
         return self.client
 
     def _display_error(self, exc: Exception) -> None:
+        self._notify_err(str(exc))
         data = {"error": str(exc)}
         self._display_result(data)
 
     def _display_result(self, data: Any) -> None:
-        # JSON view
-        self.json_view.setPlainText(json.dumps(data, indent=2, ensure_ascii=False))
+        # store last result for refresh
+        self._last_result = data
 
-        # Table view (best-effort)
+        # apply safe-mode masking if enabled
+        if hasattr(self, "cb_safe_mode") and self.cb_safe_mode.isChecked():
+            data_to_show = self._mask_sensitive(data)
+        else:
+            data_to_show = data
+
+        # Raw JSON view
+        self.json_view.setPlainText(json.dumps(data_to_show, indent=2, ensure_ascii=False))
+
+        # Reset table
         self.table_view.clear()
         self.table_view.setRowCount(0)
         self.table_view.setColumnCount(0)
 
+        # Normalize rows for table
         rows: List[Dict[str, Any]] = []
 
-        if isinstance(data, dict) and "value" in data and isinstance(data["value"], list):
-            rows = data["value"]
-        elif isinstance(data, list):
-            rows = data
-        elif isinstance(data, dict):
-            rows = [data]
+        if isinstance(data_to_show, dict) and "value" in data_to_show and isinstance(data_to_show["value"], list):
+            rows = data_to_show["value"]
+        elif isinstance(data_to_show, list):
+            rows = data_to_show
+        elif isinstance(data_to_show, dict):
+            rows = [data_to_show]
         else:
-            rows = [{"value": data}]
-            
+            rows = [{"value": data_to_show}]
+
+        # Keep for Details-per-row
         self._last_rows = rows
 
-        if rows:
-            # Collect columns
-            cols: List[str] = []
-            for row in rows:
-                if isinstance(row, dict):
-                    for k in row.keys():
-                        if k not in cols:
-                            cols.append(k)
+        # Build columns
+        cols: List[str] = []
+        for row in rows:
+            if isinstance(row, dict):
+                for k in row.keys():
+                    if k not in cols:
+                        cols.append(k)
+
+        # Fill table
+        if cols:
             self.table_view.setColumnCount(len(cols))
             self.table_view.setHorizontalHeaderLabels(cols)
             self.table_view.setRowCount(len(rows))
 
             for r, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    row = {"value": row}
+
                 for c, col in enumerate(cols):
                     value = row.get(col, "")
                     text = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value)
-                    item = QTableWidgetItem(text)
-                    self.table_view.setItem(r, c, item)
+                    self.table_view.setItem(r, c, QTableWidgetItem(text))
 
+        self.table_view.resizeColumnsToContents()
 
+        # Details: show selected row if possible, otherwise whole object
+        if self.table_view.rowCount() > 0:
+                self.table_view.selectRow(0)
+        self._update_details_from_selection()
 
         # Tree view
         self.tree_view.clear()
-        self._fill_tree(self.tree_view.invisibleRootItem(), data)
+        self._fill_tree(self.tree_view.invisibleRootItem(), data_to_show)
+        self.tree_view.expandToDepth(1)
+
+    # ---------- Raw history / favorites storage ----------
+    def _data_dir(self) -> Path:
+        base = Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation))
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+
+    def _raw_store_path(self) -> Path:
+        return self._data_dir() / "raw_store.json"
+
+    def _load_raw_store(self) -> Dict[str, Any]:
+        p = self._raw_store_path()
+        if not p.exists():
+            return {"history": [], "favorites": []}
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return {"history": [], "favorites": []}
+
+    def _save_raw_store(self, store: Dict[str, Any]) -> None:
+        p = self._raw_store_path()
+        p.write_text(json.dumps(store, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _raw_entry_current(self) -> Dict[str, Any]:
+        body = self.ed_raw_body.toPlainText().strip()
+        return {
+            "method": self.cb_raw_method.currentText(),
+            "path": self.ed_raw_path.text().strip(),
+            "body": body,
+        }
+
+    def _raw_refresh_ui(self) -> None:
+        store = self._load_raw_store()
+
+        self.cb_raw_history.blockSignals(True)
+        self.cb_raw_history.clear()
+        self.cb_raw_history.addItem("History…")
+        for it in store.get("history", []):
+            label = f'{it.get("method","")} {it.get("path","")}'
+            self.cb_raw_history.addItem(label, it)
+        self.cb_raw_history.blockSignals(False)
+
+        self.cb_raw_fav.blockSignals(True)
+        self.cb_raw_fav.clear()
+        self.cb_raw_fav.addItem("Favorites…")
+        for it in store.get("favorites", []):
+            name = it.get("name") or f'{it.get("method","")} {it.get("path","")}'
+            self.cb_raw_fav.addItem(name, it)
+        self.cb_raw_fav.blockSignals(False)
+
+    def on_wrap_toggled(self, checked: bool) -> None:
+        mode = QPlainTextEdit.WidgetWidth if checked else QPlainTextEdit.NoWrap
+        self.details_view.setLineWrapMode(mode)
+        self.json_view.setLineWrapMode(mode)
+
+        self.table_view.setWordWrap(checked)
+        self.table_view.resizeRowsToContents()
+
+
+    # ---------- Table helpers ----------
+    def on_table_filter_changed(self, text: str) -> None:
+        """Simple client-side filter for QTableWidget."""
+        needle = (text or "").strip().lower()
+
+        if self.top_tabs.currentWidget() is not self.table_view:
+            return
+
+        if not needle:
+            for r in range(self.table_view.rowCount()):
+                self.table_view.setRowHidden(r, False)
+            return
+
+        for r in range(self.table_view.rowCount()):
+            hit = False
+            for c in range(self.table_view.columnCount()):
+                item = self.table_view.item(r, c)
+                if item and needle in (item.text() or "").lower():
+                    hit = True
+                    break
+            self.table_view.setRowHidden(r, not hit)
+
+    def on_admin_quick_action(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+
+        upn = self.ed_admin_user.text().strip()
+        if not upn:
+            self._display_error(RuntimeError("User UPN required"))
+            return
+
+        action = self.cb_admin_quick.currentText().strip()
+
+        try:
+            if action == "User info":
+                data = self._run_busy("Admin: user info", client.get, f"/users/{upn}")
+
+            elif action == "User license details":
+                data = self._run_busy("Admin: license details", client.get, f"/users/{upn}/licenseDetails")
+
+            elif action == "List user joined teams":
+                data = self._run_busy("Admin: joined teams", client.get, f"/users/{upn}/joinedTeams")
+
+            elif action == "List user's groups (memberOf)":
+                data = self._run_busy("Admin: memberOf", client.get, f"/users/{upn}/memberOf")
+
+            else:
+                data = {"error": f"Unknown action: {action}"}
+
+            self._display_result(data)
+            self._toast("Done")
+
+        except Exception as exc:
+            self._display_error(exc)
+            self._toast("Error")
+
+
+    def on_copy_json_clicked(self) -> None:
+        cb = QApplication.clipboard()
+        cb.setText(self.json_view.toPlainText() or "")
+        self._toast("Copied Raw JSON")
+
+
+    def on_copy_table_clicked(self) -> None:
+        """Copy current table selection (or whole table) as TSV."""
+        rows = self.table_view.rowCount()
+        cols = self.table_view.columnCount()
+
+        if rows == 0 or cols == 0:
+            self._toast("Table is empty")
+            return
+
+        sel = self.table_view.selectedRanges()
+        if sel:
+            r0 = sel[0].topRow()
+            r1 = sel[0].bottomRow()
+            c0 = sel[0].leftColumn()
+            c1 = sel[0].rightColumn()
+        else:
+            r0, r1, c0, c1 = 0, rows - 1, 0, cols - 1
+
+        lines = []
+
+        headers = []
+        for c in range(c0, c1 + 1):
+            h = self.table_view.horizontalHeaderItem(c)
+            headers.append(h.text() if h else f"col{c}")
+        lines.append("\t".join(headers))
+
+        for r in range(r0, r1 + 1):
+            row_vals = []
+            for c in range(c0, c1 + 1):
+                it = self.table_view.item(r, c)
+                row_vals.append(it.text() if it else "")
+            lines.append("\t".join(row_vals))
+
+        QApplication.clipboard().setText("\n".join(lines))
+        self._toast("Copied table (TSV)")
+
 
     def _update_details_from_selection(self) -> None:
         """Update Details tab based on selected row in Table."""
         row_idx = self.table_view.currentRow()
         if row_idx < 0 or row_idx >= len(self._last_rows):
-            # fallback — показываем весь JSON, если нет строки
-            # (можно оставить пустым, но так полезнее)
-            # self.details_view.clear()
+            # fallback — show the entire JSON if there is no row
+            #self.details_view.clear()
             self.details_view.setPlainText(
                 self.json_view.toPlainText()
             )
             return
-
+        
+            # If it's not a dict, we just show the value.
         row = self._last_rows[row_idx]
         if not isinstance(row, dict):
-            # если это не dict — просто показываем значение
             self.details_view.setPlainText(str(row))
             return
 
         lines = []
         for k, v in row.items():
             if isinstance(v, (dict, list)):
-                val_str = json.dumps(v, ensure_ascii=False)
+                val_str = json.dumps(v, ensure_ascii=False, indent=2)
+                lines.append(f"{k}:\n{val_str}")
             else:
-                val_str = str(v)
-            lines.append(f"{k}: {val_str}")
+                lines.append(f"{k}: {v}")
 
         self.details_view.setPlainText("\n".join(lines))
 
@@ -1380,7 +1908,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_error(RuntimeError("User UPN is required"))
             return
         try:
-            data = client.get(f"/users/{upn}/joinedTeams")
+            data = self._run_busy("Joined teams", client.get, f"/users/{upn}/joinedTeams")
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1394,7 +1922,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_error(RuntimeError("Team ID is required"))
             return
         try:
-            data = client.get(f"/teams/{team_id}/channels")
+            data = self._run_busy("Team channels", client.get, f"/teams/{team_id}/channels")
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1429,7 +1957,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
                 }
             ]
         try:
-            data = client.post(f"/teams/{team_id}/channels", json_data=body)
+            data = self._run_busy("Create channel", client.post, f"/teams/{team_id}/channels", json_data=body)
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1455,7 +1983,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
                 path = f"/teams/{team_id}/channels/{channel_id}/members"
             else:
                 path = f"/teams/{team_id}/members"
-            data = client.post(path, json_data=member)
+            data = self._run_busy("Add member", client.post, path, json_data=member)
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1480,7 +2008,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             "securityEnabled": False,
         }
         try:
-            group = client.post("/groups", json_data=body)
+            group = self._run_busy("Create M365 group", client.post, "/groups", json_data=body)
             self._display_result(group)
             if self.cb_group_teamify.isChecked():
                 gid = group.get("id")
@@ -1503,7 +2031,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             "@odata.id": f"https://graph.microsoft.com/v1.0/users/{owner_upn}"
         }
         try:
-            client.post(f"/groups/{gid}/owners/$ref", json_data=body)
+            self._run_busy("Add group owner", client.post, f"/groups/{gid}/owners/$ref", json_data=body)
             self._display_result({"status": "owner added"})
         except Exception as exc:
             self._display_error(exc)
@@ -1548,7 +2076,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             },
         }
         try:
-            data = client.put(f"/groups/{gid}/team", json_data=body)
+            data = self._run_busy("Teamify group", client.put, f"/groups/{gid}/team", json_data=body)
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1564,7 +2092,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             return
         top = self.sp_chat_top.value()
         try:
-            data = client.get(f"/users/{upn}/chats", params={"$top": top})
+            data = self._run_busy("List user chats", client.get, f"/users/{upn}/chats", params={"$top": top})
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1589,7 +2117,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
                 params = {"$top": top, "includeDeletedItems": "true"}
                 data = client.request("GET", url, params=params)
             else:
-                data = client.get(f"/chats/{chat_id}/messages", params={"$top": top})
+                data = self._run_busy("Chat messages", client.get, f"/chats/{chat_id}/messages", params={"$top": top})
 
             self._display_result(data)
         except Exception as exc:
@@ -1614,7 +2142,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
         }
 
         try:
-            data = client.post(f"/chats/{chat_id}/members", json_data=member)
+            data = self._run_busy("Add chat member", client.post, f"/chats/{chat_id}/members", json_data=member)
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1651,48 +2179,10 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             body["topic"] = topic
 
         try:
-            data = client.post("/chats", json_data=body)
+            data = self._run_busy("Create chat", client.post, "/chats", json_data=body)
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
-
-    def on_create_chat(self) -> None:
-        client = self._ensure_client()
-        if not client:
-            return
-        members_raw = self.ed_chat_members.text().strip()
-        if not members_raw:
-            self._display_error(RuntimeError("Members UPNs are required"))
-            return
-
-        upns = [u.strip() for u in members_raw.split(",") if u.strip()]
-        if len(upns) < 2:
-            self._display_error(RuntimeError("Provide at least two members"))
-            return
-
-        topic = self.ed_chat_topic.text().strip()
-
-        members = []
-        for upn in upns:
-            members.append({
-                "@odata.type": "#microsoft.graph.aadUserConversationMember",
-                "roles": ["owner"],
-                "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{upn}')",
-            })
-
-        body = {
-            "chatType": "group",
-            "members": members,
-        }
-        if topic:
-            body["topic"] = topic
-
-        try:
-            data = client.post("/chats", json_data=body)
-            self._display_result(data)
-        except Exception as exc:
-            self._display_error(exc)
-
 
     # ---------- Mail / Calendar ----------
     def on_list_messages(self) -> None:
@@ -1705,7 +2195,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             return
         top = self.sp_mail_top.value()
         try:
-            data = client.get(f"/users/{upn}/messages", params={"$top": top})
+            data = self._run_busy("List messages", client.get, f"/users/{upn}/messages", params={"$top": top})
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1730,7 +2220,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             "saveToSentItems": True,
         }
         try:
-            client.post(f"/users/{upn}/sendMail", json_data=msg)
+            self._run_busy("Send mail", client.post, f"/users/{upn}/sendMail", json_data=msg)
             self._display_result({"status": "mail sent"})
         except Exception as exc:
             self._display_error(exc)
@@ -1784,7 +2274,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
         }
 
         try:
-            data = client.post(f"/users/{upn}/events", json_data=event)
+            data = self._run_busy("Create calendar event", client.post, f"/users/{upn}/events", json_data=body)
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1799,7 +2289,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_error(RuntimeError("User UPN is required"))
             return
         try:
-            data = client.get(f"/users/{upn}/drive/root/children")
+            data = self._run_busy("OneDrive list root", client.get, f"/users/{upn}/drive/root/children")
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1815,6 +2305,8 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_error(RuntimeError("User, item ID and local file are required"))
             return
         try:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            self._set_status("⏳ OneDrive download ...", 0)
             url = f"/users/{upn}/drive/items/{item_id}/content"
             # use request to get raw bytes
             if not client._access_token:
@@ -1831,6 +2323,9 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_result({"status": f"downloaded to {local}"})
         except Exception as exc:
             self._display_error(exc)
+        finally:
+            QApplication.restoreOverrideCursor()
+            self._notify_ok("OneDrive download")
 
     def on_od_upload(self) -> None:
         client = self._ensure_client()
@@ -1843,6 +2338,8 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_error(RuntimeError("User, local file and remote path are required"))
             return
         try:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            self._set_status("⏳ OneDrive download ...", 0)
             with open(local, "rb") as f:
                 content = f.read()
             if not client._access_token:
@@ -1859,6 +2356,9 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
+        finally:
+            QApplication.restoreOverrideCursor()
+            self._notify_ok("OneDrive download")
 
     # ---------- SharePoint ----------
     def on_sp_list_sites(self) -> None:
@@ -1868,9 +2368,9 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
         search = self.ed_sp_search.text().strip()
         try:
             if search:
-                data = client.get("/sites", params={"search": search})
+                data = self._run_busy("SharePoint list sites", client.get, "/sites", params={"search": search})
             else:
-                data = client.get("/sites?search=*")
+                data = self._run_busy("SharePoint list sites", client.get, "/sites?search=*")
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1884,7 +2384,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_error(RuntimeError("Site ID is required"))
             return
         try:
-            data = client.get(f"/sites/{site_id}/drive/root/children")
+            data = self._run_busy("SharePoint list drive root", client.get, f"/sites/{site_id}/drive/root/children")
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1893,55 +2393,92 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
         client = self._ensure_client()
         if not client:
             return
+
         site_id = self.ed_sp_site_id.text().strip()
         item_id = self.ed_sp_item_id.text().strip()
         local = self.ed_sp_local.text().strip()
+
         if not site_id or not item_id or not local:
             self._display_error(RuntimeError("Site, item ID and local file are required"))
             return
+
+        app = QApplication.instance()
+
         try:
+            if app:
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+            self._set_status("⏳ SharePoint download...", 0)
+
             if not client._access_token:
                 raise RuntimeError("Not authenticated")
-            headers = {
-                "Authorization": f"Bearer {client._access_token}",
-            }
+
+            headers = {"Authorization": f"Bearer {client._access_token}"}
             url = GRAPH_BASE_URL + f"/sites/{site_id}/drive/items/{item_id}/content"
+
             resp = requests.get(url, headers=headers, timeout=120)
             if not resp.ok:
                 raise RuntimeError(f"Download failed: {resp.status_code} {resp.text}")
+
             with open(local, "wb") as f:
                 f.write(resp.content)
-            self._display_result({"status": f"downloaded to {local}"})
+
+            self._display_result({"status": f"Downloaded to {local}"})
+            self._notify_ok("SharePoint download completed")
+
         except Exception as exc:
             self._display_error(exc)
+            self._notify_err("SharePoint download failed")
+
+        finally:
+            if app:
+                QApplication.restoreOverrideCursor()
 
     def on_sp_upload(self) -> None:
         client = self._ensure_client()
         if not client:
             return
+
         site_id = self.ed_sp_site_id.text().strip()
         local = self.ed_sp_local.text().strip()
         remote = self.ed_sp_remote.text().strip().lstrip("/")
+
         if not site_id or not local or not remote:
             self._display_error(RuntimeError("Site, local file and remote path are required"))
             return
+
+        app = QApplication.instance()
+
         try:
-            with open(local, "rb") as f:
-                content = f.read()
+            if app:
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+            self._set_status("⏳ SharePoint upload...", 0)
+
             if not client._access_token:
                 raise RuntimeError("Not authenticated")
+
+            with open(local, "rb") as f:
+                content = f.read()
+
             headers = {
                 "Authorization": f"Bearer {client._access_token}",
                 "Content-Type": "application/octet-stream",
             }
             url = GRAPH_BASE_URL + f"/sites/{site_id}/drive/root:/{remote}:/content"
+
             resp = requests.put(url, headers=headers, data=content, timeout=300)
             if not resp.ok:
                 raise RuntimeError(f"Upload failed: {resp.status_code} {resp.text}")
-            data = resp.json()
-            self._display_result(data)
+
+            self._display_result(resp.json())
+            self._notify_ok("SharePoint upload completed")
+
         except Exception as exc:
             self._display_error(exc)
+            self._notify_err("SharePoint upload failed")
+
+        finally:
+            if app:
+                QApplication.restoreOverrideCursor()
 
     # ---------- Admin ----------
     def on_admin_user_info(self) -> None:
@@ -1953,7 +2490,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_error(RuntimeError("User UPN required"))
             return
         try:
-            data = client.get(f"/users/{upn}")
+            data = self._run_busy("User info", client.get, f"/users/{upn}")
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1968,10 +2505,158 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             return
         body = {"accountEnabled": not block}
         try:
-            client.patch(f"/users/{upn}", json_data=body)
+            self._run_busy("Update user (block/unblock)", client.patch, f"/users/{upn}", json_data=body)
             self._display_result({"status": "blocked" if block else "unblocked"})
         except Exception as exc:
             self._display_error(exc)
+    
+    def on_list_subscribed_skus(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+        try:
+            data = self._run_busy("Tenant subscribed SKUs", client.get, "/subscribedSkus")
+            self._display_result(data)
+
+            self.cb_lic_sku.clear()
+            for sku in (data.get("value") or []):
+                sku_id = sku.get("skuId")
+                part = sku.get("skuPartNumber", "")
+                prepaid = sku.get("prepaidUnits") or {}
+                enabled = prepaid.get("enabled", 0)
+                consumed = sku.get("consumedUnits", 0)
+                available = enabled - consumed
+
+                if sku_id:
+                    label = f"{part} | available: {available} | consumed: {consumed} | {sku_id}"
+                    self.cb_lic_sku.addItem(label, sku_id)
+
+        except Exception as exc:
+            self._display_error(exc)
+
+    def _lic_target_upn(self) -> str:
+        return self.ed_lic_user_upn.text().strip() or self.ed_admin_user.text().strip()
+
+    def on_assign_selected_sku(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+
+        upn = self._lic_target_upn()
+        sku_id = self.cb_lic_sku.currentData()
+
+        if not upn or not sku_id:
+            self._display_error(RuntimeError("Need target user UPN and selected SKU"))
+            return
+
+        app = QApplication.instance()
+
+        try:
+            if app:
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+            self._set_status("⏳ Assigning license...", 0)
+
+            body = {"addLicenses": [{"skuId": sku_id}], "removeLicenses": []}
+            data = client.post(f"/users/{upn}/assignLicense", json_data=body)
+
+            self._display_result(data)
+            self._notify_ok("License assigned")
+
+        except Exception as exc:
+            self._display_error(exc)
+            self._notify_err("Assign license failed")
+
+        finally:
+            if app:
+                QApplication.restoreOverrideCursor()
+
+
+    def on_remove_selected_sku(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+
+        upn = self._lic_target_upn()
+        sku_id = self.cb_lic_sku.currentData()
+
+        if not upn or not sku_id:
+            self._display_error(RuntimeError("Need target user UPN and selected SKU"))
+            return
+
+        app = QApplication.instance()
+
+        try:
+            if app:
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+            self._set_status("⏳ Removing license...", 0)
+
+            body = {"addLicenses": [], "removeLicenses": [sku_id]}
+            data = client.post(f"/users/{upn}/assignLicense", json_data=body)
+
+            self._display_result(data)
+            self._notify_ok("License removed")
+
+        except Exception as exc:
+            self._display_error(exc)
+            self._notify_err("Remove license failed")
+
+        finally:
+            if app:
+                QApplication.restoreOverrideCursor()
+
+    def on_user_license_details(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+
+        upn = self.ed_lic_user_upn.text().strip() or self.ed_admin_user.text().strip()
+        if not upn:
+            self._display_error(RuntimeError("User UPN required (Admin or Licensing target)"))
+            return
+
+        try:
+            data = self._run_busy("User license details", client.get, f"/users/{upn}/licenseDetails")
+            self._display_result(data)
+        except Exception as exc:
+            self._display_error(exc)
+
+    def on_apply_user_licenses(self) -> None:
+        client = self._ensure_client()
+        if not client:
+            return
+
+        upn = self.ed_lic_user_upn.text().strip() or self.ed_admin_user.text().strip()
+        if not upn:
+            self._display_error(RuntimeError("User UPN required (Admin or Licensing target)"))
+            return
+
+        add_raw = self.ed_lic_add_skus.text().strip()
+        remove_raw = self.ed_lic_remove_skus.text().strip()
+
+        def _parse_skus(s: str) -> list[str]:
+            if not s:
+                return []
+            return [x.strip() for x in s.split(",") if x.strip()]
+
+        add_skus = _parse_skus(add_raw)
+        remove_skus = _parse_skus(remove_raw)
+
+        if not add_skus and not remove_skus:
+            self._display_error(RuntimeError("Nothing to do: add/remove skuIds are empty"))
+            return
+
+        body = {
+            "addLicenses": [{"skuId": sku} for sku in add_skus],
+            "removeLicenses": remove_skus,
+        }
+
+        try:
+            data = client.post(f"/users/{upn}/assignLicense", json_data=body)
+            self._display_result(data)
+        except Exception as exc:
+            self._display_error(exc)
+
+
 
     # ---------- Intune ----------
     def on_intune_list_devices(self) -> None:
@@ -1980,7 +2665,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             return
         top = self.sp_intune_top.value()
         try:
-            data = client.get("/deviceManagement/managedDevices", params={"$top": top})
+            data = self._run_busy("List Intune devices", client.get, "/deviceManagement/managedDevices", params={"$top": top})
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -1994,7 +2679,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_error(RuntimeError("Device ID required"))
             return
         try:
-            data = client.get(f"/deviceManagement/managedDevices/{did}")
+            data = self._run_busy("Intune device info", client.get, f"/deviceManagement/managedDevices/{did}")
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -2013,7 +2698,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             "useProtectedWipe": False,
         }
         try:
-            client.post(f"/deviceManagement/managedDevices/{did}/wipe", json_data=body)
+            self._run_busy("Intune wipe", client.post, f"/deviceManagement/managedDevices/{did}/wipe", json_data=body)
             self._display_result({"status": "wipe requested"})
         except Exception as exc:
             self._display_error(exc)
@@ -2027,7 +2712,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             self._display_error(RuntimeError("Device ID required"))
             return
         try:
-            client.post(f"/deviceManagement/managedDevices/{did}/retire", json_data={})
+            self._run_busy("Intune retire", client.post, f"/deviceManagement/managedDevices/{did}/retire", json_data={})
             self._display_result({"status": "retire requested"})
         except Exception as exc:
             self._display_error(exc)
@@ -2039,7 +2724,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             return
         top = self.sp_audit_signins.value()
         try:
-            data = client.get("/auditLogs/signIns", params={"$top": top})
+            data = self._run_busy("Audit sign-ins", client.get, "/auditLogs/signIns", params={"$top": top})
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -2050,7 +2735,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
             return
         top = self.sp_audit_dir.value()
         try:
-            data = client.get("/auditLogs/directoryAudits", params={"$top": top})
+            data = self._run_busy("Audit directory", client.get, "/auditLogs/directoryAudits", params={"$top": top})
             self._display_result(data)
         except Exception as exc:
             self._display_error(exc)
@@ -2074,7 +2759,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
                 self._display_error(RuntimeError(f"Invalid JSON body: {exc}"))
                 return
         try:
-            data = client.request(method, path, json_data=json_body)
+            data = self._run_busy("Raw request", client.request, method, path, json_data=json_body)
             self._display_result(data if data is not None else {"status": "No content"})
         except Exception as exc:
             self._display_error(exc)
