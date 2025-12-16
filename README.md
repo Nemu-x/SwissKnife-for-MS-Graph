@@ -22,7 +22,7 @@
 
 SwissKnife is a lightweight, cross-platform desktop client for Microsoft Graph API — designed for IT administrators who prefer clean UI buttons instead of bulky PowerShell scripts.
 
-It provides instant access to Teams, OneDrive, SharePoint, Groups, Admin, Intune, Audit logs, and raw Graph queries — all in one place.
+It provides instant access to Teams, Chats, OneDrive, SharePoint, Groups, Admin (Entra ID), Intune, Audit logs, and raw Graph queries — all in one place.
 
 ---
 
@@ -30,9 +30,15 @@ It provides instant access to Teams, OneDrive, SharePoint, Groups, Admin, Intune
 
 ### 🛠 Core
 - Client Credentials authentication (Azure App Registration)
-- Dark/Light themes  
+- Dark / Light themes
+- Fully resizable split-view layout
 - Multi-pane result display: **Table / Details / Tree / Raw JSON**
-- JSON syntax highlighting  
+- JSON syntax highlighting
+- Request history & reusable queries (Raw tab)
+- CSV export & copy actions for results
+- Table filtering & word wrap toggle
+- Status notifications & busy indicators
+- Safe mode (mask sensitive values in output)
 - Works on **Windows, macOS, Linux**
 
 ---
@@ -58,10 +64,11 @@ It provides instant access to Teams, OneDrive, SharePoint, Groups, Admin, Intune
 ---
 
 ## 📁 OneDrive
-- List root folder  
-- Upload / download files  
-- App-only permissions supported  
-- Cross-user file operations  
+- List root folder
+- Upload / download files
+- App-only permissions supported
+- Cross-user file copy between users
+- Large file operations with visual feedback
 
 ---
 
@@ -73,11 +80,13 @@ It provides instant access to Teams, OneDrive, SharePoint, Groups, Admin, Intune
 ---
 
 ## 👤 Admin (Entra ID)
-- User info  
+- User info
 - Block / unblock users
-
-(Coming soon)
-- Licensing
+- Licensing management:
+  - List tenant licenses (SKUs)
+  - View user licenses
+  - Assign / remove licenses via dropdown
+- Quick admin actions (user snapshots)
 
 ---
 
@@ -95,12 +104,14 @@ It provides instant access to Teams, OneDrive, SharePoint, Groups, Admin, Intune
 ---
 
 ## 🧪 Raw Graph Editor
-A built-in Graph API playground with:
+A built-in Microsoft Graph API playground with:
 
-- GET / POST / PATCH / PUT / DELETE  
-- JSON body  
-- Example queries  
-- Full response inspector  
+- GET / POST / PATCH / PUT / DELETE
+- JSON request body editor
+- Syntax-highlighted responses
+- Request history (re-run previous queries)
+- Example Graph queries
+- Full response inspector (Table / Details / Tree / Raw JSON)
 
 ---
 
