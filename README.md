@@ -259,7 +259,7 @@ Help is appreciated in:
 If this tool helps you automate your job, consider supporting the development:
 
 ```
-USDT (TRC20): 0xD9333e859Fb74D885d22E27568589de61E4433b5
+USDT (MATIC): 0xD9333e859Fb74D885d22E27568589de61E4433b5
 BTC:          bc1qkkcgpqym967k2x73al6f7fpvkx52q4rzkut3we
 ETH:          0xD9333e859Fb74D885d22E27568589de61E4433b5
 ```
