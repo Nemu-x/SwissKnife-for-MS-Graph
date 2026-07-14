@@ -3,6 +3,8 @@
 // so we cast it to proper types here.
 import * as Connect from '../../wailsjs/go/services/ConnectService'
 import * as Dashboard from '../../wailsjs/go/services/DashboardService'
+import * as Playbook from '../../wailsjs/go/services/PlaybookService'
+import * as Access from '../../wailsjs/go/services/AccessService'
 import * as Users from '../../wailsjs/go/services/UsersService'
 import * as AuthMethods from '../../wailsjs/go/services/AuthMethodsService'
 import * as Roles from '../../wailsjs/go/services/RolesService'
@@ -16,6 +18,11 @@ import * as Drive from '../../wailsjs/go/services/DriveService'
 import * as Intune from '../../wailsjs/go/services/IntuneService'
 import * as Audit from '../../wailsjs/go/services/AuditService'
 import * as Raw from '../../wailsjs/go/services/RawService'
+import * as Devices from '../../wailsjs/go/services/DevicesService'
+import * as Apps from '../../wailsjs/go/services/AppsService'
+import * as Reports from '../../wailsjs/go/services/ReportsService'
+import * as Cleanup from '../../wailsjs/go/services/CleanupService'
+import * as ServiceHealth from '../../wailsjs/go/services/ServiceHealthService'
 import * as Update from '../../wailsjs/go/services/UpdateService'
 import type { secrets, services } from '../../wailsjs/go/models'
 
@@ -88,6 +95,7 @@ export const api = {
   },
   teams: {
     joined: (u: string) => list(Teams.JoinedTeams(u)),
+    all: () => list(Teams.ListAllTeams(0)),
     channels: (t: string) => list(Teams.Channels(t)),
     teamMembers: (t: string) => list(Teams.TeamMembers(t)),
     channelMembers: (t: string, c: string) => list(Teams.ChannelMembers(t, c)),
@@ -132,6 +140,15 @@ export const api = {
     copyBetweenUsers: (src: string, dst: string, destFolder: string, overwrite: boolean) =>
       Drive.CopyBetweenUsers(src, dst, destFolder, overwrite) as Promise<services.CopyResult>,
     offboardingPreview: (src: string) => Drive.OffboardingPreview(src) as Promise<services.CopyPreview>,
+    quota: (user: string) => Drive.Quota(user) as Promise<services.DriveQuota>,
+    pickTarget: (targets: string[], needed: number) => Drive.PickTarget(targets, needed) as Promise<string>,
+  },
+  playbooks: {
+    onboard: (req: any) => Playbook.Onboard(req) as Promise<services.PlaybookResult>,
+    offboard: (req: any) => Playbook.Offboard(req) as Promise<services.PlaybookResult>,
+  },
+  access: {
+    probe: () => Access.Probe() as Promise<Record<string, boolean>>,
   },
   intune: {
     devices: (max: number) => list(Intune.Devices(max)),
@@ -149,6 +166,33 @@ export const api = {
   raw: {
     send: (method: string, path: string, body: string) => one(Raw.Send(method, path, body)),
   },
+  devices: {
+    list: (search: string, max: number) => list(Devices.List(search, max)),
+    get: (id: string) => one(Devices.Get(id)),
+    enable: (id: string) => Devices.Enable(id),
+    disable: (id: string) => Devices.Disable(id),
+    delete: (id: string, confirm: string) => Devices.Delete(id, confirm),
+    bitlockerKeys: (max: number) => list(Devices.BitLockerKeys(max)),
+    bitlockerKey: (id: string) => one(Devices.BitLockerKey(id)),
+  },
+  apps: {
+    list: (search: string, max: number) => list(Apps.List(search, max)),
+    expiring: (days: number) => Apps.Expiring(days) as Promise<services.ExpiringCredential[]>,
+  },
+  reports: {
+    names: () => Reports.Names() as Promise<string[]>,
+    csv: (report: string, period: string) => Reports.CSV(report, period) as Promise<string>,
+  },
+  cleanup: {
+    findDuplicates: (ownerType: string, ownerId: string) => Cleanup.FindDuplicates(ownerType, ownerId) as Promise<services.DupGroup[]>,
+    deleteItems: (ownerType: string, ownerId: string, ids: string[], confirm: string) =>
+      Cleanup.DeleteItems(ownerType, ownerId, ids, confirm) as Promise<any>,
+  },
+  health: {
+    overview: () => list(ServiceHealth.Overview()),
+    issues: () => list(ServiceHealth.Issues()),
+    messages: () => list(ServiceHealth.Messages()),
+  },
   update: {
     check: () => Update.Check() as Promise<services.UpdateInfo>,
     openReleases: (url: string) => Update.OpenReleasesPage(url),
@@ -156,8 +200,14 @@ export const api = {
 }
 
 export function errMessage(e: unknown): string {
-  if (e == null) return ''
-  if (typeof e === 'string') return e
-  if (e instanceof Error) return e.message
-  return String(e)
+  let msg = ''
+  if (e == null) msg = ''
+  else if (typeof e === 'string') msg = e
+  else if (e instanceof Error) msg = e.message
+  else msg = String(e)
+  // Enrich the common "missing permission" case so it isn't a cryptic 403.
+  if (/\b403\b/.test(msg)) {
+    msg += ' — the app registration is likely missing a Graph permission for this call. Add the required Application permission and grant admin consent.'
+  }
+  return msg
 }

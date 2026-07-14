@@ -24,6 +24,11 @@ interface Store {
   safeMode: boolean
   setSafeMode: (v: boolean) => void
 
+  access: Record<string, boolean>
+  hideUnavailable: boolean
+  setHideUnavailable: (v: boolean) => void
+  checkAccess: () => Promise<void>
+
   toasts: Toast[]
   toast: (kind: Toast['kind'], text: string) => void
   dismiss: (id: number) => void
@@ -37,6 +42,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [safeMode, setSafeModeState] = useState<boolean>(localStorage.getItem('safeMode') !== 'false')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [domains, setDomains] = useState<string[]>([])
+  const [access, setAccess] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem('access') || '{}') } catch { return {} }
+  })
+  const [hideUnavailable, setHideUnavailableState] = useState<boolean>(localStorage.getItem('hideUnavailable') === 'true')
   // '' = Auto (use the theme palette accent); a hex overrides it.
   const [accent, setAccentState] = useState<string>(localStorage.getItem('accent') ?? '')
 
@@ -98,6 +107,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSafeMode: (v) => {
       setSafeModeState(v)
       localStorage.setItem('safeMode', String(v))
+    },
+    access,
+    hideUnavailable,
+    setHideUnavailable: (v) => {
+      setHideUnavailableState(v)
+      localStorage.setItem('hideUnavailable', String(v))
+    },
+    checkAccess: async () => {
+      try {
+        const a = await api.access.probe()
+        setAccess(a)
+        localStorage.setItem('access', JSON.stringify(a))
+      } catch {
+        /* ignore */
+      }
     },
     toasts,
     toast,

@@ -1,18 +1,35 @@
 @import 'tailwindcss';
 
+/* Bundled fonts (no CDN in the webview). Single weights; heavier weights are
+   synthesized by the browser, which is fine for UI chrome. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/Inter-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/jetbrains-mono.woff2') format('woff2');
+}
+
 /* Dark theme by default; light theme on :root[data-theme="light"] */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 /* SwissKnife design system v1.0 — exact palette (light + dark). */
 :root {
-  --bg: #0f1118;
-  --bg-elev: #161a22;
-  --bg-elev-2: #1c2230;
-  --border: #252c3a;
-  --border-strong: #31384a;
-  --text: #f4f6fa;
-  --text-dim: #bcc4d1;
-  --text-faint: #8790a0;
+  --bg: #100e17;
+  --bg-elev: #17141f;
+  --bg-elev-2: #1e1a29;
+  --border: #241f30;
+  --border-strong: #322b42;
+  --text: #f4f2fa;
+  --text-dim: #b9b4c8;
+  --text-faint: #857e96;
   --accent: #b59ae0;
   --accent-hover: #a385d6;
   --accent2: #c8b6f2;
