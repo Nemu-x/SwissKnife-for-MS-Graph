@@ -9,6 +9,8 @@ export function DeleteProfile(arg1:string):Promise<void>;
 
 export function Disconnect():Promise<void>;
 
+export function Domains():Promise<Array<string>>;
+
 export function GetStatus():Promise<services.Status>;
 
 export function Profiles():Promise<Array<secrets.Profile>>;

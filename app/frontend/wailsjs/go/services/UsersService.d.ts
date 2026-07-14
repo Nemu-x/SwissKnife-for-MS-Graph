@@ -4,18 +4,34 @@ import {json} from '../models';
 
 export function Block(arg1:string):Promise<void>;
 
+export function CreateUser(arg1:string,arg2:string,arg3:string,arg4:string,arg5:boolean,arg6:string):Promise<json.RawMessage>;
+
+export function Delete(arg1:string,arg2:string):Promise<void>;
+
 export function Get(arg1:string):Promise<json.RawMessage>;
+
+export function GetManager(arg1:string):Promise<json.RawMessage>;
 
 export function LicenseDetails(arg1:string):Promise<Array<json.RawMessage>>;
 
 export function List(arg1:string,arg2:number):Promise<Array<json.RawMessage>>;
 
+export function ListDeleted(arg1:number):Promise<Array<json.RawMessage>>;
+
 export function MemberOf(arg1:string):Promise<Array<json.RawMessage>>;
 
 export function ResetPassword(arg1:string,arg2:string,arg3:boolean,arg4:string):Promise<void>;
 
+export function RestoreDeleted(arg1:string):Promise<json.RawMessage>;
+
 export function RevokeSessions(arg1:string,arg2:string):Promise<void>;
+
+export function SetManager(arg1:string,arg2:string):Promise<void>;
+
+export function SetUsageLocation(arg1:string,arg2:string):Promise<void>;
 
 export function Snapshot(arg1:string):Promise<Record<string, any>>;
 
 export function Unblock(arg1:string):Promise<void>;
+
+export function Update(arg1:string,arg2:string):Promise<void>;

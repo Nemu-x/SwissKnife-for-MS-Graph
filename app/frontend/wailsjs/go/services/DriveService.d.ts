@@ -5,7 +5,7 @@ import {services} from '../models';
 
 export function Children(arg1:string,arg2:string,arg3:string):Promise<Array<json.RawMessage>>;
 
-export function CopyBetweenUsers(arg1:string,arg2:string,arg3:boolean):Promise<services.CopyResult>;
+export function CopyBetweenUsers(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<services.CopyResult>;
 
 export function CreateLink(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<json.RawMessage>;
 
@@ -14,6 +14,8 @@ export function Delete(arg1:string,arg2:string,arg3:string,arg4:string):Promise<
 export function Download(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
 
 export function ListRoot(arg1:string,arg2:string):Promise<Array<json.RawMessage>>;
+
+export function OffboardingPreview(arg1:string):Promise<services.CopyPreview>;
 
 export function Search(arg1:string,arg2:string,arg3:string):Promise<Array<json.RawMessage>>;
 

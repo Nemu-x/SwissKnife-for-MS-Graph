@@ -192,9 +192,57 @@ type CopyResult struct {
 	Failed  map[string]string `json:"failed"`  // name -> error
 }
 
-// CopyBetweenUsers recursively copies OneDrive source to target via
-// the OS temp directory (no hardcoded /tmp — fixes the legacy bug).
-func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser string, overwrite bool) (*CopyResult, error) {
+// CopyPreview summarizes what an offboarding copy would transfer.
+type CopyPreview struct {
+	Files      int   `json:"files"`
+	Folders    int   `json:"folders"`
+	TotalBytes int64 `json:"totalBytes"`
+}
+
+// OffboardingPreview walks the source user's OneDrive (read-only) and reports
+// the file/folder count and total size, so the operator can review before copying.
+func (d *DriveService) OffboardingPreview(sourceUser string) (*CopyPreview, error) {
+	prev := &CopyPreview{}
+	var walk func(itemID string) error
+	count := func(items []json.RawMessage) {
+		for _, raw := range items {
+			var it struct {
+				ID     string          `json:"id"`
+				Size   int64           `json:"size"`
+				Folder json.RawMessage `json:"folder"`
+			}
+			if json.Unmarshal(raw, &it) != nil {
+				continue
+			}
+			if it.Folder != nil {
+				prev.Folders++
+				_ = walk(it.ID)
+				continue
+			}
+			prev.Files++
+			prev.TotalBytes += it.Size
+		}
+	}
+	walk = func(itemID string) error {
+		items, err := d.Children("user", sourceUser, itemID)
+		if err != nil {
+			return err
+		}
+		count(items)
+		return nil
+	}
+	rootItems, err := d.ListRoot("user", sourceUser)
+	if err != nil {
+		return nil, err
+	}
+	count(rootItems)
+	return prev, nil
+}
+
+// CopyBetweenUsers recursively copies OneDrive source to target via the OS temp
+// directory (no hardcoded /tmp — fixes the legacy bug). destFolder is an optional
+// subfolder in the target drive (e.g. "Backups/alice"); "" copies into the root.
+func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder string, overwrite bool) (*CopyResult, error) {
 	if err := d.s.GuardWrite(); err != nil {
 		return nil, err
 	}
@@ -208,11 +256,12 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser string, overwrite
 	}
 	defer os.RemoveAll(tmp)
 
+	dest := strings.Trim(destFolder, "/")
 	res := &CopyResult{Skipped: map[string]string{}, Failed: map[string]string{}}
 
 	// names in the target root, for the overwrite check (top level only)
 	tgtNames := map[string]bool{}
-	if !overwrite {
+	if !overwrite && dest == "" {
 		items, err := d.ListRoot("user", targetUser)
 		if err != nil {
 			return nil, err
@@ -258,7 +307,11 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser string, overwrite
 				res.Failed[relPath] = err.Error()
 				continue
 			}
-			dst := "/users/" + url.PathEscape(targetUser) + "/drive/root:/" + escapeDrivePath(relPath)
+			remotePath := relPath
+			if dest != "" {
+				remotePath = dest + "/" + relPath
+			}
+			dst := "/users/" + url.PathEscape(targetUser) + "/drive/root:/" + escapeDrivePath(remotePath)
 			if _, err := c.UploadFile(d.s.Ctx(), dst, local, func(done, total int64) {
 				d.emitProgress(relPath, done, total)
 			}); err != nil {
@@ -286,7 +339,7 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser string, overwrite
 	copyItems(rootItems, "")
 
 	d.s.Record("drive.copyBetweenUsers", sourceUser+" -> "+targetUser,
-		"copied="+itoa(len(res.Copied))+" skipped="+itoa(len(res.Skipped))+" failed="+itoa(len(res.Failed)), nil)
+		"dest="+dest+" copied="+itoa(len(res.Copied))+" skipped="+itoa(len(res.Skipped))+" failed="+itoa(len(res.Failed)), nil)
 	return res, nil
 }
 

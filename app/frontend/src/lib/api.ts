@@ -2,7 +2,10 @@
 // json.RawMessage arrives from Go as real JSON (mistyped as number[] in .d.ts),
 // so we cast it to proper types here.
 import * as Connect from '../../wailsjs/go/services/ConnectService'
+import * as Dashboard from '../../wailsjs/go/services/DashboardService'
 import * as Users from '../../wailsjs/go/services/UsersService'
+import * as AuthMethods from '../../wailsjs/go/services/AuthMethodsService'
+import * as Roles from '../../wailsjs/go/services/RolesService'
 import * as Licensing from '../../wailsjs/go/services/LicensingService'
 import * as Groups from '../../wailsjs/go/services/GroupsService'
 import * as Teams from '../../wailsjs/go/services/TeamsService'
@@ -13,6 +16,7 @@ import * as Drive from '../../wailsjs/go/services/DriveService'
 import * as Intune from '../../wailsjs/go/services/IntuneService'
 import * as Audit from '../../wailsjs/go/services/AuditService'
 import * as Raw from '../../wailsjs/go/services/RawService'
+import * as Update from '../../wailsjs/go/services/UpdateService'
 import type { secrets, services } from '../../wailsjs/go/models'
 
 export type GraphObject = Record<string, any>
@@ -33,6 +37,10 @@ export const api = {
     disconnect: () => Connect.Disconnect(),
     status: () => Connect.GetStatus() as Promise<Status>,
     setReadOnly: (v: boolean) => Connect.SetReadOnly(v) as Promise<Status>,
+    domains: () => Connect.Domains() as Promise<string[]>,
+  },
+  dashboard: {
+    summary: () => Dashboard.Summary() as Promise<services.DashboardSummary>,
   },
   users: {
     list: (search: string, max: number) => list(Users.List(search, max)),
@@ -45,6 +53,25 @@ export const api = {
     resetPassword: (u: string, pw: string, force: boolean, confirm: string) =>
       Users.ResetPassword(u, pw, force, confirm),
     revokeSessions: (u: string, confirm: string) => Users.RevokeSessions(u, confirm),
+    create: (name: string, upn: string, nick: string, pw: string, force: boolean, loc: string) =>
+      one(Users.CreateUser(name, upn, nick, pw, force, loc)),
+    update: (u: string, patchJSON: string) => Users.Update(u, patchJSON),
+    setUsageLocation: (u: string, loc: string) => Users.SetUsageLocation(u, loc),
+    delete: (u: string, confirm: string) => Users.Delete(u, confirm),
+    getManager: (u: string) => one(Users.GetManager(u)),
+    setManager: (u: string, mgr: string) => Users.SetManager(u, mgr),
+    listDeleted: (max: number) => list(Users.ListDeleted(max)),
+    restoreDeleted: (id: string) => one(Users.RestoreDeleted(id)),
+  },
+  authMethods: {
+    list: (u: string) => list(AuthMethods.List(u)),
+    resetMFA: (u: string, confirm: string) => AuthMethods.ResetMFA(u, confirm) as Promise<any>,
+  },
+  roles: {
+    list: () => list(Roles.List()),
+    members: (id: string) => list(Roles.Members(id)),
+    addMember: (id: string, upn: string) => Roles.AddMember(id, upn),
+    removeMember: (id: string, upn: string, confirm: string) => Roles.RemoveMember(id, upn, confirm),
   },
   licensing: {
     skus: () => list(Licensing.Skus()),
@@ -102,8 +129,9 @@ export const api = {
     delete: (t: string, id: string, item: string, confirm: string) => Drive.Delete(t, id, item, confirm),
     createLink: (t: string, id: string, item: string, type: string, scope: string) =>
       one(Drive.CreateLink(t, id, item, type, scope)),
-    copyBetweenUsers: (src: string, dst: string, overwrite: boolean) =>
-      Drive.CopyBetweenUsers(src, dst, overwrite) as Promise<services.CopyResult>,
+    copyBetweenUsers: (src: string, dst: string, destFolder: string, overwrite: boolean) =>
+      Drive.CopyBetweenUsers(src, dst, destFolder, overwrite) as Promise<services.CopyResult>,
+    offboardingPreview: (src: string) => Drive.OffboardingPreview(src) as Promise<services.CopyPreview>,
   },
   intune: {
     devices: (max: number) => list(Intune.Devices(max)),
@@ -120,6 +148,10 @@ export const api = {
   },
   raw: {
     send: (method: string, path: string, body: string) => one(Raw.Send(method, path, body)),
+  },
+  update: {
+    check: () => Update.Check() as Promise<services.UpdateInfo>,
+    openReleases: (url: string) => Update.OpenReleasesPage(url),
   },
 }
 

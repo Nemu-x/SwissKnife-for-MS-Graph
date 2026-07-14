@@ -152,6 +152,37 @@ func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
 	}, nil
 }
 
+// Domains returns the tenant's verified domain names (for UPN autocomplete).
+// Returns an empty list on error so the UI degrades gracefully.
+func (c *ConnectService) Domains() []string {
+	client, err := c.s.Client()
+	if err != nil {
+		return []string{}
+	}
+	var resp struct {
+		Value []struct {
+			ID        string `json:"id"`
+			IsDefault bool   `json:"isDefault"`
+		} `json:"value"`
+	}
+	if err := client.Get(c.s.Ctx(), "/domains", nil, &resp); err != nil {
+		return []string{}
+	}
+	// default domain first
+	domains := make([]string, 0, len(resp.Value))
+	for _, d := range resp.Value {
+		if d.IsDefault {
+			domains = append(domains, d.ID)
+		}
+	}
+	for _, d := range resp.Value {
+		if !d.IsDefault {
+			domains = append(domains, d.ID)
+		}
+	}
+	return domains
+}
+
 func (c *ConnectService) Disconnect() {
 	c.s.Record("session.disconnect", c.s.ProfileName(), "", nil)
 	c.s.Disconnect()

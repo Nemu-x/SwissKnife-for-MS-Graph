@@ -6,8 +6,20 @@ export function Block(arg1) {
   return window['go']['services']['UsersService']['Block'](arg1);
 }
 
+export function CreateUser(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['services']['UsersService']['CreateUser'](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
+export function Delete(arg1, arg2) {
+  return window['go']['services']['UsersService']['Delete'](arg1, arg2);
+}
+
 export function Get(arg1) {
   return window['go']['services']['UsersService']['Get'](arg1);
+}
+
+export function GetManager(arg1) {
+  return window['go']['services']['UsersService']['GetManager'](arg1);
 }
 
 export function LicenseDetails(arg1) {
@@ -18,6 +30,10 @@ export function List(arg1, arg2) {
   return window['go']['services']['UsersService']['List'](arg1, arg2);
 }
 
+export function ListDeleted(arg1) {
+  return window['go']['services']['UsersService']['ListDeleted'](arg1);
+}
+
 export function MemberOf(arg1) {
   return window['go']['services']['UsersService']['MemberOf'](arg1);
 }
@@ -26,8 +42,20 @@ export function ResetPassword(arg1, arg2, arg3, arg4) {
   return window['go']['services']['UsersService']['ResetPassword'](arg1, arg2, arg3, arg4);
 }
 
+export function RestoreDeleted(arg1) {
+  return window['go']['services']['UsersService']['RestoreDeleted'](arg1);
+}
+
 export function RevokeSessions(arg1, arg2) {
   return window['go']['services']['UsersService']['RevokeSessions'](arg1, arg2);
+}
+
+export function SetManager(arg1, arg2) {
+  return window['go']['services']['UsersService']['SetManager'](arg1, arg2);
+}
+
+export function SetUsageLocation(arg1, arg2) {
+  return window['go']['services']['UsersService']['SetUsageLocation'](arg1, arg2);
 }
 
 export function Snapshot(arg1) {
@@ -36,4 +64,8 @@ export function Snapshot(arg1) {
 
 export function Unblock(arg1) {
   return window['go']['services']['UsersService']['Unblock'](arg1);
+}
+
+export function Update(arg1, arg2) {
+  return window['go']['services']['UsersService']['Update'](arg1, arg2);
 }

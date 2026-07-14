@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderTree, Search, Upload, Download, Trash2, Link2, Copy, Building2 } from 'lucide-react'
+import { FolderTree, Search, Upload, Download, Trash2, Link2, Building2 } from 'lucide-react'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { Page } from '../components/Layout'
 import { TwoPane } from '../components/TwoPane'
@@ -24,7 +24,6 @@ export function FilesPage() {
   const [itemName, setItemName] = useState('')
   const [folder, setFolder] = useState('')
   const [query, setQuery] = useState('')
-  const [copy, setCopy] = useState({ src: '', dst: '', overwrite: false })
   const [progress, setProgress] = useState<{ name: string; pct: number } | null>(null)
 
   useEffect(() => {
@@ -95,20 +94,6 @@ export function FilesPage() {
                 <Button variant="danger" disabled={readOnly || !ownerId || !itemId}
                   onClick={() => askConfirm(itemId, (c) => doWrite(() => api.drive.delete(ownerType, ownerId, itemId, c), t('common.delete')))}>
                   <Trash2 size={15} /> {t('common.delete')}
-                </Button>
-              </div>
-            </Card>
-
-            <Card title="Copy OneDrive → OneDrive">
-              <div className="flex flex-col gap-2">
-                <Input placeholder="Source user" value={copy.src} onChange={(e) => setCopy({ ...copy, src: e.target.value })} />
-                <Input placeholder="Target user" value={copy.dst} onChange={(e) => setCopy({ ...copy, dst: e.target.value })} />
-                <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
-                  <input type="checkbox" checked={copy.overwrite} onChange={(e) => setCopy({ ...copy, overwrite: e.target.checked })} /> overwrite
-                </label>
-                <Button variant="primary" disabled={readOnly || !copy.src || !copy.dst}
-                  onClick={() => doWrite(async () => res.setData(await api.drive.copyBetweenUsers(copy.src, copy.dst, copy.overwrite) as any), t('common.run'))}>
-                  <Copy size={15} /> Copy (recursive)
                 </Button>
               </div>
             </Card>

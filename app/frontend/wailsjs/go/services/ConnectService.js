@@ -14,6 +14,10 @@ export function Disconnect() {
   return window['go']['services']['ConnectService']['Disconnect']();
 }
 
+export function Domains() {
+  return window['go']['services']['ConnectService']['Domains']();
+}
+
 export function GetStatus() {
   return window['go']['services']['ConnectService']['GetStatus']();
 }

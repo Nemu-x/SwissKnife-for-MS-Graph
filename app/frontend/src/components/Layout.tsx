@@ -1,21 +1,24 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Plug, Users, KeyRound, Boxes, MessagesSquare, MessageCircle, Mail,
-  FolderOpen, Smartphone, ScrollText, TerminalSquare, Activity, Settings, Lock,
+  Plug, LayoutDashboard, Users, KeyRound, ShieldCheck, Boxes, MessagesSquare, MessageCircle, Mail,
+  FolderOpen, UserMinus, Smartphone, ScrollText, TerminalSquare, Activity, Settings, Lock,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import type { PageId } from '../pages/registry'
 
 const items: { id: PageId; icon: ReactNode; key: string }[] = [
   { id: 'connect', icon: <Plug size={17} />, key: 'nav.connect' },
+  { id: 'dashboard', icon: <LayoutDashboard size={17} />, key: 'nav.dashboard' },
   { id: 'users', icon: <Users size={17} />, key: 'nav.users' },
   { id: 'licensing', icon: <KeyRound size={17} />, key: 'nav.licensing' },
+  { id: 'roles', icon: <ShieldCheck size={17} />, key: 'nav.roles' },
   { id: 'groups', icon: <Boxes size={17} />, key: 'nav.groups' },
   { id: 'teams', icon: <MessagesSquare size={17} />, key: 'nav.teams' },
   { id: 'chats', icon: <MessageCircle size={17} />, key: 'nav.chats' },
   { id: 'mail', icon: <Mail size={17} />, key: 'nav.mail' },
   { id: 'files', icon: <FolderOpen size={17} />, key: 'nav.files' },
+  { id: 'offboarding', icon: <UserMinus size={17} />, key: 'nav.offboarding' },
   { id: 'intune', icon: <Smartphone size={17} />, key: 'nav.intune' },
   { id: 'audit', icon: <ScrollText size={17} />, key: 'nav.audit' },
   { id: 'raw', icon: <TerminalSquare size={17} />, key: 'nav.raw' },

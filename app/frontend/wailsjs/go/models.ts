@@ -97,6 +97,22 @@ export namespace services {
 	        this.rememberAs = source["rememberAs"];
 	    }
 	}
+	export class CopyPreview {
+	    files: number;
+	    folders: number;
+	    totalBytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CopyPreview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.files = source["files"];
+	        this.folders = source["folders"];
+	        this.totalBytes = source["totalBytes"];
+	    }
+	}
 	export class CopyResult {
 	    copied: string[];
 	    skipped: Record<string, string>;
@@ -113,6 +129,65 @@ export namespace services {
 	        this.failed = source["failed"];
 	    }
 	}
+	export class LicenseLine {
+	    skuPartNumber: string;
+	    consumed: number;
+	    total: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new LicenseLine(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.skuPartNumber = source["skuPartNumber"];
+	        this.consumed = source["consumed"];
+	        this.total = source["total"];
+	    }
+	}
+	export class DashboardSummary {
+	    orgName: string;
+	    users: number;
+	    groups: number;
+	    domains: number;
+	    licensesUsed: number;
+	    licensesTotal: number;
+	    licenses: LicenseLine[];
+	
+	    static createFrom(source: any = {}) {
+	        return new DashboardSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.orgName = source["orgName"];
+	        this.users = source["users"];
+	        this.groups = source["groups"];
+	        this.domains = source["domains"];
+	        this.licensesUsed = source["licensesUsed"];
+	        this.licensesTotal = source["licensesTotal"];
+	        this.licenses = this.convertValues(source["licenses"], LicenseLine);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class Status {
 	    connected: boolean;
 	    profileName: string;
@@ -129,6 +204,26 @@ export namespace services {
 	        this.profileName = source["profileName"];
 	        this.readOnly = source["readOnly"];
 	        this.org = source["org"];
+	    }
+	}
+	export class UpdateInfo {
+	    currentVersion: string;
+	    latestVersion: string;
+	    updateAvailable: boolean;
+	    notes: string;
+	    url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.currentVersion = source["currentVersion"];
+	        this.latestVersion = source["latestVersion"];
+	        this.updateAvailable = source["updateAvailable"];
+	        this.notes = source["notes"];
+	        this.url = source["url"];
 	    }
 	}
 

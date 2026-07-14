@@ -6,8 +6,8 @@ export function Children(arg1, arg2, arg3) {
   return window['go']['services']['DriveService']['Children'](arg1, arg2, arg3);
 }
 
-export function CopyBetweenUsers(arg1, arg2, arg3) {
-  return window['go']['services']['DriveService']['CopyBetweenUsers'](arg1, arg2, arg3);
+export function CopyBetweenUsers(arg1, arg2, arg3, arg4) {
+  return window['go']['services']['DriveService']['CopyBetweenUsers'](arg1, arg2, arg3, arg4);
 }
 
 export function CreateLink(arg1, arg2, arg3, arg4, arg5) {
@@ -24,6 +24,10 @@ export function Download(arg1, arg2, arg3, arg4) {
 
 export function ListRoot(arg1, arg2) {
   return window['go']['services']['DriveService']['ListRoot'](arg1, arg2);
+}
+
+export function OffboardingPreview(arg1) {
+  return window['go']['services']['DriveService']['OffboardingPreview'](arg1);
 }
 
 export function Search(arg1, arg2, arg3) {

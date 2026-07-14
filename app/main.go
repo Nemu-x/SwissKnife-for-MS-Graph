@@ -25,7 +25,8 @@ func main() {
 	audit := auditlog.New(store.Dir())
 	sess := session.New(audit)
 
-	app := NewApp(sess)
+	updateSvc := services.NewUpdateService(version)
+	app := NewApp(sess, updateSvc)
 
 	err = wails.Run(&options.App{
 		Title:  "SwissKnife for MS Graph",
@@ -39,7 +40,10 @@ func main() {
 		Bind: []interface{}{
 			app,
 			services.NewConnectService(sess, store),
+			services.NewDashboardService(sess),
 			services.NewUsersService(sess),
+			services.NewAuthMethodsService(sess),
+			services.NewRolesService(sess),
 			services.NewLicensingService(sess),
 			services.NewGroupsService(sess),
 			services.NewTeamsService(sess),
@@ -50,6 +54,7 @@ func main() {
 			services.NewIntuneService(sess),
 			services.NewAuditService(sess),
 			services.NewRawService(sess),
+			updateSvc,
 		},
 	})
 

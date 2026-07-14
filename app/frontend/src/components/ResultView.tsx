@@ -1,11 +1,32 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Download } from 'lucide-react'
 import { Button, Spinner, ErrorNote } from './ui'
 import { useStore } from '../lib/store'
-import { cellText, maskSensitive, pickColumns, toCSV, downloadText, type GraphRow } from '../lib/format'
+import { cellText, maskSensitive, toCSV, downloadText, type GraphRow } from '../lib/format'
 
 type Tab = 'table' | 'json' | 'tree'
+
+// A value is "scalar" if it renders as a single readable cell.
+function isScalar(v: any): boolean {
+  return v == null || typeof v !== 'object'
+}
+
+// Primary label for a row in the master list.
+function primaryLabel(row: GraphRow): string {
+  for (const k of ['displayName', 'name', 'subject', 'topic', 'userPrincipalName', 'deviceName', 'id']) {
+    if (row[k]) return cellText(row[k])
+  }
+  const first = Object.entries(row).find(([k, v]) => !k.startsWith('@') && isScalar(v))
+  return first ? cellText(first[1]) : '(item)'
+}
+
+function secondaryLabel(row: GraphRow, primaryKey: string): string {
+  for (const k of ['userPrincipalName', 'mail', 'skuPartNumber', 'id']) {
+    if (k !== primaryKey && row[k]) return cellText(row[k])
+  }
+  return ''
+}
 
 export function ResultView({
   data,
@@ -20,6 +41,7 @@ export function ResultView({
   const { safeMode, toast } = useStore()
   const [tab, setTab] = useState<Tab>('table')
   const [filter, setFilter] = useState('')
+  const [selected, setSelected] = useState(0)
 
   const shown = useMemo(() => (safeMode ? maskSensitive(data) : data), [data, safeMode])
   const rows: GraphRow[] = useMemo(() => {
@@ -28,19 +50,33 @@ export function ResultView({
     return []
   }, [shown])
 
-  const cols = useMemo(() => pickColumns(rows), [rows])
+  // Only scalar columns go into the CSV/compact list.
+  const scalarCols = useMemo(() => {
+    const seen: string[] = []
+    for (const r of rows) {
+      for (const [k, v] of Object.entries(r)) {
+        if (!k.startsWith('@') && isScalar(v) && !seen.includes(k)) seen.push(k)
+      }
+    }
+    return seen
+  }, [rows])
+
   const filtered = useMemo(() => {
     if (!filter) return rows
     const f = filter.toLowerCase()
-    return rows.filter((r) => cols.some((c) => cellText(r[c]).toLowerCase().includes(f)))
-  }, [rows, cols, filter])
+    return rows.filter((r) => Object.values(r).some((v) => cellText(v).toLowerCase().includes(f)))
+  }, [rows, filter])
+
+  useEffect(() => setSelected(0), [data])
+
+  const current = filtered[Math.min(selected, filtered.length - 1)]
 
   const copyJson = () => {
     navigator.clipboard.writeText(JSON.stringify(shown, null, 2))
     toast('ok', 'JSON copied')
   }
   const exportCsv = () => {
-    downloadText('export.csv', toCSV(cols, filtered))
+    downloadText('export.csv', toCSV(scalarCols, filtered))
     toast('ok', 'CSV exported')
   }
 
@@ -67,7 +103,7 @@ export function ResultView({
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder={t('common.search')}
-                className="w-40 rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs outline-none focus:border-[var(--accent)]"
+                className="w-36 rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs outline-none focus:border-[var(--accent)]"
               />
               <Button variant="ghost" onClick={exportCsv} className="!px-2 !py-1">
                 <Download size={14} /> {t('common.exportCsv')}
@@ -80,7 +116,7 @@ export function ResultView({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-hidden">
         {loading && (
           <div className="flex h-full items-center justify-center gap-2 text-[var(--text-dim)]">
             <Spinner /> {t('common.loading')}
@@ -92,11 +128,15 @@ export function ResultView({
             {t('common.empty')}
           </div>
         )}
-        {!loading && !error && rows.length > 0 && tab === 'table' && <Table cols={cols} rows={filtered} />}
-        {!loading && !error && rows.length > 0 && tab === 'json' && (
-          <pre className="p-4 text-xs leading-relaxed text-[var(--text)]">{JSON.stringify(shown, null, 2)}</pre>
+        {!loading && !error && rows.length > 0 && tab === 'table' && (
+          <MasterDetail rows={filtered} selected={selected} onSelect={setSelected} current={current} />
         )}
-        {!loading && !error && rows.length > 0 && tab === 'tree' && <Tree value={shown} />}
+        {!loading && !error && rows.length > 0 && tab === 'json' && (
+          <pre className="h-full overflow-auto p-4 text-xs leading-relaxed text-[var(--text)]">{JSON.stringify(shown, null, 2)}</pre>
+        )}
+        {!loading && !error && rows.length > 0 && tab === 'tree' && (
+          <div className="h-full overflow-auto"><Tree value={shown} /></div>
+        )}
       </div>
       {!loading && rows.length > 0 && (
         <footer className="border-t border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-faint)]">
@@ -107,30 +147,82 @@ export function ResultView({
   )
 }
 
-function Table({ cols, rows }: { cols: string[]; rows: GraphRow[] }) {
+// Master (compact list) on the left, readable key/value detail on the right.
+function MasterDetail({
+  rows,
+  selected,
+  onSelect,
+  current,
+}: {
+  rows: GraphRow[]
+  selected: number
+  onSelect: (i: number) => void
+  current: GraphRow | undefined
+}) {
+  const single = rows.length === 1
   return (
-    <table className="w-full border-collapse text-sm">
-      <thead className="sticky top-0 bg-[var(--bg-elev-2)]">
-        <tr>
-          {cols.map((c) => (
-            <th key={c} className="border-b border-[var(--border)] px-3 py-2 text-left font-semibold text-[var(--text-dim)]">
-              {c}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={i} className="hover:bg-[var(--bg-elev-2)]/50">
-            {cols.map((c) => (
-              <td key={c} className="max-w-xs truncate border-b border-[var(--border)] px-3 py-1.5" title={cellText(r[c])}>
-                {cellText(r[c])}
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className={`grid h-full ${single ? 'grid-cols-1' : 'grid-cols-[minmax(180px,260px)_1fr]'}`}>
+      {!single && (
+        <div className="overflow-auto border-r border-[var(--border)]">
+          {rows.map((r, i) => {
+            const primary = primaryLabel(r)
+            const secondary = secondaryLabel(r, 'displayName')
+            return (
+              <button
+                key={i}
+                onClick={() => onSelect(i)}
+                className={`flex w-full flex-col items-start gap-0.5 border-b border-[var(--border)] px-3 py-2 text-left transition-colors
+                  ${i === selected ? 'bg-[var(--accent)]/12' : 'hover:bg-[var(--bg-elev-2)]'}`}
+              >
+                <span className="truncate text-sm font-medium text-[var(--text)]">{primary}</span>
+                {secondary && <span className="truncate text-xs text-[var(--text-faint)]">{secondary}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      <div className="overflow-auto p-4">
+        {current ? <Detail row={current} /> : <p className="text-sm text-[var(--text-faint)]">—</p>}
+      </div>
+    </div>
+  )
+}
+
+function Detail({ row }: { row: GraphRow }) {
+  const entries = Object.entries(row).filter(([k]) => !k.startsWith('@odata'))
+  return (
+    <dl className="flex flex-col gap-1.5">
+      {entries.map(([k, v]) => (
+        <div key={k} className="grid grid-cols-[minmax(120px,200px)_1fr] gap-3 border-b border-[var(--border)]/60 py-1">
+          <dt className="truncate text-xs font-medium text-[var(--text-dim)]" title={k}>{k}</dt>
+          <dd className="min-w-0 text-sm text-[var(--text)]">
+            {isScalar(v) ? (
+              <span className="break-words">{cellText(v)}</span>
+            ) : (
+              <Expandable value={v} />
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function Expandable({ value }: { value: any }) {
+  const [open, setOpen] = useState(false)
+  const count = Array.isArray(value) ? value.length : Object.keys(value).length
+  const label = Array.isArray(value) ? `array [${count}]` : `object {${count}}`
+  return (
+    <div>
+      <button onClick={() => setOpen((o) => !o)} className="text-xs text-[var(--accent2)] hover:underline">
+        {open ? '▾' : '▸'} {label}
+      </button>
+      {open && (
+        <pre className="mt-1 max-h-64 overflow-auto rounded-md bg-[var(--bg)] p-2 text-xs text-[var(--text-dim)]">
+          {JSON.stringify(value, null, 2)}
+        </pre>
+      )}
+    </div>
   )
 }
 

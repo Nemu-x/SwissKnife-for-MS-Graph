@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"swissknife-app/internal/services"
 	"swissknife-app/internal/session"
 )
 
@@ -12,14 +13,16 @@ var version = "dev"
 // App is the root binding: lifecycle and metadata.
 type App struct {
 	session *session.Session
+	update  *services.UpdateService
 }
 
-func NewApp(s *session.Session) *App {
-	return &App{session: s}
+func NewApp(s *session.Session, update *services.UpdateService) *App {
+	return &App{session: s, update: update}
 }
 
 func (a *App) startup(ctx context.Context) {
 	a.session.SetAppContext(ctx)
+	a.update.SetAppContext(ctx)
 }
 
 func (a *App) Version() string {

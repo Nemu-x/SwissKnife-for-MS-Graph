@@ -9,12 +9,13 @@ import { api, errMessage, type Profile } from '../lib/api'
 
 export function ConnectPage() {
   const { t } = useTranslation()
-  const { status, setStatus, refreshStatus, connected, toast } = useStore()
+  const { status, setStatus, refreshStatus, connected, toast, loadDomains } = useStore()
 
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [form, setForm] = useState({
     id: '', name: '', tenantId: '', clientId: '', secret: '', authMode: 'client_secret', remember: false,
   })
+  const [wantDomains, setWantDomains] = useState(localStorage.getItem('loadDomains') === 'true')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [device, setDevice] = useState<{ url: string; code: string } | null>(null)
@@ -35,6 +36,7 @@ export function ConnectPage() {
     try {
       const s = await api.connect.connect({ profileId: p.id })
       setStatus(s); toast('ok', t('common.connectedAs', { name: s.profileName }))
+      if (wantDomains) loadDomains()
     } catch (e) { setError(errMessage(e)) } finally { setBusy(false); setDevice(null) }
   }
 
@@ -46,6 +48,7 @@ export function ConnectPage() {
         authMode: form.authMode, rememberAs: form.remember ? form.name : '',
       })
       setStatus(s); toast('ok', t('common.connectedAs', { name: s.profileName })); loadProfiles()
+      if (wantDomains) loadDomains()
     } catch (e) { setError(errMessage(e)) } finally { setBusy(false); setDevice(null) }
   }
 
@@ -122,6 +125,11 @@ export function ConnectPage() {
             <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
               <input type="checkbox" checked={form.remember} onChange={(e) => setForm({ ...form, remember: e.target.checked })} />
               {t('connect.remember')}
+            </label>
+            <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+              <input type="checkbox" checked={wantDomains}
+                onChange={(e) => { setWantDomains(e.target.checked); localStorage.setItem('loadDomains', String(e.target.checked)) }} />
+              {t('connect.loadDomains')}
             </label>
 
             {device && (

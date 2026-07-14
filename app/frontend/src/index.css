@@ -3,43 +3,46 @@
 /* Dark theme by default; light theme on :root[data-theme="light"] */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
+/* SwissKnife design system v1.0 — exact palette (light + dark). */
 :root {
-  --bg: #0f1117;
-  --bg-elev: #171a23;
-  --bg-elev-2: #1e222d;
-  --border: #2a2f3a;
-  --border-strong: #3a4150;
-  --text: #e6e8ee;
-  --text-dim: #9aa2b1;
-  --text-faint: #6b7280;
-  --accent: #6366f1;
-  --accent-hover: #4f46e5;
-  --accent-fg: #ffffff;
-  --ok: #22c55e;
-  --warn: #f59e0b;
-  --danger: #ef4444;
-  --danger-hover: #dc2626;
-  --ring: #6366f1;
+  --bg: #0f1118;
+  --bg-elev: #161a22;
+  --bg-elev-2: #1c2230;
+  --border: #252c3a;
+  --border-strong: #31384a;
+  --text: #f4f6fa;
+  --text-dim: #bcc4d1;
+  --text-faint: #8790a0;
+  --accent: #b59ae0;
+  --accent-hover: #a385d6;
+  --accent2: #c8b6f2;
+  --accent-fg: #0f1118;
+  --ok: #45c287;
+  --warn: #f0a43a;
+  --danger: #f08272;
+  --danger-hover: #e06a58;
+  --ring: #c8b6f2;
   color-scheme: dark;
 }
 
 :root[data-theme='light'] {
-  --bg: #f7f8fa;
+  --bg: #f5f4f8;
   --bg-elev: #ffffff;
-  --bg-elev-2: #f0f2f5;
-  --border: #e2e5ea;
-  --border-strong: #cbd0d8;
-  --text: #1a1d24;
-  --text-dim: #5b6472;
-  --text-faint: #8b93a1;
-  --accent: #6366f1;
-  --accent-hover: #4f46e5;
+  --bg-elev-2: #efeef4;
+  --border: #ebebf1;
+  --border-strong: #d8dce5;
+  --text: #1e2230;
+  --text-dim: #5e6678;
+  --text-faint: #8a92a3;
+  --accent: #8e79b7;
+  --accent-hover: #7a66a3;
+  --accent2: #b39ddb;
   --accent-fg: #ffffff;
-  --ok: #16a34a;
-  --warn: #d97706;
-  --danger: #dc2626;
-  --danger-hover: #b91c1c;
-  --ring: #6366f1;
+  --ok: #2fa56b;
+  --warn: #d28a24;
+  --danger: #d94c5f;
+  --danger-hover: #c43e50;
+  --ring: #b39ddb;
   color-scheme: light;
 }
 
@@ -59,6 +62,8 @@
   --color-warn: var(--warn);
   --color-danger: var(--danger);
   --color-danger-hover: var(--danger-hover);
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
 }
 
 * {
@@ -75,7 +80,7 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
