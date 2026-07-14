@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import type { Option } from './MultiSelect'
+import { dropdownStyle, nudgeIntoView } from '../lib/dropdown'
 
 // Single-select combobox that loads its options on first open. You can also type
 // a raw value (id/UPN) and press Enter to use it — so manual entry still works.
@@ -27,7 +28,11 @@ export function EntityPicker({
   const [rect, setRect] = useState<DOMRect | null>(null)
 
   const place = () => btnRef.current && setRect(btnRef.current.getBoundingClientRect())
-  useLayoutEffect(() => { if (open) place() }, [open])
+  useLayoutEffect(() => {
+    if (!open) return
+    if (btnRef.current) nudgeIntoView(btnRef.current)
+    place()
+  }, [open])
   useEffect(() => {
     if (!open) return
     const h = () => place()
@@ -75,8 +80,8 @@ export function EntityPicker({
         <>
           <div className="fixed inset-0 z-[100]" onClick={() => { setOpen(false); setFilter('') }} />
           <div
-            className="fixed z-[101] max-h-72 overflow-auto rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elev)] shadow-2xl"
-            style={{ top: rect.bottom + 4, left: rect.left, width: Math.min(Math.max(rect.width, 380), 560) }}
+            className="z-[101] overflow-auto rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elev)] shadow-2xl"
+            style={dropdownStyle(rect, { minWidth: 380, maxWidth: 560 })}
           >
             <div className="sticky top-0 border-b border-[var(--border)] bg-[var(--bg-elev)] p-1.5">
               <input

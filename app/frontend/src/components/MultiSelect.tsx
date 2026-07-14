@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Check } from 'lucide-react'
+import { dropdownStyle, nudgeIntoView } from '../lib/dropdown'
 
 export interface Option {
   value: string
@@ -29,7 +30,11 @@ export function MultiSelect({
   const [rect, setRect] = useState<DOMRect | null>(null)
 
   const place = () => btnRef.current && setRect(btnRef.current.getBoundingClientRect())
-  useLayoutEffect(() => { if (open) place() }, [open])
+  useLayoutEffect(() => {
+    if (!open) return
+    if (btnRef.current) nudgeIntoView(btnRef.current)
+    place()
+  }, [open])
   useEffect(() => {
     if (!open) return
     const h = () => place()
@@ -59,8 +64,8 @@ export function MultiSelect({
         <>
           <div className="fixed inset-0 z-[100]" onClick={() => { setOpen(false); setFilter('') }} />
           <div
-            className="fixed z-[101] max-h-72 overflow-auto rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elev)] shadow-2xl"
-            style={{ top: rect.bottom + 4, left: rect.left, width: rect.width }}
+            className="z-[101] overflow-auto rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elev)] shadow-2xl"
+            style={dropdownStyle(rect)}
           >
             <div className="sticky top-0 border-b border-[var(--border)] bg-[var(--bg-elev)] p-1.5">
               <input
