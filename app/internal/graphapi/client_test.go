@@ -17,7 +17,7 @@ func newTestClient(t *testing.T, handler http.Handler) (*Client, *httptest.Serve
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	c := New(StaticToken("test-token"), WithBaseURL(srv.URL))
-	// мгновенный "сон" в ретраях
+	// instant "sleep" during retries
 	c.sleep = func(ctx context.Context, d time.Duration) error { return nil }
 	return c, srv
 }
@@ -80,7 +80,7 @@ func TestRetryOn429RespectsRetryAfter(t *testing.T) {
 		return nil
 	}
 
-	// 429 ретраится и для POST (запрос не был обработан)
+	// 429 is retried even for POST (the request was not processed)
 	if err := c.Post(context.Background(), "/things", map[string]any{"a": 1}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestRetryGivesUpAfterMax(t *testing.T) {
 	if err == nil {
 		t.Fatal("want error")
 	}
-	if calls.Load() != 3 { // 1 + 2 ретрая
+	if calls.Load() != 3 { // 1 + 2 retries
 		t.Errorf("calls = %d, want 3", calls.Load())
 	}
 }

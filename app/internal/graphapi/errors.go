@@ -2,8 +2,8 @@ package graphapi
 
 import "fmt"
 
-// GraphError — структурированная ошибка Microsoft Graph.
-// UI показывает Code/Message/RequestID вместо сырого дампа (ADR-002).
+// GraphError is a structured Microsoft Graph error.
+// The UI shows Code/Message/RequestID instead of a raw dump (ADR-002).
 type GraphError struct {
 	StatusCode int
 	Code       string
@@ -18,13 +18,13 @@ func (e *GraphError) Error() string {
 	return fmt.Sprintf("graph: %d %s: %s", e.StatusCode, e.Code, e.Message)
 }
 
-// IsNotFound — 404 от Graph.
+// IsNotFound reports a 404 from Graph.
 func IsNotFound(err error) bool {
 	ge, ok := err.(*GraphError)
 	return ok && ge.StatusCode == 404
 }
 
-// IsForbidden — 403: не хватает permissions (UI подсказывает, каких — ADR-002).
+// IsForbidden reports a 403: missing permissions (the UI hints which — ADR-002).
 func IsForbidden(err error) bool {
 	ge, ok := err.(*GraphError)
 	return ok && ge.StatusCode == 403

@@ -2,26 +2,26 @@ package main
 
 import (
 	"context"
-	"fmt"
+
+	"swissknife-app/internal/session"
 )
 
-// App struct
+// version is injected at build time via -ldflags "-X main.version=...".
+var version = "dev"
+
+// App is the root binding: lifecycle and metadata.
 type App struct {
-	ctx context.Context
+	session *session.Session
 }
 
-// NewApp creates a new App application struct
-func NewApp() *App {
-	return &App{}
+func NewApp(s *session.Session) *App {
+	return &App{session: s}
 }
 
-// startup is called when the app starts. The context is saved
-// so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+	a.session.SetAppContext(ctx)
 }
 
-// Greet returns a greeting for the given name
-func (a *App) Greet(name string) string {
-	return fmt.Sprintf("Hello %s, It's show time!", name)
+func (a *App) Version() string {
+	return version
 }

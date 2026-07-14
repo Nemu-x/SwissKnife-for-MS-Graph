@@ -6,9 +6,11 @@
 ![Platform Windows](https://img.shields.io/badge/Windows-Supported-00adef?logo=windows&logoColor=white)
 ![Platform macOS](https://img.shields.io/badge/macOS-Supported-000000?logo=apple)
 ![Platform Linux](https://img.shields.io/badge/Linux-Supported-fcc624?logo=linux&logoColor=black)
-![PySide6](https://img.shields.io/badge/PySide6-GUI-green?logo=qt&logoColor=white)
+![Wails](https://img.shields.io/badge/Wails-Go%20%2B%20React-df0000?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![GraphAPI](https://img.shields.io/badge/Microsoft%20Graph-API-blue?logo=microsoft)
+
+> **Note:** The desktop app is being rewritten on **Wails (Go + React/TypeScript)** — source in [`app/`](app/). The legacy PySide6 GUI (`gui_qt.py`) and Typer CLI (`main.py`) remain until feature parity is reached.
 
 ---
 
@@ -140,15 +142,19 @@ chmod +x SwissKnifeGraph.sh
 
 ## 🛠 Build From Source
 
-### Requirements
+### Desktop app (Wails — recommended)
 
-```
-pyside6
-requests
-msal
+Requirements: **Go 1.26+**, **Node 22+**, and the [Wails CLI](https://wails.io) `v2.12`.
+
+```bash
+cd app
+wails dev     # hot-reload development
+wails build   # production binary → app/build/bin/
 ```
 
-### Run
+Install on Arch Linux from the AUR: `yay -S swissknife-graph-bin` (auto-updates via your AUR helper).
+
+### Legacy Python GUI/CLI
 
 ```bash
 pip install -r requirements.txt

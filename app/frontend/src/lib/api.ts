@@ -1,0 +1,131 @@
+// Typed wrapper over the generated Wails bindings.
+// json.RawMessage arrives from Go as real JSON (mistyped as number[] in .d.ts),
+// so we cast it to proper types here.
+import * as Connect from '../../wailsjs/go/services/ConnectService'
+import * as Users from '../../wailsjs/go/services/UsersService'
+import * as Licensing from '../../wailsjs/go/services/LicensingService'
+import * as Groups from '../../wailsjs/go/services/GroupsService'
+import * as Teams from '../../wailsjs/go/services/TeamsService'
+import * as Chats from '../../wailsjs/go/services/ChatsService'
+import * as Mail from '../../wailsjs/go/services/MailService'
+import * as Calendar from '../../wailsjs/go/services/CalendarService'
+import * as Drive from '../../wailsjs/go/services/DriveService'
+import * as Intune from '../../wailsjs/go/services/IntuneService'
+import * as Audit from '../../wailsjs/go/services/AuditService'
+import * as Raw from '../../wailsjs/go/services/RawService'
+import type { secrets, services } from '../../wailsjs/go/models'
+
+export type GraphObject = Record<string, any>
+export type Profile = secrets.Profile
+export type Status = services.Status
+export type ConnectRequest = services.ConnectRequest
+
+const list = (p: Promise<any>) => p as Promise<GraphObject[]>
+const one = (p: Promise<any>) => p as Promise<GraphObject>
+
+export const api = {
+  connect: {
+    profiles: () => Connect.Profiles() as Promise<Profile[]>,
+    saveProfile: (p: Partial<Profile>, secret: string) =>
+      Connect.SaveProfile(p as Profile, secret) as Promise<Profile>,
+    deleteProfile: (id: string) => Connect.DeleteProfile(id),
+    connect: (req: Partial<ConnectRequest>) => Connect.Connect(req as ConnectRequest) as Promise<Status>,
+    disconnect: () => Connect.Disconnect(),
+    status: () => Connect.GetStatus() as Promise<Status>,
+    setReadOnly: (v: boolean) => Connect.SetReadOnly(v) as Promise<Status>,
+  },
+  users: {
+    list: (search: string, max: number) => list(Users.List(search, max)),
+    get: (u: string) => one(Users.Get(u)),
+    memberOf: (u: string) => list(Users.MemberOf(u)),
+    licenseDetails: (u: string) => list(Users.LicenseDetails(u)),
+    snapshot: (u: string) => one(Users.Snapshot(u)),
+    block: (u: string) => Users.Block(u),
+    unblock: (u: string) => Users.Unblock(u),
+    resetPassword: (u: string, pw: string, force: boolean, confirm: string) =>
+      Users.ResetPassword(u, pw, force, confirm),
+    revokeSessions: (u: string, confirm: string) => Users.RevokeSessions(u, confirm),
+  },
+  licensing: {
+    skus: () => list(Licensing.Skus()),
+    assign: (u: string, add: string[], remove: string[]) => one(Licensing.Assign(u, add, remove)),
+  },
+  groups: {
+    list: (search: string, max: number) => list(Groups.List(search, max)),
+    get: (id: string) => one(Groups.Get(id)),
+    members: (id: string) => list(Groups.Members(id)),
+    addOwner: (id: string, upn: string) => Groups.AddOwner(id, upn),
+    addMember: (id: string, upn: string) => Groups.AddMember(id, upn),
+    createM365: (name: string, desc: string, nick: string, owner: string) =>
+      one(Groups.CreateM365(name, desc, nick, owner)),
+  },
+  teams: {
+    joined: (u: string) => list(Teams.JoinedTeams(u)),
+    channels: (t: string) => list(Teams.Channels(t)),
+    teamMembers: (t: string) => list(Teams.TeamMembers(t)),
+    channelMembers: (t: string, c: string) => list(Teams.ChannelMembers(t, c)),
+    addTeamMember: (t: string, upn: string, owner: boolean) => one(Teams.AddTeamMember(t, upn, owner)),
+    addChannelMember: (t: string, c: string, upn: string, owner: boolean) =>
+      one(Teams.AddChannelMember(t, c, upn, owner)),
+    removeTeamMember: (t: string, upn: string) => Teams.RemoveTeamMember(t, upn),
+    removeChannelMember: (t: string, c: string, upn: string) => Teams.RemoveChannelMember(t, c, upn),
+    teamify: (g: string) => one(Teams.Teamify(g)),
+    createChannel: (t: string, name: string, desc: string, type: string, owner: string) =>
+      one(Teams.CreateChannel(t, name, desc, type, owner)),
+  },
+  chats: {
+    list: (u: string, max: number) => list(Chats.List(u, max)),
+    messages: (c: string, top: number) => list(Chats.Messages(c, top)),
+    members: (c: string) => list(Chats.Members(c)),
+    addMember: (c: string, upn: string, owner: boolean) => one(Chats.AddMember(c, upn, owner)),
+    removeMember: (c: string, upn: string) => Chats.RemoveMember(c, upn),
+    createGroup: (topic: string, members: string[]) => one(Chats.CreateGroupChat(topic, members)),
+  },
+  mail: {
+    list: (u: string, folder: string, top: number) => list(Mail.List(u, folder, top)),
+    send: (u: string, subject: string, body: string, to: string[], confirm: string) =>
+      Mail.Send(u, subject, body, to, confirm),
+  },
+  calendar: {
+    list: (u: string, top: number) => list(Calendar.List(u, top)),
+    createEvent: (
+      u: string, subject: string, body: string, start: string, end: string, tz: string, attendees: string[],
+    ) => one(Calendar.CreateEvent(u, subject, body, start, end, tz, attendees)),
+  },
+  drive: {
+    sites: (search: string) => list(Drive.Sites(search)),
+    listRoot: (t: string, id: string) => list(Drive.ListRoot(t, id)),
+    children: (t: string, id: string, item: string) => list(Drive.Children(t, id, item)),
+    search: (t: string, id: string, q: string) => list(Drive.Search(t, id, q)),
+    download: (t: string, id: string, item: string, name: string) => Drive.Download(t, id, item, name) as Promise<string>,
+    upload: (t: string, id: string, folder: string) => one(Drive.Upload(t, id, folder)),
+    delete: (t: string, id: string, item: string, confirm: string) => Drive.Delete(t, id, item, confirm),
+    createLink: (t: string, id: string, item: string, type: string, scope: string) =>
+      one(Drive.CreateLink(t, id, item, type, scope)),
+    copyBetweenUsers: (src: string, dst: string, overwrite: boolean) =>
+      Drive.CopyBetweenUsers(src, dst, overwrite) as Promise<services.CopyResult>,
+  },
+  intune: {
+    devices: (max: number) => list(Intune.Devices(max)),
+    device: (id: string) => one(Intune.Device(id)),
+    wipe: (id: string, keepEnroll: boolean, keepUser: boolean, confirm: string) =>
+      Intune.Wipe(id, keepEnroll, keepUser, confirm),
+    retire: (id: string, confirm: string) => Intune.Retire(id, confirm),
+    remoteLock: (id: string, confirm: string) => Intune.RemoteLock(id, confirm),
+  },
+  audit: {
+    directory: (top: number) => list(Audit.DirectoryAudits(top)),
+    signIns: (top: number) => list(Audit.SignIns(top)),
+    activity: (n: number) => Audit.Activity(n) as Promise<any[]>,
+  },
+  raw: {
+    send: (method: string, path: string, body: string) => one(Raw.Send(method, path, body)),
+  },
+}
+
+export function errMessage(e: unknown): string {
+  if (e == null) return ''
+  if (typeof e === 'string') return e
+  if (e instanceof Error) return e.message
+  return String(e)
+}

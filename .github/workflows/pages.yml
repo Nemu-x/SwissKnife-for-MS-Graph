@@ -1,0 +1,86 @@
+# Deploys the release landing page to GitHub Pages and publishes the AUR package
+# after each release. The site is rebuilt from the latest releases every run
+# (via gh), so the version, download buttons, and release notes stay current.
+#
+# Setup once: repo Settings → Pages → Source = "GitHub Actions".
+# Optional secret AUR_SSH_PRIVATE_KEY enables the AUR publish (skipped if absent).
+
+name: Pages & packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-packages
+  cancel-in-progress: false
+
+jobs:
+  build-site:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate landing page
+        run: python3 packaging/site/generate.py --out site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy-pages:
+    needs: build-site
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  publish-aur:
+    # Real releases, or a manual dispatch pinned to a version tag. Skips quietly
+    # when AUR_SSH_PRIVATE_KEY is not configured.
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check AUR key present
+        id: gate
+        env:
+          AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -n "$AUR_KEY" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; else echo "enabled=false" >> "$GITHUB_OUTPUT"; echo "AUR key not set — skipping AUR publish."; fi
+      - name: Prepare PKGBUILD (version + checksum from release asset)
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          [ "$VER" = "$GITHUB_REF_NAME" ] && VER="${{ github.event.release.tag_name }}" && VER="${VER#v}"
+          TAG="v${VER}"
+          mkdir -p aurpkg dl
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -D dl -p 'SwissKnifeGraph-linux-amd64.tar.gz'
+          SHA_AMD=$(sha256sum dl/SwissKnifeGraph-linux-amd64.tar.gz | cut -d' ' -f1)
+          sed -e "s/@PKGVER@/${VER//-/_}/g" \
+              -e "s/@TAG@/${TAG}/g" \
+              -e "s/@SHA256_AMD64@/${SHA_AMD}/g" \
+              packaging/aur/PKGBUILD.template > aurpkg/PKGBUILD
+          cat aurpkg/PKGBUILD
+      - name: Publish to AUR
+        if: steps.gate.outputs.enabled == 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: swissknife-graph-bin
+          pkgbuild: aurpkg/PKGBUILD
+          commit_username: Nemu-x
+          commit_email: Nemu-x@users.noreply.github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to ${{ github.event.release.tag_name || github.ref_name }}

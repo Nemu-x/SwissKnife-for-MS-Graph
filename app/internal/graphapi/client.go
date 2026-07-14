@@ -14,13 +14,13 @@ import (
 
 const DefaultBaseURL = "https://graph.microsoft.com/v1.0"
 
-// TokenSource выдаёт актуальный access token (авто-refresh — забота реализации).
-// Сервисы токен не видят: он живёт только внутри клиента (ADR-002).
+// TokenSource yields a current access token (auto-refresh is the implementation's concern).
+// Services never see the token: it lives only inside the client (ADR-002).
 type TokenSource interface {
 	Token(ctx context.Context) (string, error)
 }
 
-// StaticToken — фиксированный токен (тесты).
+// StaticToken is a fixed token (tests).
 type StaticToken string
 
 func (s StaticToken) Token(ctx context.Context) (string, error) { return string(s), nil }
@@ -31,7 +31,7 @@ type Client struct {
 	tokens  TokenSource
 
 	maxRetries int
-	// backoff задаётся функцией, чтобы тесты не спали по-настоящему
+	// backoff is a function so tests do not actually sleep
 	sleep func(ctx context.Context, d time.Duration) error
 }
 
@@ -66,8 +66,8 @@ func New(tokens TokenSource, opts ...Option) *Client {
 	return c
 }
 
-// Do выполняет запрос к Graph. path — относительный ("/users") или абсолютный URL
-// (например, @odata.nextLink). Ответ декодируется в out (если out != nil и есть тело).
+// Do performs a Graph request. path is relative ("/users") or an absolute URL
+// (e.g. @odata.nextLink). The response is decoded into out (if out != nil and a body exists).
 func (c *Client) Do(ctx context.Context, method, path string, params url.Values, body any, out any) error {
 	raw, err := c.doRaw(ctx, method, path, params, body)
 	if err != nil {
@@ -125,8 +125,8 @@ func (c *Client) doRaw(ctx context.Context, method, path string, params url.Valu
 	}
 }
 
-// retryable: 429 (throttling) ретраим для любых методов — Graph запрос не обработал;
-// 503/504 — только идемпотентные методы.
+// retryable: 429 (throttling) is retried for any method — Graph did not process the request;
+// 503/504 — idempotent methods only.
 func retryable(method string, err error) bool {
 	ge, ok := err.(*GraphError)
 	if !ok {
@@ -219,7 +219,7 @@ func parseGraphError(resp *http.Response, raw []byte) *GraphError {
 			ge.RequestID = envelope.Error.InnerError.RequestID
 		}
 	} else {
-		// не-JSON тело: не тащим потенциально чувствительный дамп целиком
+		// non-JSON body: do not carry a potentially sensitive dump in full
 		const maxSnippet = 200
 		s := string(raw)
 		if len(s) > maxSnippet {
@@ -230,7 +230,7 @@ func parseGraphError(resp *http.Response, raw []byte) *GraphError {
 	return ge
 }
 
-// Удобные шорткаты.
+// Convenience shortcuts.
 
 func (c *Client) Get(ctx context.Context, path string, params url.Values, out any) error {
 	return c.Do(ctx, http.MethodGet, path, params, nil, out)

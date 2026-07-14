@@ -1,0 +1,40 @@
+# Fast checks on pushes and PRs to main: Go vet + tests, frontend typecheck + build.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: app/go.sum
+      - name: Vet + test
+        working-directory: app
+        run: |
+          go vet ./...
+          go test ./... -count=1
+
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install + typecheck + build
+        working-directory: app/frontend
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npm run build

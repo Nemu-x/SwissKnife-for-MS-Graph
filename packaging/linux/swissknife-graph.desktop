@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SwissKnife for MS Graph
+Comment=Microsoft Graph desktop client for IT admins
+Exec=swissknife-graph
+Icon=swissknife-graph
+Terminal=false
+Categories=Utility;Network;
+Keywords=Microsoft;Graph;Azure;Entra;Intune;M365;

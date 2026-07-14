@@ -1,0 +1,26 @@
+# nfpm config for SwissKnife .deb / .rpm packages.
+# Consumed by the Release workflow; VERSION is injected from the git tag.
+name: swissknife-graph
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: utils
+maintainer: Nemu-x <Nemu-x@users.noreply.github.com>
+description: |
+  SwissKnife for MS Graph — a clean, fast, cross-platform Microsoft Graph
+  desktop client for IT admins.
+vendor: Nemu-x
+homepage: https://github.com/Nemu-x/SwissKnife-for-MS-Graph
+license: MIT
+depends:
+  - libgtk-3-0
+  - libwebkit2gtk-4.1-0
+contents:
+  - src: app/build/bin/SwissKnifeGraph
+    dst: /usr/bin/swissknife-graph
+    file_info:
+      mode: 0755
+  - src: packaging/linux/swissknife-graph.desktop
+    dst: /usr/share/applications/swissknife-graph.desktop
+  - src: app/build/appicon.png
+    dst: /usr/share/icons/hicolor/512x512/apps/swissknife-graph.png

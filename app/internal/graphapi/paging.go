@@ -8,7 +8,7 @@ import (
 	"net/url"
 )
 
-// Page — одна страница списочного ответа Graph.
+// Page is a single page of a Graph list response.
 type Page struct {
 	Items    []json.RawMessage
 	NextLink string
@@ -19,7 +19,7 @@ type listEnvelope struct {
 	NextLink string            `json:"@odata.nextLink"`
 }
 
-// ListPage возвращает одну страницу. path — относительный путь или nextLink.
+// ListPage returns a single page. path is a relative path or a nextLink.
 func (c *Client) ListPage(ctx context.Context, path string, params url.Values) (*Page, error) {
 	var env listEnvelope
 	if err := c.Do(ctx, http.MethodGet, path, params, nil, &env); err != nil {
@@ -28,8 +28,8 @@ func (c *Client) ListPage(ctx context.Context, path string, params url.Values) (
 	return &Page{Items: env.Value, NextLink: env.NextLink}, nil
 }
 
-// ListAll собирает все страницы по @odata.nextLink.
-// maxItems > 0 — защитный лимит (safety, ADR-003); 0 — без лимита.
+// ListAll collects every page following @odata.nextLink.
+// maxItems > 0 is a safety cap (ADR-003); 0 means unlimited.
 func (c *Client) ListAll(ctx context.Context, path string, params url.Values, maxItems int) ([]json.RawMessage, error) {
 	var items []json.RawMessage
 	next := path
@@ -43,13 +43,13 @@ func (c *Client) ListAll(ctx context.Context, path string, params url.Values, ma
 		if maxItems > 0 && len(items) >= maxItems {
 			return items[:maxItems], nil
 		}
-		// nextLink уже содержит query — параметры повторно не передаём
+		// nextLink already carries the query, so do not pass params again
 		next, p = page.NextLink, nil
 	}
 	return items, nil
 }
 
-// ListAllInto — ListAll с декодированием каждого элемента в []T.
+// ListAllInto is ListAll that decodes each item into []T.
 func ListAllInto[T any](ctx context.Context, c *Client, path string, params url.Values, maxItems int) ([]T, error) {
 	raw, err := c.ListAll(ctx, path, params, maxItems)
 	if err != nil {

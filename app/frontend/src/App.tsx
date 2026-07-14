@@ -1,28 +1,30 @@
-import {useState} from 'react';
-import logo from './assets/images/logo-universal.png';
-import './App.css';
-import {Greet} from "../wailsjs/go/main/App";
+import { useState } from 'react'
+import { Layout } from './components/Layout'
+import { Toasts } from './components/Toasts'
+import { StoreProvider, useStore } from './lib/store'
+import { pages, type PageId } from './pages/registry'
 
-function App() {
-    const [resultText, setResultText] = useState("Please enter your name below 👇");
-    const [name, setName] = useState('');
-    const updateName = (e: any) => setName(e.target.value);
-    const updateResultText = (result: string) => setResultText(result);
+function Shell() {
+  const [page, setPage] = useState<PageId>('connect')
+  const { connected } = useStore()
 
-    function greet() {
-        Greet(name).then(updateResultText);
-    }
+  // if disconnected while the page requires a connection, go back to connect
+  const requiresConn = page !== 'connect' && page !== 'settings'
+  const effective: PageId = requiresConn && !connected ? 'connect' : page
+  const Current = pages[effective]
 
-    return (
-        <div id="App">
-            <img src={logo} id="logo" alt="logo"/>
-            <div id="result" className="result">{resultText}</div>
-            <div id="input" className="input-box">
-                <input id="name" className="input" onChange={updateName} autoComplete="off" name="input" type="text"/>
-                <button className="btn" onClick={greet}>Greet</button>
-            </div>
-        </div>
-    )
+  return (
+    <Layout page={effective} onNavigate={setPage}>
+      <Current />
+      <Toasts />
+    </Layout>
+  )
 }
 
-export default App
+export default function App() {
+  return (
+    <StoreProvider>
+      <Shell />
+    </StoreProvider>
+  )
+}
