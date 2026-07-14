@@ -19,6 +19,11 @@ jobs:
         with:
           go-version: '1.26.x'
           cache-dependency-path: app/go.sum
+      # main.go embeds frontend/dist (//go:embed); create a placeholder so the
+      # Go-only checks compile without building the frontend.
+      - name: Placeholder embed dir
+        working-directory: app
+        run: mkdir -p frontend/dist && echo "<!doctype html>" > frontend/dist/index.html
       - name: Vet + test
         working-directory: app
         run: |
