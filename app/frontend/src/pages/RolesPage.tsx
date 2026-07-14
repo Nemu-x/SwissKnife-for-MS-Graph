@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ShieldCheck, Users2, UserPlus, UserMinus } from 'lucide-react'
-import { Page } from '../components/Layout'
-import { TwoPane } from '../components/TwoPane'
+import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
 import { ResultView } from '../components/ResultView'
-import { Button, Card, Field, Input } from '../components/ui'
+import { Button, Field, Input } from '../components/ui'
 import { UpnInput } from '../components/UpnInput'
 import { useAsync } from '../lib/useAsync'
 import { useConfirm } from '../lib/useConfirm'
@@ -23,45 +22,31 @@ export function RolesPage() {
     try { await fn(); toast('ok', ok) } catch (e) { toast('err', errMessage(e)) }
   }
 
-  return (
-    <Page title={t('roles.title')}>
-      {confirmElement}
-      <TwoPane
-        controls={
-          <>
-            <Card title={t('roles.title')}>
-              <Button variant="primary" onClick={() => res.run(() => api.roles.list())}>
-                <ShieldCheck size={15} /> {t('roles.listRoles')}
-              </Button>
-            </Card>
+  const actions: Action[] = [
+    { id: 'list', label: t('roles.listRoles'), icon: <ShieldCheck size={15} />, variant: 'primary', onClick: () => res.run(() => api.roles.list()) },
+    {
+      id: 'members', label: t('roles.members'), icon: <Users2 size={15} />,
+      panel: (
+        <DrawerForm>
+          <Field label={t('roles.roleId')}><Input value={roleId} onChange={(e) => setRoleId(e.target.value)} /></Field>
+          <Button variant="subtle" disabled={!roleId} onClick={() => res.run(() => api.roles.members(roleId))}><Users2 size={15} /> {t('roles.members')}</Button>
+          <Field label={t('common.user')}><UpnInput value={upn} onChange={setUpn} /></Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="subtle" disabled={readOnly || !roleId || !upn} onClick={() => doWrite(() => api.roles.addMember(roleId, upn), t('roles.addMember'))}><UserPlus size={15} /> {t('roles.addMember')}</Button>
+            <Button variant="danger" disabled={readOnly || !roleId || !upn}
+              onClick={() => askConfirm(upn, (c) => doWrite(() => api.roles.removeMember(roleId, upn, c), t('roles.removeMember')))}>
+              <UserMinus size={15} /> {t('roles.removeMember')}
+            </Button>
+          </div>
+        </DrawerForm>
+      ),
+    },
+  ]
 
-            <Card title={t('roles.members')}>
-              <div className="flex flex-col gap-3">
-                <Field label={t('roles.roleId')}>
-                  <Input value={roleId} onChange={(e) => setRoleId(e.target.value)} />
-                </Field>
-                <Button variant="subtle" disabled={!roleId} onClick={() => res.run(() => api.roles.members(roleId))}>
-                  <Users2 size={15} /> {t('roles.members')}
-                </Button>
-                <Field label={t('common.user')}>
-                  <UpnInput value={upn} onChange={setUpn} />
-                </Field>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button variant="subtle" disabled={readOnly || !roleId || !upn}
-                    onClick={() => doWrite(() => api.roles.addMember(roleId, upn), t('roles.addMember'))}>
-                    <UserPlus size={15} /> {t('roles.addMember')}
-                  </Button>
-                  <Button variant="danger" disabled={readOnly || !roleId || !upn}
-                    onClick={() => askConfirm(upn, (c) => doWrite(() => api.roles.removeMember(roleId, upn, c), t('roles.removeMember')))}>
-                    <UserMinus size={15} /> {t('roles.removeMember')}
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </>
-        }
-        result={<ResultView data={res.data} loading={res.loading} error={res.error} />}
-      />
-    </Page>
+  return (
+    <>
+      {confirmElement}
+      <ActionPage title={t('roles.title')} actions={actions} result={<ResultView data={res.data} loading={res.loading} error={res.error} />} />
+    </>
   )
 }

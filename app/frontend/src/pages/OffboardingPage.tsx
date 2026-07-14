@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Search, Copy, ArrowRight } from 'lucide-react'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { Page } from '../components/Layout'
-import { Card, Field, Input, Button, Badge, ErrorNote, Spinner } from '../components/ui'
+import { Card, Field, Input, Textarea, Button, Badge, ErrorNote, Spinner } from '../components/ui'
 import { UpnInput } from '../components/UpnInput'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
@@ -18,6 +18,8 @@ export function OffboardingPage() {
   const [target, setTarget] = useState('')
   const [dest, setDest] = useState('')
   const [overwrite, setOverwrite] = useState(false)
+  const [usePool, setUsePool] = useState(false)
+  const [pool, setPool] = useState(localStorage.getItem('offboard.pool') || '')
 
   const [preview, setPreview] = useState<services.CopyPreview | null>(null)
   const [previewing, setPreviewing] = useState(false)
@@ -45,7 +47,17 @@ export function OffboardingPage() {
   const runCopy = async () => {
     setCopying(true); setError(null); setReport(null); setProgress(null)
     try {
-      const r = await api.drive.copyBetweenUsers(source, target, dest, overwrite)
+      // Folder defaults to the departed user's name (local-part of the UPN).
+      const folder = dest.trim() || source.split('@')[0]
+      let tgt = target
+      if (usePool) {
+        const prev = preview || (await api.drive.offboardingPreview(source))
+        const list = pool.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)
+        tgt = await api.drive.pickTarget(list, prev.totalBytes)
+        setTarget(tgt)
+        toast('ok', t('offboarding.pickedTarget', { t: tgt }))
+      }
+      const r = await api.drive.copyBetweenUsers(source, tgt, folder, overwrite)
       setReport(r)
       toast('ok', `${r.copied?.length || 0} ${t('offboarding.copied').toLowerCase()}`)
     } catch (e) { setError(errMessage(e)) } finally { setCopying(false); setProgress(null) }
@@ -61,11 +73,22 @@ export function OffboardingPage() {
                 <UpnInput value={source} onChange={setSource} placeholder="alice@contoso.com" />
               </Field>
               <div className="flex justify-center text-[var(--text-faint)]"><ArrowRight size={16} /></div>
-              <Field label={t('offboarding.target')}>
-                <UpnInput value={target} onChange={setTarget} placeholder="backup@contoso.com" />
-              </Field>
+              <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+                <input type="checkbox" checked={usePool} onChange={(e) => setUsePool(e.target.checked)} />
+                {t('offboarding.usePool')}
+              </label>
+              {usePool ? (
+                <Field label={t('offboarding.pool')}>
+                  <Textarea rows={3} value={pool} placeholder="backup1@contoso.com&#10;backup2@contoso.com"
+                    onChange={(e) => { setPool(e.target.value); localStorage.setItem('offboard.pool', e.target.value) }} />
+                </Field>
+              ) : (
+                <Field label={t('offboarding.target')}>
+                  <UpnInput value={target} onChange={setTarget} placeholder="backup@contoso.com" />
+                </Field>
+              )}
               <Field label={t('offboarding.destFolder')} hint={t('offboarding.destHint')}>
-                <Input value={dest} onChange={(e) => setDest(e.target.value)} placeholder="Backups/alice" />
+                <Input value={dest} onChange={(e) => setDest(e.target.value)} placeholder="(defaults to the user's name)" />
               </Field>
               <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
                 <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
@@ -76,7 +99,7 @@ export function OffboardingPage() {
                 <Button variant="subtle" className="flex-1" disabled={!source || previewing} onClick={runPreview}>
                   {previewing ? <Spinner /> : <Search size={15} />} {t('offboarding.preview')}
                 </Button>
-                <Button variant="primary" className="flex-1" disabled={readOnly || !source || !target || copying} onClick={runCopy}>
+                <Button variant="primary" className="flex-1" disabled={readOnly || !source || (!usePool && !target) || (usePool && !pool.trim()) || copying} onClick={runCopy}>
                   {copying ? <Spinner /> : <Copy size={15} />} {copying ? t('offboarding.running') : t('offboarding.start')}
                 </Button>
               </div>

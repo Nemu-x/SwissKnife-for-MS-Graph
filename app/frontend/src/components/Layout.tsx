@@ -1,15 +1,18 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Plug, LayoutDashboard, Users, KeyRound, ShieldCheck, Boxes, MessagesSquare, MessageCircle, Mail,
-  FolderOpen, UserMinus, Smartphone, ScrollText, TerminalSquare, Activity, Settings, Lock,
+  Plug, LayoutDashboard, PlayCircle, Users, KeyRound, ShieldCheck, Boxes, MessagesSquare, MessageCircle, Mail,
+  FolderOpen, UserMinus, Smartphone, MonitorSmartphone, AppWindow, BarChart3, Sparkles, HeartPulse,
+  ScrollText, TerminalSquare, Activity, Settings, Lock,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
+import logo from '../assets/images/logo.png'
 import type { PageId } from '../pages/registry'
 
 const items: { id: PageId; icon: ReactNode; key: string }[] = [
   { id: 'connect', icon: <Plug size={17} />, key: 'nav.connect' },
   { id: 'dashboard', icon: <LayoutDashboard size={17} />, key: 'nav.dashboard' },
+  { id: 'playbooks', icon: <PlayCircle size={17} />, key: 'nav.playbooks' },
   { id: 'users', icon: <Users size={17} />, key: 'nav.users' },
   { id: 'licensing', icon: <KeyRound size={17} />, key: 'nav.licensing' },
   { id: 'roles', icon: <ShieldCheck size={17} />, key: 'nav.roles' },
@@ -20,6 +23,11 @@ const items: { id: PageId; icon: ReactNode; key: string }[] = [
   { id: 'files', icon: <FolderOpen size={17} />, key: 'nav.files' },
   { id: 'offboarding', icon: <UserMinus size={17} />, key: 'nav.offboarding' },
   { id: 'intune', icon: <Smartphone size={17} />, key: 'nav.intune' },
+  { id: 'devices', icon: <MonitorSmartphone size={17} />, key: 'nav.devices' },
+  { id: 'apps', icon: <AppWindow size={17} />, key: 'nav.apps' },
+  { id: 'reports', icon: <BarChart3 size={17} />, key: 'nav.reports' },
+  { id: 'cleanup', icon: <Sparkles size={17} />, key: 'nav.cleanup' },
+  { id: 'health', icon: <HeartPulse size={17} />, key: 'nav.health' },
   { id: 'audit', icon: <ScrollText size={17} />, key: 'nav.audit' },
   { id: 'raw', icon: <TerminalSquare size={17} />, key: 'nav.raw' },
   { id: 'activity', icon: <Activity size={17} />, key: 'nav.activity' },
@@ -36,17 +44,21 @@ export function Layout({
   children: ReactNode
 }) {
   const { t } = useTranslation()
-  const { connected, status, readOnly } = useStore()
+  const { connected, status, readOnly, access, hideUnavailable } = useStore()
+
+  const visible = items.filter((it) =>
+    !hideUnavailable || !(it.id in access) || access[it.id] !== false
+  )
 
   return (
     <div className="flex h-full">
       <aside className="flex w-56 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-elev)]">
-        <div className="flex items-center gap-2 px-4 py-4">
-          <span className="text-lg">🗡️</span>
+        <div className="flex items-center gap-2.5 px-4 py-4">
+          <img src={logo} alt="SwissKnife" className="h-7 w-7 rounded-md" />
           <span className="text-sm font-semibold leading-tight">SwissKnife<br /><span className="text-xs font-normal text-[var(--text-faint)]">for MS Graph</span></span>
         </div>
         <nav className="flex-1 overflow-y-auto px-2 py-1">
-          {items.map((it) => {
+          {visible.map((it) => {
             const active = page === it.id
             const disabled = it.id !== 'connect' && it.id !== 'settings' && !connected
             return (

@@ -12,7 +12,8 @@ import type { services } from '../../wailsjs/go/models'
 
 export function SettingsPage() {
   const { t, i18n } = useTranslation()
-  const { theme, toggleTheme, accent, setAccent, safeMode, setSafeMode, readOnly, setStatus, connected, toast } = useStore()
+  const { theme, toggleTheme, accent, setAccent, safeMode, setSafeMode, hideUnavailable, setHideUnavailable, checkAccess, readOnly, setStatus, connected, toast } = useStore()
+  const [checkingAccess, setCheckingAccess] = useState(false)
   const [version, setVersion] = useState('')
   const [update, setUpdate] = useState<services.UpdateInfo | null>(null)
   const [checking, setChecking] = useState(false)
@@ -97,6 +98,20 @@ export function SettingsPage() {
           {connected && (
             <Button variant={readOnly ? 'danger' : 'subtle'} onClick={toggleReadOnly} className="mt-3">
               <Lock size={15} /> {readOnly ? `${t('safety.readOnly')}: ON` : `${t('safety.readOnly')}: OFF`}
+            </Button>
+          )}
+        </Card>
+
+        <Card title={t('settings.access')}>
+          <p className="text-xs text-[var(--text-faint)]">{t('settings.accessHint')}</p>
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={hideUnavailable} onChange={(e) => setHideUnavailable(e.target.checked)} />
+            {t('settings.hideUnavailable')}
+          </label>
+          {connected && (
+            <Button variant="subtle" className="mt-3" disabled={checkingAccess}
+              onClick={async () => { setCheckingAccess(true); await checkAccess(); setCheckingAccess(false); toast('ok', t('settings.checkAccess')) }}>
+              {checkingAccess ? <Spinner /> : <RefreshCw size={15} />} {t('settings.checkAccess')}
             </Button>
           )}
         </Card>

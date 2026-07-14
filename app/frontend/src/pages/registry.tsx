@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import { ConnectPage } from './ConnectPage'
 import { DashboardPage } from './DashboardPage'
+import { PlaybooksPage } from './PlaybooksPage'
 import { UsersPage } from './UsersPage'
 import { LicensingPage } from './LicensingPage'
 import { RolesPage } from './RolesPage'
@@ -11,18 +12,25 @@ import { MailPage } from './MailPage'
 import { FilesPage } from './FilesPage'
 import { OffboardingPage } from './OffboardingPage'
 import { IntunePage } from './IntunePage'
+import { DevicesPage } from './DevicesPage'
+import { AppsPage } from './AppsPage'
+import { ReportsPage } from './ReportsPage'
+import { CleanupPage } from './CleanupPage'
+import { HealthPage } from './HealthPage'
 import { AuditPage } from './AuditPage'
 import { RawPage } from './RawPage'
 import { ActivityPage } from './ActivityPage'
 import { SettingsPage } from './SettingsPage'
 
 export type PageId =
-  | 'connect' | 'dashboard' | 'users' | 'licensing' | 'roles' | 'groups' | 'teams' | 'chats'
-  | 'mail' | 'files' | 'offboarding' | 'intune' | 'audit' | 'raw' | 'activity' | 'settings'
+  | 'connect' | 'dashboard' | 'playbooks' | 'users' | 'licensing' | 'roles' | 'groups' | 'teams' | 'chats'
+  | 'mail' | 'files' | 'offboarding' | 'intune' | 'devices' | 'apps' | 'reports' | 'cleanup' | 'health'
+  | 'audit' | 'raw' | 'activity' | 'settings'
 
 export const pages: Record<PageId, ComponentType> = {
   connect: ConnectPage,
   dashboard: DashboardPage,
+  playbooks: PlaybooksPage,
   users: UsersPage,
   licensing: LicensingPage,
   roles: RolesPage,
@@ -33,6 +41,11 @@ export const pages: Record<PageId, ComponentType> = {
   files: FilesPage,
   offboarding: OffboardingPage,
   intune: IntunePage,
+  devices: DevicesPage,
+  apps: AppsPage,
+  reports: ReportsPage,
+  cleanup: CleanupPage,
+  health: HealthPage,
   audit: AuditPage,
   raw: RawPage,
   activity: ActivityPage,
