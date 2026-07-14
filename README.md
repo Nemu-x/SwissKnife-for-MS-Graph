@@ -107,15 +107,18 @@ Minimal core-only set: `Directory.Read.All`, `User.Read.All`, `Group.ReadWrite.A
 - Destructive actions (wipe, retire, delete, reset password, send-as, remove role…) require a typed confirmation and are written to a local audit log.
 - A global **read-only mode** blocks every write while you explore.
 
-## Support the Project
+## Support the project
 
-If this tool saves you time, consider supporting development:
+SwissKnife is free and MIT-licensed. If it saves you time, a crypto donation helps keep development and releases going. Thank you! 🗡️
 
-```
-USDT (MATIC): 0xD9333e859Fb74D885d22E27568589de61E4433b5
-BTC:          bc1qkkcgpqym967k2x73al6f7fpvkx52q4rzkut3we
-ETH:          0xD9333e859Fb74D885d22E27568589de61E4433b5
-```
+| Asset | Address |
+| --- | --- |
+| USDT (TRC20) | `TPACN1kJRm2FnFF1cSqYtBnJwAmZ3qGMni` |
+| USDT (Polygon / MATIC) | `0xD9333e859Fb74D885d22E27568589de61E4433b5` |
+| BTC | `bc1qkkcgpqym967k2x73al6f7fpvkx52q4rzkut3we` |
+| ETH | `0xD9333e859Fb74D885d22E27568589de61E4433b5` |
+
+> Double-check the network before sending — wrong-network transfers are unrecoverable.
 
 ## Author
 

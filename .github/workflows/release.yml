@@ -76,7 +76,9 @@ jobs:
         working-directory: ${{ env.APP_DIR }}
         run: |
           cd build/bin
-          ditto -c -k --keepParent "SwissKnifeGraph.app" "SwissKnifeGraph-macos-universal.zip"
+          APP=$(ls -d *.app | head -1)
+          echo "Zipping $APP"
+          ditto -c -k --keepParent "$APP" "SwissKnifeGraph-macos-universal.zip"
       - name: Stage artifacts
         run: |
           mkdir -p dist
@@ -107,18 +109,20 @@ jobs:
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
       - name: Build (linux/amd64)
         working-directory: ${{ env.APP_DIR }}
-        run: wails build -platform linux/amd64 -ldflags "-X main.version=${{ github.ref_name }}"
+        # Ubuntu 24.04 ships webkit2gtk 4.1 only; the webkit2_41 tag targets it.
+        run: wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-X main.version=${{ github.ref_name }}"
       - name: Package tar.gz + .deb + .rpm
-        working-directory: ${{ env.APP_DIR }}
+        # Runs from repo root so the paths in packaging/nfpm.yaml resolve.
         env:
           VERSION: ${{ github.ref_name }}
         run: |
           VER="${VERSION#v}"
           [ -z "$VER" ] && VER="0.0.0"
-          mkdir -p ../dist
-          tar -C build/bin -czf "../dist/SwissKnifeGraph-linux-amd64.tar.gz" SwissKnifeGraph
-          VERSION="$VER" nfpm package -f ../packaging/nfpm.yaml -p deb -t "../dist/SwissKnifeGraph-linux-amd64.deb"
-          VERSION="$VER" nfpm package -f ../packaging/nfpm.yaml -p rpm -t "../dist/SwissKnifeGraph-linux-amd64.rpm"
+          mkdir -p dist
+          BIN=$(ls app/build/bin | head -1)
+          tar -C app/build/bin -czf "dist/SwissKnifeGraph-linux-amd64.tar.gz" "$BIN"
+          VERSION="$VER" nfpm package -f packaging/nfpm.yaml -p deb -t "dist/SwissKnifeGraph-linux-amd64.deb"
+          VERSION="$VER" nfpm package -f packaging/nfpm.yaml -p rpm -t "dist/SwissKnifeGraph-linux-amd64.rpm"
       - uses: actions/upload-artifact@v4
         with:
           name: linux
