@@ -5,6 +5,8 @@ import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input } from '../components/ui'
 import { UpnInput } from '../components/UpnInput'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadUsers } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useStore } from '../lib/store'
 import { api, errMessage, type GraphObject } from '../lib/api'
@@ -28,7 +30,7 @@ export function ChatsPage() {
       id: 'browse', label: 'Browse', icon: <MessageSquare size={15} />, variant: 'primary',
       panel: (
         <DrawerForm>
-          <Field label={t('common.user')}><UpnInput value={user} onChange={setUser} /></Field>
+          <Field label={t('common.user')}><EntityPicker value={user} onChange={setUser} load={loadUsers} placeholder="Pick a user…" /></Field>
           <Button variant="primary" disabled={!user} onClick={() => res.run(() => api.chats.list(user, 0))}><MessageSquare size={15} /> List chats</Button>
           <Field label="Chat ID"><Input value={chatId} onChange={(e) => setChatId(e.target.value)} /></Field>
           <div className="grid grid-cols-2 gap-2">

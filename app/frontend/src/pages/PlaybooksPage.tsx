@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { UserPlus, UserMinus, Play, CheckCircle2, XCircle } from 'lucide-react'
 import { Page } from '../components/Layout'
-import { Card, Button, Field, Input, Select, Spinner } from '../components/ui'
+import { Card, Button, Field, Input, Spinner } from '../components/ui'
 import { MultiSelect, type Option } from '../components/MultiSelect'
+import { EntityPicker } from '../components/EntityPicker'
 import { UpnInput } from '../components/UpnInput'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
@@ -34,6 +35,7 @@ export function PlaybooksPage() {
   const [chTeam, setChTeam] = useState('')
   const [chOpts, setChOpts] = useState<Option[]>([])
   const [chSelected, setChSelected] = useState<string[]>([])
+  const [chLoading, setChLoading] = useState(false)
 
   useEffect(() => {
     if (!connected) return
@@ -50,7 +52,11 @@ export function PlaybooksPage() {
   useEffect(() => {
     setChOpts([]); setChSelected([])
     if (!chTeam) return
-    api.teams.channels(chTeam).then((chs) => setChOpts((chs as GraphObject[]).map((c) => ({ value: c.id, label: c.displayName || c.id })))).catch(() => {})
+    setChLoading(true)
+    api.teams.channels(chTeam)
+      .then((chs) => setChOpts((chs as GraphObject[]).map((c) => ({ value: c.id, label: c.displayName || c.id, sub: c.membershipType }))))
+      .catch((e) => toast('err', errMessage(e)))
+      .finally(() => setChLoading(false))
   }, [chTeam])
 
   const runOnboard = async () => {
@@ -100,11 +106,8 @@ export function PlaybooksPage() {
               <Field label={t('playbooks.teams')}><MultiSelect options={teamOpts} selected={teamIds} onChange={setTeamIds} loading={loadingOpts} placeholder={t('playbooks.pickTeams')} /></Field>
               <Field label={t('playbooks.channels')}>
                 <div className="flex flex-col gap-2">
-                  <Select value={chTeam} onChange={(e) => setChTeam(e.target.value)} className="w-full">
-                    <option value="">{t('playbooks.pickTeamForChannels')}</option>
-                    {teamOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </Select>
-                  {chTeam && <MultiSelect options={chOpts} selected={chSelected} onChange={setChSelected} placeholder={t('playbooks.pickChannels')} />}
+                  <EntityPicker value={chTeam} onChange={setChTeam} load={async () => teamOpts} placeholder={t('playbooks.pickTeamForChannels')} />
+                  {chTeam && <MultiSelect options={chOpts} selected={chSelected} onChange={setChSelected} loading={chLoading} placeholder={t('playbooks.pickChannels')} />}
                 </div>
               </Field>
               <Button variant="primary" disabled={readOnly || busy || !on.upn || !on.displayName || !on.mailNickname || !on.password} onClick={runOnboard}>

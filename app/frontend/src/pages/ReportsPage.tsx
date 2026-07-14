@@ -70,7 +70,8 @@ export function ReportsPage() {
   const [error, setError] = useState<string | null>(null)
   const [csv, setCsv] = useState('')
 
-  const chart = useMemo(() => (csv ? buildChart(parseCSV(csv)) : null), [csv])
+  const table = useMemo(() => (csv ? parseCSV(csv) : []), [csv])
+  const chart = useMemo(() => (table.length ? buildChart(table) : null), [table])
   const max = chart ? Math.max(...chart.items.map((i) => i.value), 1) : 1
   const fmt = (v: number) => (chart?.unit === 'bytes' ? humanBytes(v) : v.toLocaleString())
 
@@ -125,6 +126,31 @@ export function ReportsPage() {
                   <span className="text-xs tabular-nums text-[var(--text)]">{fmt(it.value)}</span>
                 </div>
               ))}
+            </div>
+          </Card>
+        )}
+
+        {table.length > 1 && (
+          <Card title={`Data — ${table.length - 1} rows`}>
+            <div className="max-h-[28rem] overflow-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead className="sticky top-0 bg-[var(--bg-elev-2)]">
+                  <tr>
+                    {table[0].slice(0, 8).map((h, i) => (
+                      <th key={i} className="border-b border-[var(--border)] px-2 py-1.5 text-left font-semibold text-[var(--text-dim)]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {table.slice(1, 201).map((r, ri) => (
+                    <tr key={ri} className="hover:bg-[var(--bg-elev-2)]/50">
+                      {r.slice(0, 8).map((c, ci) => (
+                        <td key={ci} className="max-w-[16rem] truncate border-b border-[var(--border)]/50 px-2 py-1" title={c}>{c}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Card>
         )}

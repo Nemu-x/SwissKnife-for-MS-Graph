@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderTree, Search, Upload, Download, Trash2, Link2, Building2 } from 'lucide-react'
+import { FolderTree, Search, Upload, Download, Trash2, Link2 } from 'lucide-react'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input, Select } from '../components/ui'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadUsers, loadSites } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
@@ -18,7 +20,6 @@ export function FilesPage() {
 
   const [ownerType, setOwnerType] = useState<'user' | 'site'>('user')
   const [ownerId, setOwnerId] = useState('')
-  const [siteSearch, setSiteSearch] = useState('')
   const [itemId, setItemId] = useState('')
   const [itemName, setItemName] = useState('')
   const [folder, setFolder] = useState('')
@@ -43,17 +44,15 @@ export function FilesPage() {
       id: 'drive', label: 'Drive', icon: <FolderTree size={15} />, variant: 'primary',
       panel: (
         <DrawerForm>
-          <Select value={ownerType} onChange={(e) => setOwnerType(e.target.value as any)} className="w-full">
+          <Select value={ownerType} onChange={(e) => { setOwnerType(e.target.value as any); setOwnerId('') }} className="w-full">
             <option value="user">OneDrive (user)</option>
             <option value="site">SharePoint (site)</option>
           </Select>
-          {ownerType === 'site' && (
-            <div className="flex gap-2">
-              <Input value={siteSearch} onChange={(e) => setSiteSearch(e.target.value)} placeholder="Site search" />
-              <Button variant="subtle" onClick={() => res.run(() => api.drive.sites(siteSearch))}><Building2 size={15} /></Button>
-            </div>
-          )}
-          <Field label={ownerType === 'user' ? t('common.user') : 'Site ID'}><Input value={ownerId} onChange={(e) => setOwnerId(e.target.value)} /></Field>
+          <Field label={ownerType === 'user' ? t('common.user') : 'SharePoint site'}>
+            <EntityPicker value={ownerId} onChange={setOwnerId}
+              load={ownerType === 'user' ? loadUsers : loadSites} reloadKey={ownerType}
+              placeholder={ownerType === 'user' ? 'Pick a user…' : 'Pick a site…'} />
+          </Field>
           <Button variant="primary" disabled={!ownerId} onClick={() => res.run(() => api.drive.listRoot(ownerType, ownerId))}><FolderTree size={15} /> List root</Button>
           <div className="flex gap-2">
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('common.search')} />

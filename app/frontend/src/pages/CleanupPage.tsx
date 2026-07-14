@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Search, Trash2, Building2 } from 'lucide-react'
 import { Page } from '../components/Layout'
-import { Card, Button, Field, Input, Select, Badge, Spinner, ErrorNote } from '../components/ui'
+import { Card, Button, Field, Select, Badge, Spinner, ErrorNote } from '../components/ui'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadUsers, loadSites } from '../lib/pickers'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
@@ -48,13 +50,17 @@ export function CleanupPage() {
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs text-[var(--text-dim)]">Drive</span>
-            <Select value={ownerType} onChange={(e) => setOwnerType(e.target.value as any)} className="w-48">
+            <Select value={ownerType} onChange={(e) => { setOwnerType(e.target.value as any); setOwnerId('') }} className="w-48">
               <option value="user">OneDrive (user)</option>
               <option value="site">SharePoint (site)</option>
             </Select>
           </label>
-          <Field label={ownerType === 'user' ? t('common.user') : 'Site ID'}>
-            <Input value={ownerId} onChange={(e) => setOwnerId(e.target.value)} />
+          <Field label={ownerType === 'user' ? t('common.user') : 'SharePoint site'}>
+            <div className="w-64">
+              <EntityPicker value={ownerId} onChange={setOwnerId}
+                load={ownerType === 'user' ? loadUsers : loadSites} reloadKey={ownerType}
+                placeholder={ownerType === 'user' ? 'Pick a user…' : 'Pick a site…'} />
+            </div>
           </Field>
           <Button variant="primary" disabled={!ownerId || busy} onClick={scan}>
             {busy ? <Spinner /> : ownerType === 'site' ? <Building2 size={15} /> : <Search size={15} />}

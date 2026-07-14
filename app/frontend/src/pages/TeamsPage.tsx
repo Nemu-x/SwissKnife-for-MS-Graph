@@ -5,6 +5,8 @@ import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input, Select } from '../components/ui'
 import { UpnInput } from '../components/UpnInput'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadTeams, loadChannels, loadGroups } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useStore } from '../lib/store'
 import { api, errMessage, type GraphObject } from '../lib/api'
@@ -32,7 +34,7 @@ export function TeamsPage() {
         <DrawerForm>
           <Field label={t('common.user')}><UpnInput value={user} onChange={setUser} /></Field>
           <Button variant="primary" disabled={!user} onClick={() => res.run(() => api.teams.joined(user))}><ListTree size={15} /> Joined teams</Button>
-          <Field label="Team ID"><Input value={teamId} onChange={(e) => setTeamId(e.target.value)} /></Field>
+          <Field label="Team"><EntityPicker value={teamId} onChange={setTeamId} load={loadTeams} placeholder="Pick a team…" /></Field>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="subtle" disabled={!teamId} onClick={() => res.run(() => api.teams.channels(teamId))}><Hash size={15} /> Channels</Button>
             <Button variant="subtle" disabled={!teamId} onClick={() => res.run(() => api.teams.teamMembers(teamId))}>Members</Button>
@@ -44,8 +46,10 @@ export function TeamsPage() {
       id: 'membership', label: 'Membership', icon: <UserPlus size={15} />,
       panel: (
         <DrawerForm>
-          <Field label="Team ID"><Input value={teamId} onChange={(e) => setTeamId(e.target.value)} /></Field>
-          <Field label="Channel ID (optional)"><Input value={channelId} onChange={(e) => setChannelId(e.target.value)} /></Field>
+          <Field label="Team"><EntityPicker value={teamId} onChange={setTeamId} load={loadTeams} placeholder="Pick a team…" /></Field>
+          <Field label="Channel (optional)">
+            <EntityPicker value={channelId} onChange={setChannelId} load={loadChannels(teamId)} reloadKey={teamId} placeholder="Pick a channel…" />
+          </Field>
           <Field label={t('common.user')}><UpnInput value={upn} onChange={setUpn} /></Field>
           <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
             <input type="checkbox" checked={owner} onChange={(e) => setOwner(e.target.checked)} /> {t('common.owner')}
@@ -67,7 +71,7 @@ export function TeamsPage() {
       id: 'create', label: 'Create / Teamify', icon: <Plus size={15} />, variant: 'primary',
       panel: (
         <DrawerForm>
-          <Field label="Team ID"><Input value={teamId} onChange={(e) => setTeamId(e.target.value)} /></Field>
+          <Field label="Team"><EntityPicker value={teamId} onChange={setTeamId} load={loadTeams} placeholder="Pick a team…" /></Field>
           <Input placeholder="Channel name" value={ch.name} onChange={(e) => setCh({ ...ch, name: e.target.value })} />
           <Input placeholder="Description" value={ch.desc} onChange={(e) => setCh({ ...ch, desc: e.target.value })} />
           <Select value={ch.type} onChange={(e) => setCh({ ...ch, type: e.target.value })} className="w-full">
@@ -79,7 +83,7 @@ export function TeamsPage() {
             <Plus size={15} /> Channel
           </Button>
           <div className="my-1 border-t border-[var(--border)]" />
-          <Field label="Group ID → Team"><Input value={groupId} onChange={(e) => setGroupId(e.target.value)} /></Field>
+          <Field label="Group → Team"><EntityPicker value={groupId} onChange={setGroupId} load={loadGroups} placeholder="Pick a group…" /></Field>
           <Button variant="subtle" disabled={readOnly || !groupId} onClick={() => doWrite(async () => res.setData(await api.teams.teamify(groupId)), 'Teamify')}>
             <Wand2 size={15} /> Teamify
           </Button>
