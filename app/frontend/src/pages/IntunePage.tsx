@@ -4,6 +4,8 @@ import { Smartphone, Info, Eraser, Trash, Lock } from 'lucide-react'
 import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input } from '../components/ui'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadIntuneDevices } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
@@ -28,7 +30,7 @@ export function IntunePage() {
       id: 'device', label: t('devices.info'), icon: <Info size={15} />,
       panel: (
         <DrawerForm>
-          <Field label="Device ID"><Input value={deviceId} onChange={(e) => setDeviceId(e.target.value)} /></Field>
+          <Field label="Device"><EntityPicker value={deviceId} onChange={setDeviceId} load={loadIntuneDevices} placeholder="Pick a device…" /></Field>
           <Button variant="subtle" disabled={!deviceId} onClick={() => res.run(() => api.intune.device(deviceId))}><Info size={15} /> {t('devices.info')}</Button>
         </DrawerForm>
       ),
@@ -37,7 +39,7 @@ export function IntunePage() {
       id: 'actions', label: 'Actions', icon: <Eraser size={15} />, variant: 'danger',
       panel: (
         <DrawerForm>
-          <Field label="Device ID"><Input value={deviceId} onChange={(e) => setDeviceId(e.target.value)} /></Field>
+          <Field label="Device"><EntityPicker value={deviceId} onChange={setDeviceId} load={loadIntuneDevices} placeholder="Pick a device…" /></Field>
           <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
             <input type="checkbox" checked={keepEnroll} onChange={(e) => setKeepEnroll(e.target.checked)} /> keep enrollment data
           </label>
@@ -58,7 +60,7 @@ export function IntunePage() {
   return (
     <>
       {confirmElement}
-      <ActionPage title={t('nav.intune')} actions={actions} result={<ResultView data={res.data} loading={res.loading} error={res.error} />} />
+      <ActionPage title={t('nav.intune')} actions={actions} result={<ResultView data={res.data} loading={res.loading} error={res.error} onUseId={setDeviceId} />} />
     </>
   )
 }

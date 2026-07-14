@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"swissknife-app/internal/session"
 )
@@ -20,6 +21,61 @@ func (ch *ChatsService) List(user string, maxItems int) ([]json.RawMessage, erro
 		return nil, err
 	}
 	return c.ListAll(ch.s.Ctx(), "/users/"+url.PathEscape(user)+"/chats", topParams(50), maxItems)
+}
+
+// ChatPickItem is a chat with a human label (topic, or the other participants).
+type ChatPickItem struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	ChatType string `json:"chatType"`
+}
+
+// ListForPicker returns the user's chats labeled by topic or, for 1:1/group
+// chats without a topic, by the other participants' names — so they're findable.
+func (ch *ChatsService) ListForPicker(user string) ([]ChatPickItem, error) {
+	c, err := ch.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	params := url.Values{"$expand": {"members"}, "$top": {"50"}}
+	raws, err := c.ListAll(ch.s.Ctx(), "/users/"+url.PathEscape(user)+"/chats", params, 0)
+	if err != nil {
+		return nil, err
+	}
+	userLower := strings.ToLower(user)
+	out := make([]ChatPickItem, 0, len(raws))
+	for _, raw := range raws {
+		var chat struct {
+			ID       string `json:"id"`
+			Topic    string `json:"topic"`
+			ChatType string `json:"chatType"`
+			Members  []struct {
+				DisplayName string `json:"displayName"`
+				Email       string `json:"email"`
+			} `json:"members"`
+		}
+		if json.Unmarshal(raw, &chat) != nil {
+			continue
+		}
+		label := chat.Topic
+		if label == "" {
+			names := make([]string, 0, len(chat.Members))
+			for _, m := range chat.Members {
+				if strings.ToLower(m.Email) == userLower {
+					continue
+				}
+				if m.DisplayName != "" {
+					names = append(names, m.DisplayName)
+				}
+			}
+			label = strings.Join(names, ", ")
+		}
+		if label == "" {
+			label = chat.ID
+		}
+		out = append(out, ChatPickItem{ID: chat.ID, Label: label, ChatType: chat.ChatType})
+	}
+	return out, nil
 }
 
 func (ch *ChatsService) Messages(chatID string, top int) ([]json.RawMessage, error) {

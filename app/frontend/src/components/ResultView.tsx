@@ -32,10 +32,12 @@ export function ResultView({
   data,
   loading,
   error,
+  onUseId,
 }: {
   data: GraphRow[] | GraphRow | null
   loading?: boolean
   error?: string | null
+  onUseId?: (id: string) => void
 }) {
   const { t } = useTranslation()
   const { safeMode, toast } = useStore()
@@ -129,7 +131,7 @@ export function ResultView({
           </div>
         )}
         {!loading && !error && rows.length > 0 && tab === 'table' && (
-          <MasterDetail rows={filtered} selected={selected} onSelect={setSelected} current={current} />
+          <MasterDetail rows={filtered} selected={selected} onSelect={setSelected} current={current} onUseId={onUseId} />
         )}
         {!loading && !error && rows.length > 0 && tab === 'json' && (
           <pre className="h-full overflow-auto p-4 text-xs leading-relaxed text-[var(--text)]">{JSON.stringify(shown, null, 2)}</pre>
@@ -153,11 +155,13 @@ function MasterDetail({
   selected,
   onSelect,
   current,
+  onUseId,
 }: {
   rows: GraphRow[]
   selected: number
   onSelect: (i: number) => void
   current: GraphRow | undefined
+  onUseId?: (id: string) => void
 }) {
   const single = rows.length === 1
   return (
@@ -193,6 +197,14 @@ function MasterDetail({
         </div>
       )}
       <div className={`overflow-auto p-5 ${single ? '' : 'border-l border-[var(--border)]'}`}>
+        {onUseId && current?.id && (
+          <button
+            onClick={() => onUseId(String(current.id))}
+            className="mb-3 rounded-lg border border-[var(--accent)] px-3 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent)]/10"
+          >
+            ↑ Use this ID
+          </button>
+        )}
         {current ? <Detail row={current} /> : <p className="text-sm text-[var(--text-faint)]">—</p>}
       </div>
     </div>

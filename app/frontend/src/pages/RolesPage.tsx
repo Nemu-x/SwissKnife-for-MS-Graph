@@ -5,6 +5,8 @@ import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input } from '../components/ui'
 import { UpnInput } from '../components/UpnInput'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadRoles } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
@@ -28,7 +30,7 @@ export function RolesPage() {
       id: 'members', label: t('roles.members'), icon: <Users2 size={15} />,
       panel: (
         <DrawerForm>
-          <Field label={t('roles.roleId')}><Input value={roleId} onChange={(e) => setRoleId(e.target.value)} /></Field>
+          <Field label={t('roles.members')}><EntityPicker value={roleId} onChange={setRoleId} load={loadRoles} placeholder="Pick a role…" /></Field>
           <Button variant="subtle" disabled={!roleId} onClick={() => res.run(() => api.roles.members(roleId))}><Users2 size={15} /> {t('roles.members')}</Button>
           <Field label={t('common.user')}><UpnInput value={upn} onChange={setUpn} /></Field>
           <div className="grid grid-cols-2 gap-2">
@@ -46,7 +48,7 @@ export function RolesPage() {
   return (
     <>
       {confirmElement}
-      <ActionPage title={t('roles.title')} actions={actions} result={<ResultView data={res.data} loading={res.loading} error={res.error} />} />
+      <ActionPage title={t('roles.title')} actions={actions} result={<ResultView data={res.data} loading={res.loading} error={res.error} onUseId={setRoleId} />} />
     </>
   )
 }

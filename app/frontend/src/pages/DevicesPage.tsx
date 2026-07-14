@@ -4,6 +4,8 @@ import { Search, Info, Power, PowerOff, Trash2, KeyRound, Eye } from 'lucide-rea
 import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input } from '../components/ui'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadDevices } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
@@ -29,7 +31,7 @@ export function DevicesPage() {
       id: 'device', label: t('devices.info'), icon: <Info size={15} />,
       panel: (
         <DrawerForm>
-          <Field label={t('devices.deviceId')}><Input value={deviceId} onChange={(e) => setDeviceId(e.target.value)} /></Field>
+          <Field label={t('devices.info')}><EntityPicker value={deviceId} onChange={setDeviceId} load={loadDevices} placeholder="Pick a device…" /></Field>
           <Button variant="subtle" disabled={!deviceId} onClick={() => res.run(() => api.devices.get(deviceId))}><Info size={15} /> {t('devices.info')}</Button>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="subtle" disabled={readOnly || !deviceId} onClick={() => doWrite(() => api.devices.enable(deviceId), t('devices.enable'))}><Power size={15} /> {t('devices.enable')}</Button>
@@ -61,7 +63,7 @@ export function DevicesPage() {
         title={t('devices.title')}
         search={{ value: search, onChange: setSearch, onSubmit: listDevices, placeholder: t('common.search') }}
         actions={actions}
-        result={<ResultView data={res.data} loading={res.loading} error={res.error} />}
+        result={<ResultView data={res.data} loading={res.loading} error={res.error} onUseId={setDeviceId} />}
       />
     </>
   )

@@ -112,6 +112,7 @@ export const api = {
     list: (u: string, max: number) => list(Chats.List(u, max)),
     messages: (c: string, top: number) => list(Chats.Messages(c, top)),
     members: (c: string) => list(Chats.Members(c)),
+    listForPicker: (u: string) => Chats.ListForPicker(u) as Promise<{ id: string; label: string; chatType: string }[]>,
     addMember: (c: string, upn: string, owner: boolean) => one(Chats.AddMember(c, upn, owner)),
     removeMember: (c: string, upn: string) => Chats.RemoveMember(c, upn),
     createGroup: (topic: string, members: string[]) => one(Chats.CreateGroupChat(topic, members)),
@@ -185,8 +186,10 @@ export const api = {
   },
   cleanup: {
     findDuplicates: (ownerType: string, ownerId: string) => Cleanup.FindDuplicates(ownerType, ownerId) as Promise<services.DupGroup[]>,
-    deleteItems: (ownerType: string, ownerId: string, ids: string[], confirm: string) =>
-      Cleanup.DeleteItems(ownerType, ownerId, ids, confirm) as Promise<any>,
+    deleteItems: (refs: string[], confirm: string) => Cleanup.DeleteItems(refs, confirm) as Promise<any>,
+    findVersionBloat: (ownerType: string, ownerId: string, minVersions: number, maxFiles: number) =>
+      Cleanup.FindVersionBloat(ownerType, ownerId, minVersions, maxFiles) as Promise<services.VersionBloat[]>,
+    trimVersions: (itemRef: string, keep: number, confirm: string) => Cleanup.TrimVersions(itemRef, keep, confirm) as Promise<any>,
   },
   health: {
     overview: () => list(ServiceHealth.Overview()),

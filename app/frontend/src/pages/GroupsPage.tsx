@@ -5,6 +5,8 @@ import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input } from '../components/ui'
 import { UpnInput } from '../components/UpnInput'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadGroups } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useStore } from '../lib/store'
 import { api, errMessage, type GraphObject } from '../lib/api'
@@ -29,7 +31,7 @@ export function GroupsPage() {
       id: 'members', label: t('roles.members'), icon: <Users2 size={15} />,
       panel: (
         <DrawerForm>
-          <Field label="Group ID"><Input value={groupId} onChange={(e) => setGroupId(e.target.value)} /></Field>
+          <Field label="Group"><EntityPicker value={groupId} onChange={setGroupId} load={loadGroups} placeholder="Pick a group…" /></Field>
           <Button variant="subtle" disabled={!groupId} onClick={() => res.run(() => api.groups.members(groupId))}><Users2 size={15} /> {t('roles.members')}</Button>
           <Field label={t('common.user')}><UpnInput value={upn} onChange={setUpn} /></Field>
           <div className="grid grid-cols-2 gap-2">
@@ -61,7 +63,7 @@ export function GroupsPage() {
       title={t('nav.groups')}
       search={{ value: search, onChange: setSearch, onSubmit: listGroups, placeholder: t('common.search') }}
       actions={actions}
-      result={<ResultView data={res.data} loading={res.loading} error={res.error} />}
+      result={<ResultView data={res.data} loading={res.loading} error={res.error} onUseId={setGroupId} />}
     />
   )
 }

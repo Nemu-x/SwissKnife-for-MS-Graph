@@ -76,7 +76,7 @@ export function EntityPicker({
           <div className="fixed inset-0 z-[100]" onClick={() => { setOpen(false); setFilter('') }} />
           <div
             className="fixed z-[101] max-h-72 overflow-auto rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elev)] shadow-2xl"
-            style={{ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 240) }}
+            style={{ top: rect.bottom + 4, left: rect.left, width: Math.min(Math.max(rect.width, 380), 560) }}
           >
             <div className="sticky top-0 border-b border-[var(--border)] bg-[var(--bg-elev)] p-1.5">
               <input

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, Trash2, Building2 } from 'lucide-react'
+import { Search, Trash2, Building2, Scissors, Files as FilesIcon, History } from 'lucide-react'
 import { Page } from '../components/Layout'
-import { Card, Button, Field, Select, Badge, Spinner, ErrorNote } from '../components/ui'
+import { Card, Button, Field, Select, Badge, Spinner, ErrorNote, Input } from '../components/ui'
 import { EntityPicker } from '../components/EntityPicker'
 import { loadUsers, loadSites } from '../lib/pickers'
 import { useConfirm } from '../lib/useConfirm'
@@ -11,41 +11,64 @@ import { api, errMessage } from '../lib/api'
 import { humanBytes } from '../lib/format'
 import type { services } from '../../wailsjs/go/models'
 
+type Mode = 'duplicates' | 'versions'
+
 export function CleanupPage() {
   const { t } = useTranslation()
   const { readOnly, toast } = useStore()
   const { askConfirm, confirmElement } = useConfirm()
 
+  const [mode, setMode] = useState<Mode>('versions')
   const [ownerType, setOwnerType] = useState<'user' | 'site'>('user')
   const [ownerId, setOwnerId] = useState('')
-  const [groups, setGroups] = useState<services.DupGroup[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [groups, setGroups] = useState<services.DupGroup[] | null>(null)
+  const [bloat, setBloat] = useState<services.VersionBloat[] | null>(null)
+  const [keep, setKeep] = useState(3)
+
+  const reset = () => { setGroups(null); setBloat(null); setError(null) }
 
   const scan = async () => {
-    setBusy(true); setError(null); setGroups(null)
-    try { setGroups(await api.cleanup.findDuplicates(ownerType, ownerId)) } catch (e) { setError(errMessage(e)) } finally { setBusy(false) }
+    setBusy(true); reset()
+    try {
+      if (mode === 'duplicates') setGroups(await api.cleanup.findDuplicates(ownerType, ownerId))
+      else setBloat(await api.cleanup.findVersionBloat(ownerType, ownerId, 2, 3000))
+    } catch (e) { setError(errMessage(e)) } finally { setBusy(false) }
   }
 
-  // Delete every copy except the first in each group.
   const deleteExtras = () => {
     if (!groups) return
-    const ids = groups.flatMap((g) => g.items.slice(1).map((i) => i.id))
-    if (ids.length === 0) return
+    const refs = groups.flatMap((g) => g.items.slice(1).map((i) => i.ref))
+    if (refs.length === 0) return
     askConfirm('DELETE', async (c) => {
-      try {
-        const r = await api.cleanup.deleteItems(ownerType, ownerId, ids, c)
-        toast('ok', `${r.deleted} deleted`)
-        scan()
-      } catch (e) { toast('err', errMessage(e)) }
+      try { const r = await api.cleanup.deleteItems(refs, c); toast('ok', `${r.deleted} deleted`); scan() }
+      catch (e) { toast('err', errMessage(e)) }
     }, t('cleanup.deleteExtras'))
   }
 
-  const totalWasted = (groups || []).reduce((a, g) => a + g.wasted, 0)
+  const trim = (ref: string, name: string) =>
+    askConfirm('TRIM', async (c) => {
+      try { const r = await api.cleanup.trimVersions(ref, keep, c); toast('ok', `${r.removed} versions removed`); scan() }
+      catch (e) { toast('err', errMessage(e)) }
+    }, `${t('cleanup.trim')} — ${name}`)
+
+  const totalDupWasted = (groups || []).reduce((a, g) => a + g.wasted, 0)
+  const totalVerWasted = (bloat || []).reduce((a, b) => a + b.reclaimable, 0)
 
   return (
     <Page title={t('cleanup.title')} subtitle={t('cleanup.subtitle')}>
       {confirmElement}
+
+      <div className="mb-4 inline-flex rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] p-1">
+        {([['versions', <History size={15} key="v" />, t('cleanup.tabVersions')], ['duplicates', <FilesIcon size={15} key="d" />, t('cleanup.tabDuplicates')]] as const).map(([m, icon, label]) => (
+          <button key={m} onClick={() => { setMode(m); reset() }}
+            className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium ${mode === m ? 'bg-[var(--accent)] text-[var(--accent-fg)]' : 'text-[var(--text-dim)]'}`}>
+            {icon}{label}
+          </button>
+        ))}
+      </div>
+
       <Card title={t('cleanup.title')} className="mb-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
@@ -56,17 +79,23 @@ export function CleanupPage() {
             </Select>
           </label>
           <Field label={ownerType === 'user' ? t('common.user') : 'SharePoint site'}>
-            <div className="w-64">
+            <div className="w-72">
               <EntityPicker value={ownerId} onChange={setOwnerId}
                 load={ownerType === 'user' ? loadUsers : loadSites} reloadKey={ownerType}
                 placeholder={ownerType === 'user' ? 'Pick a user…' : 'Pick a site…'} />
             </div>
           </Field>
+          {mode === 'versions' && (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-[var(--text-dim)]">{t('cleanup.keep')}</span>
+              <Input type="number" value={keep} onChange={(e) => setKeep(Math.max(1, Number(e.target.value) || 1))} className="w-20" />
+            </label>
+          )}
           <Button variant="primary" disabled={!ownerId || busy} onClick={scan}>
             {busy ? <Spinner /> : ownerType === 'site' ? <Building2 size={15} /> : <Search size={15} />}
-            {busy ? t('cleanup.scanning') : t('cleanup.scan')}
+            {busy ? t('cleanup.scanning') : mode === 'versions' ? t('cleanup.scanVersions') : t('cleanup.scan')}
           </Button>
-          {groups && groups.length > 0 && (
+          {mode === 'duplicates' && groups && groups.length > 0 && (
             <Button variant="danger" disabled={readOnly} onClick={deleteExtras} className="ml-auto">
               <Trash2 size={15} /> {t('cleanup.deleteExtras')}
             </Button>
@@ -76,15 +105,31 @@ export function CleanupPage() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      {groups && groups.length === 0 && (
-        <p className="text-sm text-[var(--ok)]">{t('cleanup.noDupes')}</p>
+      {/* Versions */}
+      {mode === 'versions' && bloat && bloat.length === 0 && <p className="text-sm text-[var(--ok)]">{t('cleanup.noVersions')}</p>}
+      {mode === 'versions' && bloat && bloat.length > 0 && (
+        <>
+          <div className="mb-3 text-sm text-[var(--text-dim)]">{t('cleanup.totalWasted', { size: humanBytes(totalVerWasted) })}</div>
+          <div className="flex flex-col gap-2">
+            {bloat.map((b, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium" title={b.path}>{b.name}</div>
+                  <div className="text-xs text-[var(--text-faint)]">{t('cleanup.versions', { n: b.versions })} · {humanBytes(b.currentSize)} {t('cleanup.current')}</div>
+                </div>
+                <Badge kind="warn">{t('cleanup.wasted')}: {humanBytes(b.reclaimable)}</Badge>
+                <Button variant="danger" disabled={readOnly} onClick={() => trim(b.ref, b.name)}><Scissors size={14} /> {t('cleanup.trim')}</Button>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
-      {groups && groups.length > 0 && (
+      {/* Duplicates */}
+      {mode === 'duplicates' && groups && groups.length === 0 && <p className="text-sm text-[var(--ok)]">{t('cleanup.noDupes')}</p>}
+      {mode === 'duplicates' && groups && groups.length > 0 && (
         <>
-          <div className="mb-3 text-sm text-[var(--text-dim)]">
-            {t('cleanup.totalWasted', { size: humanBytes(totalWasted) })}
-          </div>
+          <div className="mb-3 text-sm text-[var(--text-dim)]">{t('cleanup.totalWasted', { size: humanBytes(totalDupWasted) })}</div>
           <div className="flex flex-col gap-2">
             {groups.map((g, i) => (
               <div key={i} className="rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-3">
@@ -97,7 +142,7 @@ export function CleanupPage() {
                 </div>
                 <div className="mt-2 flex flex-col gap-1">
                   {g.items.map((it, j) => (
-                    <div key={it.id} className="flex items-center gap-2 text-xs">
+                    <div key={j} className="flex items-center gap-2 text-xs">
                       <span className={j === 0 ? 'text-[var(--ok)]' : 'text-[var(--text-faint)]'}>{j === 0 ? '✓ keep' : '✗ extra'}</span>
                       <span className="truncate text-[var(--text-dim)]">{it.path}</span>
                     </div>

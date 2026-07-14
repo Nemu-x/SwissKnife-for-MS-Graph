@@ -8,6 +8,8 @@ import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input, Textarea } from '../components/ui'
 import { UpnInput } from '../components/UpnInput'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadUsers } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
@@ -38,7 +40,7 @@ export function UsersPage() {
   }
 
   const targetField = (
-    <Field label={t('common.user')}><UpnInput value={target} onChange={setTarget} /></Field>
+    <Field label={t('common.user')}><EntityPicker value={target} onChange={setTarget} load={loadUsers} placeholder="Pick a user…" /></Field>
   )
 
   const actions: Action[] = [
@@ -144,7 +146,7 @@ export function UsersPage() {
         title={t('nav.users')}
         search={{ value: search, onChange: setSearch, onSubmit: listUsers, placeholder: t('common.search') }}
         actions={[{ id: 'run-search', label: t('common.search'), icon: <Search size={15} />, variant: 'primary', onClick: listUsers }, ...actions]}
-        result={<ResultView data={res.data} loading={res.loading} error={res.error} />}
+        result={<ResultView data={res.data} loading={res.loading} error={res.error} onUseId={setTarget} />}
       />
     </>
   )

@@ -31,9 +31,47 @@ export const loadChannels = (teamId: string) => async (): Promise<Option[]> =>
     sub: c.membershipType,
   }))
 
+export const loadRoles = async (): Promise<Option[]> =>
+  (await api.roles.list()).map((r: GraphObject) => ({
+    value: r.id,
+    label: r.displayName || r.id,
+    sub: r.description,
+  }))
+
+export const loadDevices = async (): Promise<Option[]> =>
+  (await api.devices.list('', 200)).map((d: GraphObject) => ({
+    value: d.id,
+    label: d.displayName || d.id,
+    sub: [d.operatingSystem, d.operatingSystemVersion].filter(Boolean).join(' '),
+  }))
+
+export const loadIntuneDevices = async (): Promise<Option[]> =>
+  (await api.intune.devices(200)).map((d: GraphObject) => ({
+    value: d.id,
+    label: d.deviceName || d.id,
+    sub: [d.operatingSystem, d.userPrincipalName].filter(Boolean).join(' · '),
+  }))
+
+export const loadChats = (user: string) => async (): Promise<Option[]> =>
+  (await api.chats.listForPicker(user)).map((c) => ({
+    value: c.id,
+    label: c.label,
+    sub: c.chatType,
+  }))
+
 export const loadSites = async (): Promise<Option[]> =>
   (await api.drive.sites('')).map((s: GraphObject) => ({
     value: s.id,
     label: s.displayName || s.name || s.id,
-    sub: s.webUrl,
+    // show the site path (…/sites/Name) — it's what distinguishes same-named sites
+    sub: sitePath(s.webUrl) || s.name,
   }))
+
+function sitePath(webUrl?: string): string {
+  if (!webUrl) return ''
+  try {
+    return new URL(webUrl).pathname || webUrl
+  } catch {
+    return webUrl
+  }
+}

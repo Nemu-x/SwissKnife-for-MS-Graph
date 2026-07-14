@@ -14,6 +14,10 @@ export function List(arg1, arg2) {
   return window['go']['services']['ChatsService']['List'](arg1, arg2);
 }
 
+export function ListForPicker(arg1) {
+  return window['go']['services']['ChatsService']['ListForPicker'](arg1);
+}
+
 export function Members(arg1) {
   return window['go']['services']['ChatsService']['Members'](arg1);
 }

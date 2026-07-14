@@ -89,6 +89,22 @@ export namespace services {
 	        this.channelId = source["channelId"];
 	    }
 	}
+	export class ChatPickItem {
+	    id: string;
+	    label: string;
+	    chatType: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatPickItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.chatType = source["chatType"];
+	    }
+	}
 	export class ConnectRequest {
 	    profileId: string;
 	    tenantId: string;
@@ -218,7 +234,7 @@ export namespace services {
 	    }
 	}
 	export class DupItem {
-	    id: string;
+	    ref: string;
 	    name: string;
 	    path: string;
 	
@@ -228,7 +244,7 @@ export namespace services {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
+	        this.ref = source["ref"];
 	        this.name = source["name"];
 	        this.path = source["path"];
 	    }
@@ -454,6 +470,28 @@ export namespace services {
 	        this.updateAvailable = source["updateAvailable"];
 	        this.notes = source["notes"];
 	        this.url = source["url"];
+	    }
+	}
+	export class VersionBloat {
+	    ref: string;
+	    name: string;
+	    path: string;
+	    versions: number;
+	    currentSize: number;
+	    reclaimable: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new VersionBloat(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ref = source["ref"];
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.versions = source["versions"];
+	        this.currentSize = source["currentSize"];
+	        this.reclaimable = source["reclaimable"];
 	    }
 	}
 

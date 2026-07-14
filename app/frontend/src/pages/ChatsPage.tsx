@@ -6,7 +6,7 @@ import { ResultView } from '../components/ResultView'
 import { Button, Field, Input } from '../components/ui'
 import { UpnInput } from '../components/UpnInput'
 import { EntityPicker } from '../components/EntityPicker'
-import { loadUsers } from '../lib/pickers'
+import { loadUsers, loadChats } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useStore } from '../lib/store'
 import { api, errMessage, type GraphObject } from '../lib/api'
@@ -32,7 +32,7 @@ export function ChatsPage() {
         <DrawerForm>
           <Field label={t('common.user')}><EntityPicker value={user} onChange={setUser} load={loadUsers} placeholder="Pick a user…" /></Field>
           <Button variant="primary" disabled={!user} onClick={() => res.run(() => api.chats.list(user, 0))}><MessageSquare size={15} /> List chats</Button>
-          <Field label="Chat ID"><Input value={chatId} onChange={(e) => setChatId(e.target.value)} /></Field>
+          <Field label="Chat"><EntityPicker value={chatId} onChange={setChatId} load={loadChats(user)} reloadKey={user} placeholder={user ? 'Pick a chat…' : 'Choose a user first'} /></Field>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="subtle" disabled={!chatId} onClick={() => res.run(() => api.chats.messages(chatId, 50))}>Messages</Button>
             <Button variant="subtle" disabled={!chatId} onClick={() => res.run(() => api.chats.members(chatId))}><Users2 size={15} /> Members</Button>
@@ -44,7 +44,7 @@ export function ChatsPage() {
       id: 'membership', label: 'Membership', icon: <UserPlus size={15} />,
       panel: (
         <DrawerForm>
-          <Field label="Chat ID"><Input value={chatId} onChange={(e) => setChatId(e.target.value)} /></Field>
+          <Field label="Chat"><EntityPicker value={chatId} onChange={setChatId} load={loadChats(user)} reloadKey={user} placeholder={user ? 'Pick a chat…' : 'Choose a user first'} /></Field>
           <Field label={t('common.user')}><UpnInput value={upn} onChange={setUpn} /></Field>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="subtle" disabled={readOnly || !chatId || !upn} onClick={() => doWrite(() => api.chats.addMember(chatId, upn, false), t('common.add'))}><UserPlus size={15} /> {t('common.add')}</Button>

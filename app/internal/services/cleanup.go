@@ -9,49 +9,61 @@ import (
 	"swissknife-app/internal/session"
 )
 
-// CleanupService finds and removes duplicate files to reclaim OneDrive/SharePoint
-// storage (e.g. the classic "30 copies of the same video").
+// CleanupService reclaims OneDrive/SharePoint storage: duplicate files and
+// version-history bloat. For SharePoint sites it scans every document library.
 type CleanupService struct {
 	s *session.Session
 }
 
 func NewCleanupService(s *session.Session) *CleanupService { return &CleanupService{s: s} }
 
-// DupItem is one file within a duplicate group.
-type DupItem struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Path string `json:"path"`
-}
-
-// DupGroup is a set of files that are byte-identical (same hash, or same name+size).
-type DupGroup struct {
-	Name   string    `json:"name"`
-	Size   int64     `json:"size"`
-	Count  int       `json:"count"`
-	Wasted int64     `json:"wasted"` // (count-1) * size — space freed if only one is kept
-	Items  []DupItem `json:"items"`
-}
-
-// FindDuplicates walks the drive and groups byte-identical files.
-func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup, error) {
-	base, err := drivePath(ownerType, ownerID)
-	if err != nil {
-		return nil, err
-	}
+// driveBases returns the API base path(s) for the owner's drive(s).
+// A user has one drive; a site can have several document libraries.
+func (cl *CleanupService) driveBases(ownerType, ownerID string) ([]string, error) {
 	c, err := cl.s.Client()
 	if err != nil {
 		return nil, err
 	}
-
-	type fileRec struct {
-		id, name, path string
-		size           int64
+	switch ownerType {
+	case "user":
+		return []string{"/users/" + url.PathEscape(ownerID) + "/drive"}, nil
+	case "site":
+		var resp struct {
+			Value []struct {
+				ID string `json:"id"`
+			} `json:"value"`
+		}
+		if err := c.Get(cl.s.Ctx(), "/sites/"+url.PathEscape(ownerID)+"/drives", url.Values{"$select": {"id"}}, &resp); err == nil && len(resp.Value) > 0 {
+			out := make([]string, 0, len(resp.Value))
+			for _, d := range resp.Value {
+				out = append(out, "/drives/"+url.PathEscape(d.ID))
+			}
+			return out, nil
+		}
+		return []string{"/sites/" + url.PathEscape(ownerID) + "/drive"}, nil
 	}
-	groups := map[string][]fileRec{}
+	return nil, errors.New("ownerType must be 'user' or 'site'")
+}
 
-	var walk func(itemsPath, rel string) error
-	walk = func(itemsPath, rel string) error {
+type fileRec struct {
+	id, name, path, base string
+	size                 int64
+	quickXor, sha        string
+}
+
+// walkFiles collects every file across all of the owner's drives.
+func (cl *CleanupService) walkFiles(ownerType, ownerID string) ([]fileRec, error) {
+	c, err := cl.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	bases, err := cl.driveBases(ownerType, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	var files []fileRec
+	var walk func(base, itemsPath, rel string) error
+	walk = func(base, itemsPath, rel string) error {
 		items, err := c.ListAll(cl.s.Ctx(), itemsPath, nil, 0)
 		if err != nil {
 			return err
@@ -77,25 +89,57 @@ func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup,
 				relPath = rel + "/" + it.Name
 			}
 			if it.Folder != nil {
-				_ = walk(base+"/items/"+url.PathEscape(it.ID)+"/children", relPath)
+				_ = walk(base, base+"/items/"+url.PathEscape(it.ID)+"/children", relPath)
 				continue
 			}
-			// key: prefer a content hash, else fall back to name+size
-			key := it.File.Hashes.QuickXor
-			if key == "" {
-				key = it.File.Hashes.Sha256
-			}
-			if key == "" {
-				key = it.Name + "|" + itoa(int(it.Size))
-			}
-			groups[key] = append(groups[key], fileRec{it.ID, it.Name, relPath, it.Size})
+			files = append(files, fileRec{
+				id: it.ID, name: it.Name, path: relPath, base: base, size: it.Size,
+				quickXor: it.File.Hashes.QuickXor, sha: it.File.Hashes.Sha256,
+			})
 		}
 		return nil
 	}
-	if err := walk(base+"/root/children", ""); err != nil {
+	for _, base := range bases {
+		if err := walk(base, base+"/root/children", ""); err != nil {
+			return nil, err
+		}
+	}
+	return files, nil
+}
+
+// --- Duplicate files ---
+
+type DupItem struct {
+	Ref  string `json:"ref"` // API path used to delete this copy
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+type DupGroup struct {
+	Name   string    `json:"name"`
+	Size   int64     `json:"size"`
+	Count  int       `json:"count"`
+	Wasted int64     `json:"wasted"`
+	Items  []DupItem `json:"items"`
+}
+
+// FindDuplicates groups byte-identical files (by content hash, else name+size).
+func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup, error) {
+	files, err := cl.walkFiles(ownerType, ownerID)
+	if err != nil {
 		return nil, err
 	}
-
+	groups := map[string][]fileRec{}
+	for _, f := range files {
+		key := f.quickXor
+		if key == "" {
+			key = f.sha
+		}
+		if key == "" {
+			key = f.name + "|" + itoa(int(f.size))
+		}
+		groups[key] = append(groups[key], f)
+	}
 	out := make([]DupGroup, 0)
 	for _, recs := range groups {
 		if len(recs) < 2 {
@@ -103,7 +147,7 @@ func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup,
 		}
 		g := DupGroup{Name: recs[0].name, Size: recs[0].size, Count: len(recs), Wasted: int64(len(recs)-1) * recs[0].size}
 		for _, r := range recs {
-			g.Items = append(g.Items, DupItem{ID: r.id, Name: r.name, Path: r.path})
+			g.Items = append(g.Items, DupItem{Ref: r.base + "/items/" + url.PathEscape(r.id), Name: r.name, Path: r.path})
 		}
 		out = append(out, g)
 	}
@@ -111,17 +155,13 @@ func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup,
 	return out, nil
 }
 
-// DeleteItems removes the given drive items. Destructive: confirm must be "DELETE".
-func (cl *CleanupService) DeleteItems(ownerType, ownerID string, itemIDs []string, confirm string) (map[string]any, error) {
+// DeleteItems removes drive items by their API ref. Destructive: confirm == "DELETE".
+func (cl *CleanupService) DeleteItems(refs []string, confirm string) (map[string]any, error) {
 	if err := cl.s.GuardWrite(); err != nil {
 		return nil, err
 	}
 	if confirm != "DELETE" {
-		return nil, errors.New(`type DELETE to confirm bulk deletion`)
-	}
-	base, err := drivePath(ownerType, ownerID)
-	if err != nil {
-		return nil, err
+		return nil, errors.New("type DELETE to confirm bulk deletion")
 	}
 	c, err := cl.s.Client()
 	if err != nil {
@@ -129,13 +169,120 @@ func (cl *CleanupService) DeleteItems(ownerType, ownerID string, itemIDs []strin
 	}
 	deleted := 0
 	failures := map[string]string{}
-	for _, id := range itemIDs {
-		if e := c.Delete(cl.s.Ctx(), base+"/items/"+url.PathEscape(id)); e != nil {
-			failures[id] = e.Error()
+	for _, ref := range refs {
+		if e := c.Delete(cl.s.Ctx(), ref); e != nil {
+			failures[ref] = e.Error()
 			continue
 		}
 		deleted++
 	}
-	cl.s.Record("cleanup.deleteItems", ownerType+":"+ownerID, "deleted="+itoa(deleted), nil)
+	cl.s.Record("cleanup.deleteItems", "", "deleted="+itoa(deleted), nil)
 	return map[string]any{"deleted": deleted, "failures": failures}, nil
+}
+
+// --- Version-history bloat ---
+
+type VersionBloat struct {
+	Ref         string `json:"ref"` // API path to the item
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Versions    int    `json:"versions"`
+	CurrentSize int64  `json:"currentSize"`
+	Reclaimable int64  `json:"reclaimable"` // total size of non-current versions
+}
+
+// FindVersionBloat finds files whose version history wastes space. minVersions
+// filters out files with few versions; maxFiles caps how many files we probe
+// (version lookups are one call each).
+func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersions, maxFiles int) ([]VersionBloat, error) {
+	if minVersions < 2 {
+		minVersions = 2
+	}
+	if maxFiles <= 0 {
+		maxFiles = 3000
+	}
+	files, err := cl.walkFiles(ownerType, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	c, err := cl.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	// Probe the largest files first — that's where version bloat matters.
+	sort.Slice(files, func(i, j int) bool { return files[i].size > files[j].size })
+	if len(files) > maxFiles {
+		files = files[:maxFiles]
+	}
+
+	var out []VersionBloat
+	for _, f := range files {
+		var vr struct {
+			Value []struct {
+				Size int64 `json:"size"`
+			} `json:"value"`
+		}
+		ref := f.base + "/items/" + url.PathEscape(f.id)
+		if err := c.Get(cl.s.Ctx(), ref+"/versions", url.Values{"$select": {"id,size"}}, &vr); err != nil {
+			continue
+		}
+		if len(vr.Value) < minVersions {
+			continue
+		}
+		var total int64
+		for _, v := range vr.Value {
+			total += v.Size
+		}
+		reclaimable := total - f.size
+		if reclaimable <= 0 {
+			continue
+		}
+		out = append(out, VersionBloat{
+			Ref: ref, Name: f.name, Path: f.path, Versions: len(vr.Value),
+			CurrentSize: f.size, Reclaimable: reclaimable,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Reclaimable > out[j].Reclaimable })
+	return out, nil
+}
+
+// TrimVersions deletes old versions of an item, keeping the newest `keep`.
+// Destructive: confirm == "TRIM".
+func (cl *CleanupService) TrimVersions(itemRef string, keep int, confirm string) (map[string]any, error) {
+	if err := cl.s.GuardWrite(); err != nil {
+		return nil, err
+	}
+	if confirm != "TRIM" {
+		return nil, errors.New("type TRIM to confirm version trimming")
+	}
+	if keep < 1 {
+		keep = 1
+	}
+	c, err := cl.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	var vr struct {
+		Value []struct {
+			ID string `json:"id"`
+		} `json:"value"`
+	}
+	if err := c.Get(cl.s.Ctx(), itemRef+"/versions", url.Values{"$select": {"id"}}, &vr); err != nil {
+		return nil, err
+	}
+	// Versions come newest-first; keep the first `keep`, delete the rest.
+	removed := 0
+	failures := map[string]string{}
+	for i, v := range vr.Value {
+		if i < keep || v.ID == "current" {
+			continue
+		}
+		if e := c.Delete(cl.s.Ctx(), itemRef+"/versions/"+url.PathEscape(v.ID)); e != nil {
+			failures[v.ID] = e.Error()
+			continue
+		}
+		removed++
+	}
+	cl.s.Record("cleanup.trimVersions", itemRef, "removed="+itoa(removed), nil)
+	return map[string]any{"removed": removed, "failures": failures}, nil
 }
