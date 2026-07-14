@@ -135,6 +135,22 @@ jobs:
           merge-multiple: true
       - name: Checksums
         run: cd dist && sha256sum * > SHA256SUMS.txt
+      # Sign the checksums with minisign so downloads can't be tampered with.
+      # Gated on the MINISIGN_SECRET_KEY secret; skipped (unsigned) if absent.
+      - name: Sign checksums (minisign)
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+        run: |
+          if [ -z "$MINISIGN_SECRET_KEY" ]; then
+            echo "MINISIGN_SECRET_KEY not set — publishing UNSIGNED checksums."
+            exit 0
+          fi
+          sudo apt-get update && sudo apt-get install -y minisign
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > minisign.key
+          echo "$MINISIGN_PASSWORD" | minisign -S -s minisign.key -m dist/SHA256SUMS.txt -x dist/SHA256SUMS.txt.minisig
+          rm -f minisign.key
+          echo "Signed dist/SHA256SUMS.txt.minisig"
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:

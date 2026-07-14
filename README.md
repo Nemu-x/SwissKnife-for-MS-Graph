@@ -1,268 +1,115 @@
+<h1 align="center">
+  <img src="docs/readmelogo.png" alt="SwissKnife for MS Graph" width="200" />
+</h1>
 
+<p align="center">
+  <b>SwissKnife for MS Graph</b> — a clean, fast Microsoft Graph desktop client for IT admins<br />
+  <b>Wails · Go · React</b> · Windows · macOS · Linux
+</p>
 
-# 🗡️ SwissKnife for Microsoft Graph  
-*A clean, fast, cross-platform Microsoft Graph desktop client for IT admins.*
+<p align="center">
+  <a href="https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases">Releases</a> ·
+  <a href="https://nemu-x.github.io/SwissKnife-for-MS-Graph/">Downloads</a> ·
+  <a href="https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki">Wiki</a> ·
+  <a href="#support-the-project">Support</a>
+</p>
 
-![Platform Windows](https://img.shields.io/badge/Windows-Supported-00adef?logo=windows&logoColor=white)
-![Platform macOS](https://img.shields.io/badge/macOS-Supported-000000?logo=apple)
-![Platform Linux](https://img.shields.io/badge/Linux-Supported-fcc624?logo=linux&logoColor=black)
-![Wails](https://img.shields.io/badge/Wails-Go%20%2B%20React-df0000?logo=go&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-blue.svg)
-![GraphAPI](https://img.shields.io/badge/Microsoft%20Graph-API-blue?logo=microsoft)
+<p align="center">
+  <img src="https://img.shields.io/badge/Windows-Supported-00adef?logo=windows&logoColor=white" />
+  <img src="https://img.shields.io/badge/macOS-Supported-000000?logo=apple" />
+  <img src="https://img.shields.io/badge/Linux-Supported-fcc624?logo=linux&logoColor=black" />
+  <img src="https://img.shields.io/badge/License-MIT-blue.svg" />
+</p>
 
-> **Note:** The desktop app is being rewritten on **Wails (Go + React/TypeScript)** — source in [`app/`](app/). The legacy PySide6 GUI (`gui_qt.py`) and Typer CLI (`main.py`) remain until feature parity is reached.
-
----
-
-## 🎬 UI Preview
-
-![SwissKnife UI Preview](img/ui_preview.gif)
-
----
-
-## 🚀 Overview
-
-SwissKnife is a lightweight, cross-platform desktop client for Microsoft Graph API — designed for IT administrators who prefer clean UI buttons instead of bulky PowerShell scripts.
-
-It provides instant access to Teams, Chats, OneDrive, SharePoint, Groups, Admin (Entra ID), Intune, Audit logs, and raw Graph queries — all in one place.
-
----
-
-## ✨ Features
-
-### 🛠 Core
-- Client Credentials authentication (Azure App Registration)
-- Dark / Light themes
-- Fully resizable split-view layout
-- Multi-pane result display: **Table / Details / Tree / Raw JSON**
-- JSON syntax highlighting
-- Request history & reusable queries (Raw tab)
-- CSV export & copy actions for results
-- Table filtering & word wrap toggle
-- Status notifications & busy indicators
-- Safe mode (mask sensitive values in output)
-- Works on **Windows, macOS, Linux**
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="SwissKnife dashboard" width="880" />
+</p>
 
 ---
 
-## 👥 Teams & Groups
-- List user’s joined Teams  
-- List channels  
-- Create Standard / Private / Shared channels  
-- Add members or owners  
-- Create Microsoft 365 Groups  
-- Add owners / members  
-- Convert Groups → Teams ("Teamify")  
+## Overview
 
----
+SwissKnife is a lightweight cross-platform desktop client for the Microsoft Graph API — built for IT administrators who prefer clean UI actions over bulky PowerShell scripts. One window gives you Entra ID, Teams, Chats, OneDrive, SharePoint, Intune, devices, app registrations, licensing, audit logs, usage reports, and a raw Graph playground.
 
-## 💬 Chats
-- List user chats  
-- View chat messages  
-- View deleted messages (if API permits)
-- Add chat members  
-- Create new group chats  
+Authentication is **app-only (client credentials)** or **delegated (device code)**. Secrets live only in the OS keychain, the access token never leaves the Go backend, and every write/destructive action is guarded by a typed confirmation and recorded in a local audit log.
 
----
+## Features
 
-## 📁 OneDrive
-- List root folder
-- Upload / download files
-- App-only permissions supported
-- Cross-user file copy between users
-- Large file operations with visual feedback
+- **Dashboard** — tenant overview: user/group/domain counts and license usage (paid vs free/trial, seats remaining)
+- **Users & Admin** — search, snapshot, create/update/delete, block/unblock, reset password, revoke sessions, manager, usage location, restore deleted users
+- **Security** — reset MFA & list authentication methods, admin (directory) role assignment
+- **Licensing** — tenant SKUs, per-user licenses, assign/remove
+- **Teams / Groups / Chats** — channels, membership, Teamify, group & group-chat creation
+- **Files** — OneDrive & SharePoint browse, upload (large-file sessions), download, delete, sharing links
+- **Offboarding** — copy a departed employee's OneDrive to a target account, with preview, progress and a report
+- **Devices** — Entra devices (enable/disable/delete) + BitLocker recovery keys, plus Intune (wipe/retire/lock)
+- **App registrations** — inventory + expiring secret/certificate monitoring
+- **Reports** — Microsoft 365 usage reports (CSV) · **Service health** & message center
+- **Raw Graph** — GET/POST/PATCH/PUT/DELETE playground with history & favorites
+- **Everywhere** — results as master-detail / JSON / tree, CSV export, dark & light themes, custom accent color, English + Russian, read-only mode, in-app update check
 
----
+## Screenshots
 
-## 🏢 SharePoint
-- Site search  
-- List site drives  
-- Upload / download files  
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/dashboard.png" alt="Dashboard" /><br /><sub><b>Dashboard</b> — counts and license usage at a glance</sub></td>
+    <td width="50%"><img src="docs/screenshots/users.png" alt="Users" /><br /><sub><b>Users & Admin</b> — lifecycle, security, manager, licensing</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/offboarding.png" alt="Offboarding" /><br /><sub><b>Offboarding</b> — OneDrive backup with preview & report</sub></td>
+    <td width="50%"><img src="docs/screenshots/raw.png" alt="Raw Graph" /><br /><sub><b>Raw Graph</b> — request playground with history</sub></td>
+  </tr>
+</table>
 
----
+## Downloads
 
-## 👤 Admin (Entra ID)
-- User info
-- Block / unblock users
-- Licensing management:
-  - List tenant licenses (SKUs)
-  - View user licenses
-  - Assign / remove licenses via dropdown
-- Quick admin actions (user snapshots)
+Latest release — direct links (always point to the newest version):
 
----
+| Platform | Download |
+| --- | --- |
+| Windows (x64, installer) | [SwissKnifeGraph-windows-amd64-installer.exe](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-amd64-installer.exe) |
+| Windows (x64, portable) | [SwissKnifeGraph-windows-amd64.exe](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-amd64.exe) |
+| macOS (universal) | [SwissKnifeGraph-macos-universal.zip](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-macos-universal.zip) |
+| Linux (x64, tar.gz) | [SwissKnifeGraph-linux-amd64.tar.gz](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.tar.gz) |
+| Linux (x64, deb) | [SwissKnifeGraph-linux-amd64.deb](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.deb) |
+| Linux (x64, rpm) | [SwissKnifeGraph-linux-amd64.rpm](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.rpm) |
+| Arch (AUR) | `yay -S swissknife-graph-bin` |
 
-## 📱 Intune
-- Managed device list  
-- Device info  
-- Wipe & retire  
-
----
-
-## 📊 Audit
-- Sign-in logs  
-- Directory audit logs  
-
----
-
-## 🧪 Raw Graph Editor
-A built-in Microsoft Graph API playground with:
-
-- GET / POST / PATCH / PUT / DELETE
-- JSON request body editor
-- Syntax-highlighted responses
-- Request history (re-run previous queries)
-- Example Graph queries
-- Full response inspector (Table / Details / Tree / Raw JSON)
-
----
-
-## 🔧 Installation
-
-### **Windows**
-Download: `SwissKnifeGraph.exe`
-
-### **macOS**
-Download: `SwissKnifeGraph-macOS.zip`
-
-If the app is blocked:
+Verify downloads against [`SHA256SUMS.txt`](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SHA256SUMS.txt), signed with minisign ([`.minisig`](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SHA256SUMS.txt.minisig), public key in [`minisign.pub`](minisign.pub)):
 
 ```bash
-xattr -dr com.apple.quarantine SwissKnifeGraph.app
-````
-
-### **Linux**
-
-```bash
-chmod +x SwissKnifeGraph.sh
-./SwissKnifeGraph.sh
+minisign -Vm SHA256SUMS.txt -P $(cat minisign.pub)
+sha256sum -c SHA256SUMS.txt
 ```
 
----
+macOS is unsigned for now — if blocked: `xattr -dr com.apple.quarantine SwissKnifeGraph.app`. Linux needs `webkit2gtk-4.1` + `gtk3` from your distro.
 
-## 🛠 Build From Source
+## Build from source
 
-### Desktop app (Wails — recommended)
-
-Requirements: **Go 1.26+**, **Node 22+**, and the [Wails CLI](https://wails.io) `v2.12`.
+Prerequisites: **Go 1.26+**, **Node 22+**, and the [Wails CLI](https://wails.io) `v2.12`.
 
 ```bash
 cd app
-wails dev     # hot-reload development
-wails build   # production binary → app/build/bin/
+wails dev      # hot-reload development
+wails build    # production binary → app/build/bin/
 ```
 
-Install on Arch Linux from the AUR: `yay -S swissknife-graph-bin` (auto-updates via your AUR helper).
+## Setup: Azure App Registration
 
-### Legacy Python GUI/CLI
+You'll need a **Tenant ID**, **Client ID**, and (for app-only) a **Client Secret**, with Microsoft Graph **Application** permissions and admin consent — or use **device code** flow with delegated permissions. The full permission matrix per feature lives in the [Wiki](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki).
 
-```bash
-pip install -r requirements.txt
-python gui_qt.py
-```
+Minimal core-only set: `Directory.Read.All`, `User.Read.All`, `Group.ReadWrite.All`, `Team.ReadWrite.All`, `Files.ReadWrite.All`, `Sites.ReadWrite.All`, `AuditLog.Read.All`.
 
----
+## Security
 
-## 🔐 Azure App Registration
+- Client secret is stored only in the OS keychain (Windows Credential Manager / macOS Keychain / Secret Service), never in plain text.
+- The access token lives only in the Go backend and is never exposed to the web frontend.
+- Destructive actions (wipe, retire, delete, reset password, send-as, remove role…) require a typed confirmation and are written to a local audit log.
+- A global **read-only mode** blocks every write while you explore.
 
-You will need:
+## Support the Project
 
-* Tenant ID
-* Client ID
-* Client Secret
-
-## 🔎 Minimal Permissions (Core-only)
-
-If you want **only basic features**, this reduced list will work:
-
-- Directory.Read.All
-- User.Read.All
-- Group.ReadWrite.All
-- Team.ReadWrite.All
-- Files.ReadWrite.All
-- Sites.ReadWrite.All
-- AuditLog.Read.All
-
-This excludes: Chats, Calendar, Mail, Intune, Wipe/Retire devices, Channel membership.
-
-
-## 🔐 Required Microsoft Graph Permissions (Application)
-
-SwissKnife requires the following Microsoft Graph **Application** permissions (not Delegated!)  
-to enable full functionality across Teams, OneDrive, SharePoint, Groups, Intune, Chat, Audit Logs, and Admin operations.
-
-| Permission | Category | Why It's Needed |
-|-----------|----------|-----------------|
-| **Directory.Read.All** | Directory | Read users, groups, Teams, directory objects |
-| **Directory.ReadWrite.All** | Directory | Update directory objects (required for Teamify & ownership updates) |
-| **User.Read.All** | Users | Read user profiles across the tenant |
-| **User.ReadWrite.All** | Users | Modify user objects (e.g., block/unblock users) |
-| **Group.ReadWrite.All** | Groups | Create & manage M365 Groups, add owners/members |
-| **Organization.Read.All** | Tenant Info | Retrieve organization details after authentication |
-| **Team.ReadWrite.All** | Teams | Manage Teams, channels, members |
-| **Team.Create** | Teams | Create Teams from Groups (“Teamify”) |
-| **TeamMember.Read.All** | Teams | List members of Teams |
-| **TeamMember.ReadWrite.All** | Teams | Add/remove members (owner/member roles) |
-| **Channel.Create** | Teams → Channels | Create standard / private / shared channels |
-| **ChannelMember.ReadWrite.All** | Teams → Channels | Add/remove channel members |
-| **Files.ReadWrite.All** | OneDrive / SharePoint | Upload, download, copy files across any SharePoint/OneDrive |
-| **Sites.ReadWrite.All** | SharePoint | Manage site drives, read/write SharePoint files |
-| **Mail.Read** | Mail | Read user inboxes (used in Mail tab) |
-| **Mail.Send** | Mail | Send mail *as any user* |
-| **Calendars.Read** | Calendar | Read user calendars |
-| **Calendars.ReadWrite** | Calendar | Create calendar events |
-| **Chat.Read.All** | Teams Chat | Read messages in all chats |
-| **Chat.ReadWrite.All** | Teams Chat | Read/write chat messages, required for listing deleted messages |
-| **ChannelMember.ReadWrite.All** | Chat/Teams | Manage channel membership |
-| **DeviceManagementManagedDevices.Read.All** | Intune | List and read device info |
-| **DeviceManagementManagedDevices.PrivilegedOperations.All** | Intune | Wipe / Retire devices |
-| **AuditLog.Read.All** | Audit | Read directory/Sign-in audit logs |
-
-
-✔ Don't forget: **Grant admin consent**
-
-## 🧩 Feature Permissions Mapping
-
-| Feature | Required Permissions |
-|--------|------------------------|
-| **Authentication test / Org info** | Organization.Read.All |
-| **Users (info, block/unblock)** | User.Read.All, User.ReadWrite.All |
-| **Groups** | Group.ReadWrite.All, Directory.Read.All |
-| **Teamify (Group → Team)** | Team.Create, Team.ReadWrite.All |
-| **Teams & Channels** | Team.ReadWrite.All, Channel.Create, ChannelMember.ReadWrite.All |
-| **Add/remove members (Teams/Channels)** | TeamMember.ReadWrite.All |
-| **OneDrive operations** | Files.ReadWrite.All |
-| **SharePoint operations** | Sites.ReadWrite.All |
-| **Copy files between users** | Files.ReadWrite.All |
-| **Mail operations** | Mail.Read, Mail.Send |
-| **Calendar: create event** | Calendars.ReadWrite |
-| **Chat list & read messages** | Chat.Read.All |
-| **Read deleted chat messages** | Chat.ReadWrite.All |
-| **Add member to chat** | Chat.ReadWrite.All |
-| **Intune device management** | DeviceManagementManagedDevices.Read.All, DeviceManagementManagedDevices.PrivilegedOperations.All |
-| **Audit logs** | AuditLog.Read.All |
-
-
-
-
----
-
-## 🤝 Contributing
-
-Pull requests and feature requests are welcome.
-Help is appreciated in:
-
-* Intune app management
-* Advanced SharePoint tools
-* Entra automation
-* Licensing modules
-* Chat integration
-
----
-
-## 🧡 Support the Project
-
-If this tool helps you automate your job, consider supporting the development:
+If this tool saves you time, consider supporting development:
 
 ```
 USDT (MATIC): 0xD9333e859Fb74D885d22E27568589de61E4433b5
@@ -270,11 +117,7 @@ BTC:          bc1qkkcgpqym967k2x73al6f7fpvkx52q4rzkut3we
 ETH:          0xD9333e859Fb74D885d22E27568589de61E4433b5
 ```
 
----
+## Author
 
-## ✨ Author
-
-Developed with ❤️ by **Nemu**
-- GitHub: [https://github.com/Nemu-x](https://github.com/Nemu-x)
-- Project repository:
-[https://github.com/Nemu-x/SwissKnife-for-MS-Graph](https://github.com/Nemu-x/SwissKnife-for-MS-Graph)
+Built by **Nemu** — [github.com/Nemu-x](https://github.com/Nemu-x)
+License: MIT
