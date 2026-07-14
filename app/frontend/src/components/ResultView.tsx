@@ -161,49 +161,70 @@ function MasterDetail({
 }) {
   const single = rows.length === 1
   return (
-    <div className={`grid h-full ${single ? 'grid-cols-1' : 'grid-cols-[minmax(180px,260px)_1fr]'}`}>
+    <div className={`grid h-full ${single ? 'grid-cols-1' : 'grid-cols-[210px_1fr]'}`}>
       {!single && (
-        <div className="overflow-auto border-r border-[var(--border)]">
+        <div className="overflow-auto py-1">
           {rows.map((r, i) => {
             const primary = primaryLabel(r)
             const secondary = secondaryLabel(r, 'displayName')
+            const active = i === selected
             return (
               <button
                 key={i}
                 onClick={() => onSelect(i)}
-                className={`flex w-full flex-col items-start gap-0.5 border-b border-[var(--border)] px-3 py-2 text-left transition-colors
-                  ${i === selected ? 'bg-[var(--accent)]/12' : 'hover:bg-[var(--bg-elev-2)]'}`}
+                className={`flex w-full items-center gap-2.5 border-l-2 px-3 py-2 text-left transition-colors
+                  ${active
+                    ? 'border-[var(--accent)] bg-[var(--accent)]/10'
+                    : 'border-transparent hover:bg-[var(--bg-elev-2)]'}`}
               >
-                <span className="truncate text-sm font-medium text-[var(--text)]">{primary}</span>
-                {secondary && <span className="truncate text-xs text-[var(--text-faint)]">{secondary}</span>}
+                <span
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                  style={{ background: 'color-mix(in srgb, var(--accent) 20%, transparent)', color: 'var(--accent)' }}
+                >
+                  {primary.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-sm font-medium text-[var(--text)]">{primary}</span>
+                  {secondary && <span className="truncate text-xs text-[var(--text-faint)]">{secondary}</span>}
+                </span>
               </button>
             )
           })}
         </div>
       )}
-      <div className="overflow-auto p-4">
+      <div className={`overflow-auto p-5 ${single ? '' : 'border-l border-[var(--border)]'}`}>
         {current ? <Detail row={current} /> : <p className="text-sm text-[var(--text-faint)]">—</p>}
       </div>
     </div>
   )
 }
 
+function isMono(key: string, value: string): boolean {
+  return /id$/i.test(key) || /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(value)
+}
+
 function Detail({ row }: { row: GraphRow }) {
   const entries = Object.entries(row).filter(([k]) => !k.startsWith('@odata'))
   return (
-    <dl className="flex flex-col gap-1.5">
-      {entries.map(([k, v]) => (
-        <div key={k} className="grid grid-cols-[minmax(120px,200px)_1fr] gap-3 border-b border-[var(--border)]/60 py-1">
-          <dt className="truncate text-xs font-medium text-[var(--text-dim)]" title={k}>{k}</dt>
-          <dd className="min-w-0 text-sm text-[var(--text)]">
-            {isScalar(v) ? (
-              <span className="break-words">{cellText(v)}</span>
-            ) : (
-              <Expandable value={v} />
-            )}
-          </dd>
-        </div>
-      ))}
+    <dl className="flex flex-col">
+      {entries.map(([k, v]) => {
+        const scalar = isScalar(v)
+        const text = cellText(v)
+        return (
+          <div key={k} className="grid grid-cols-[130px_1fr] gap-4 border-b border-[var(--border)]/50 py-2 last:border-0">
+            <dt className="min-w-0 break-words text-xs font-medium uppercase tracking-wide text-[var(--text-faint)]" title={k}>{k}</dt>
+            <dd className="min-w-0 text-sm text-[var(--text)]">
+              {scalar ? (
+                <span className={isMono(k, text) ? 'break-all font-mono text-[13px] text-[var(--text-dim)]' : 'break-words'}>
+                  {text || <span className="text-[var(--text-faint)]">—</span>}
+                </span>
+              ) : (
+                <Expandable value={v} />
+              )}
+            </dd>
+          </div>
+        )
+      })}
     </dl>
   )
 }
