@@ -26,6 +26,10 @@ export function JoinedTeams(arg1) {
   return window['go']['services']['TeamsService']['JoinedTeams'](arg1);
 }
 
+export function ListAllTeams(arg1) {
+  return window['go']['services']['TeamsService']['ListAllTeams'](arg1);
+}
+
 export function RemoveChannelMember(arg1, arg2, arg3) {
   return window['go']['services']['TeamsService']['RemoveChannelMember'](arg1, arg2, arg3);
 }

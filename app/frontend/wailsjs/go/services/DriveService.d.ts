@@ -17,6 +17,10 @@ export function ListRoot(arg1:string,arg2:string):Promise<Array<json.RawMessage>
 
 export function OffboardingPreview(arg1:string):Promise<services.CopyPreview>;
 
+export function PickTarget(arg1:Array<string>,arg2:number):Promise<string>;
+
+export function Quota(arg1:string):Promise<services.DriveQuota>;
+
 export function Search(arg1:string,arg2:string,arg3:string):Promise<Array<json.RawMessage>>;
 
 export function Sites(arg1:string):Promise<Array<json.RawMessage>>;

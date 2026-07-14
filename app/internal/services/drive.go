@@ -199,6 +199,47 @@ type CopyPreview struct {
 	TotalBytes int64 `json:"totalBytes"`
 }
 
+// DriveQuota is a user's OneDrive storage quota.
+type DriveQuota struct {
+	Total     int64 `json:"total"`
+	Used      int64 `json:"used"`
+	Remaining int64 `json:"remaining"`
+}
+
+// Quota returns the user's OneDrive storage quota.
+func (d *DriveService) Quota(user string) (*DriveQuota, error) {
+	c, err := d.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	var drive struct {
+		Quota DriveQuota `json:"quota"`
+	}
+	if err := c.Get(d.s.Ctx(), "/users/"+url.PathEscape(user)+"/drive", url.Values{"$select": {"quota"}}, &drive); err != nil {
+		return nil, err
+	}
+	return &drive.Quota, nil
+}
+
+// PickTarget returns the first target user whose OneDrive has at least
+// neededBytes free — used to rotate offboarding backups across a pool.
+func (d *DriveService) PickTarget(targets []string, neededBytes int64) (string, error) {
+	for _, tgt := range targets {
+		tgt = strings.TrimSpace(tgt)
+		if tgt == "" {
+			continue
+		}
+		q, err := d.Quota(tgt)
+		if err != nil {
+			continue // skip targets we can't read
+		}
+		if q.Remaining >= neededBytes {
+			return tgt, nil
+		}
+	}
+	return "", errors.New("no target in the pool has enough free space")
+}
+
 // OffboardingPreview walks the source user's OneDrive (read-only) and reports
 // the file/folder count and total size, so the operator can review before copying.
 func (d *DriveService) OffboardingPreview(sourceUser string) (*CopyPreview, error) {

@@ -27,11 +27,11 @@ func (u *UpdateService) SetAppContext(ctx context.Context) { u.ctx = ctx }
 
 // UpdateInfo is the result of an update check.
 type UpdateInfo struct {
-	CurrentVersion string `json:"currentVersion"`
-	LatestVersion  string `json:"latestVersion"`
-	UpdateAvailable bool  `json:"updateAvailable"`
-	Notes          string `json:"notes"`
-	URL            string `json:"url"`
+	CurrentVersion  string `json:"currentVersion"`
+	LatestVersion   string `json:"latestVersion"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	Notes           string `json:"notes"`
+	URL             string `json:"url"`
 }
 
 // Check queries the latest GitHub release and compares versions.

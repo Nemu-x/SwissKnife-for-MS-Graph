@@ -14,6 +14,8 @@ export function CreateChannel(arg1:string,arg2:string,arg3:string,arg4:string,ar
 
 export function JoinedTeams(arg1:string):Promise<Array<json.RawMessage>>;
 
+export function ListAllTeams(arg1:number):Promise<Array<json.RawMessage>>;
+
 export function RemoveChannelMember(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function RemoveTeamMember(arg1:string,arg2:string):Promise<void>;

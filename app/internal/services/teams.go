@@ -15,6 +15,21 @@ type TeamsService struct {
 
 func NewTeamsService(s *session.Session) *TeamsService { return &TeamsService{s: s} }
 
+// ListAllTeams returns all teams in the tenant (M365 groups provisioned as Teams).
+// Used to populate team pickers.
+func (t *TeamsService) ListAllTeams(maxItems int) ([]json.RawMessage, error) {
+	c, err := t.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	params := url.Values{
+		"$filter": {"resourceProvisioningOptions/any(x:x eq 'Team')"},
+		"$select": {"id,displayName,description"},
+		"$top":    {"100"},
+	}
+	return c.ListAll(t.s.Ctx(), "/groups", params, maxItems)
+}
+
 func (t *TeamsService) JoinedTeams(user string) ([]json.RawMessage, error) {
 	c, err := t.s.Client()
 	if err != nil {

@@ -30,6 +30,14 @@ export function OffboardingPreview(arg1) {
   return window['go']['services']['DriveService']['OffboardingPreview'](arg1);
 }
 
+export function PickTarget(arg1, arg2) {
+  return window['go']['services']['DriveService']['PickTarget'](arg1, arg2);
+}
+
+export function Quota(arg1) {
+  return window['go']['services']['DriveService']['Quota'](arg1);
+}
+
 export function Search(arg1, arg2, arg3) {
   return window['go']['services']['DriveService']['Search'](arg1, arg2, arg3);
 }
