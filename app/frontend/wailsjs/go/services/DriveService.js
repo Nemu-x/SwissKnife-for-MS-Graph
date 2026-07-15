@@ -50,6 +50,10 @@ export function Sites(arg1) {
   return window['go']['services']['DriveService']['Sites'](arg1);
 }
 
+export function SitesWithUsage(arg1) {
+  return window['go']['services']['DriveService']['SitesWithUsage'](arg1);
+}
+
 export function Upload(arg1, arg2, arg3) {
   return window['go']['services']['DriveService']['Upload'](arg1, arg2, arg3);
 }

@@ -27,4 +27,6 @@ export function Search(arg1:string,arg2:string,arg3:string):Promise<Array<json.R
 
 export function Sites(arg1:string):Promise<Array<json.RawMessage>>;
 
+export function SitesWithUsage(arg1:string):Promise<Array<services.SiteUsage>>;
+
 export function Upload(arg1:string,arg2:string,arg3:string):Promise<json.RawMessage>;

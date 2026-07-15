@@ -6,8 +6,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -49,6 +51,76 @@ func (d *DriveService) Sites(search string) ([]json.RawMessage, error) {
 		params.Set("search", search)
 	}
 	return c.ListAll(d.s.Ctx(), "/sites", params, 200)
+}
+
+// SiteUsage is a SharePoint site with its default document library storage used,
+// so the operator can spot the biggest sites before scanning.
+type SiteUsage struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	WebURL string `json:"webUrl"`
+	Used   int64  `json:"used"` // -1 when the size could not be read
+}
+
+// SitesWithUsage lists sites and fetches each one's storage used (default drive
+// quota), then sorts largest-first. Sizes are read concurrently to stay fast.
+func (d *DriveService) SitesWithUsage(search string) ([]SiteUsage, error) {
+	raw, err := d.Sites(search)
+	if err != nil {
+		return nil, err
+	}
+	c, err := d.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	type siteLite struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		DisplayName string `json:"displayName"`
+		WebURL      string `json:"webUrl"`
+	}
+	out := make([]SiteUsage, 0, len(raw))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8) // bound concurrency so we don't hammer Graph
+	for _, r := range raw {
+		var s siteLite
+		if json.Unmarshal(r, &s) != nil || s.ID == "" {
+			continue
+		}
+		// This picker targets shared spaces; skip personal OneDrive sites.
+		if strings.Contains(strings.ToLower(s.WebURL), "/personal/") {
+			continue
+		}
+		name := s.DisplayName
+		if name == "" {
+			name = s.Name
+		}
+		if name == "" {
+			name = s.ID
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(id, name, webURL string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			used := int64(-1)
+			var drive struct {
+				Quota struct {
+					Used int64 `json:"used"`
+				} `json:"quota"`
+			}
+			if err := c.Get(d.s.Ctx(), "/sites/"+url.PathEscape(id)+"/drive", url.Values{"$select": {"quota"}}, &drive); err == nil {
+				used = drive.Quota.Used
+			}
+			mu.Lock()
+			out = append(out, SiteUsage{ID: id, Name: name, WebURL: webURL, Used: used})
+			mu.Unlock()
+		}(s.ID, name, s.WebURL)
+	}
+	wg.Wait()
+	sort.Slice(out, func(a, b int) bool { return out[a].Used > out[b].Used })
+	return out, nil
 }
 
 func (d *DriveService) ListRoot(ownerType, ownerID string) ([]json.RawMessage, error) {

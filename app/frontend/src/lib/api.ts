@@ -130,6 +130,7 @@ export const api = {
   },
   drive: {
     sites: (search: string) => list(Drive.Sites(search)),
+    sitesWithUsage: (search: string) => Drive.SitesWithUsage(search) as Promise<services.SiteUsage[]>,
     listRoot: (t: string, id: string) => list(Drive.ListRoot(t, id)),
     children: (t: string, id: string, item: string) => list(Drive.Children(t, id, item)),
     search: (t: string, id: string, q: string) => list(Drive.Search(t, id, q)),

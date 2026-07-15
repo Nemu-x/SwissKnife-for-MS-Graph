@@ -1,6 +1,7 @@
 // Async option loaders for EntityPicker — turn Graph collections into pickable
 // options. Kept small; large tenants can still paste an ID manually.
 import { api, type GraphObject } from './api'
+import { humanBytes } from './format'
 import type { Option } from '../components/MultiSelect'
 
 export const loadUsers = async (): Promise<Option[]> =>
@@ -60,10 +61,23 @@ export const loadChats = (user: string) => async (): Promise<Option[]> =>
   }))
 
 export const loadSites = async (): Promise<Option[]> =>
-  (await api.drive.sites('')).map((s: GraphObject) => ({
+  (await api.drive.sites(''))
+    // This picker targets shared spaces; skip personal OneDrive sites.
+    .filter((s: GraphObject) => !sitePath(s.webUrl).toLowerCase().includes('/personal/'))
+    .map((s: GraphObject) => ({
+      value: s.id,
+      label: s.displayName || s.name || s.id,
+      // show the site path (…/sites/Name) — it's what distinguishes same-named sites
+      sub: sitePath(s.webUrl) || s.name,
+    }))
+
+// Like loadSites but prefixes each site with its storage used and sorts
+// largest-first, so the operator can target the biggest sites. Slower: it reads
+// each site's drive quota.
+export const loadSitesBySize = async (): Promise<Option[]> =>
+  (await api.drive.sitesWithUsage('')).map((s) => ({
     value: s.id,
-    label: s.displayName || s.name || s.id,
-    // show the site path (…/sites/Name) — it's what distinguishes same-named sites
+    label: `${s.used >= 0 ? humanBytes(s.used) : '—'} · ${s.name}`,
     sub: sitePath(s.webUrl) || s.name,
   }))
 

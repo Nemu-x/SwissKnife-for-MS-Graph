@@ -435,6 +435,24 @@ export namespace services {
 		    return a;
 		}
 	}
+	export class SiteUsage {
+	    id: string;
+	    name: string;
+	    webUrl: string;
+	    used: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SiteUsage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.webUrl = source["webUrl"];
+	        this.used = source["used"];
+	    }
+	}
 	export class Status {
 	    connected: boolean;
 	    profileName: string;

@@ -279,6 +279,7 @@ const en = {
     trim: 'Trim old versions',
     noVersions: 'No files with heavy version history.',
     current: 'current',
+    showSiteSizes: 'Show site sizes (slower — sorts biggest first)',
   },
   errors: { generic: 'Error' },
 } as const

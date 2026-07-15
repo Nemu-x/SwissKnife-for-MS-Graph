@@ -5,7 +5,7 @@ import { Page } from '../components/Layout'
 import { Card, Button, Field, Select, Badge, Spinner, Input } from '../components/ui'
 import { EntityPicker } from '../components/EntityPicker'
 import { JobConsole } from '../components/JobConsole'
-import { loadUsers, loadSites } from '../lib/pickers'
+import { loadUsers, loadSites, loadSitesBySize } from '../lib/pickers'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
@@ -22,6 +22,7 @@ export function CleanupPage() {
   const [mode, setMode] = useState<Mode>('versions')
   const [ownerType, setOwnerType] = useState<'user' | 'site'>('user')
   const [ownerId, setOwnerId] = useState('')
+  const [siteSizes, setSiteSizes] = useState(false)
   const [keep, setKeep] = useState(3)
 
   // The scan runs in the store, so its progress/log survive page navigation.
@@ -78,7 +79,8 @@ export function CleanupPage() {
           <Field label={ownerType === 'user' ? t('common.user') : 'SharePoint site'}>
             <div className="w-72">
               <EntityPicker value={ownerId} onChange={setOwnerId}
-                load={ownerType === 'user' ? loadUsers : loadSites} reloadKey={ownerType}
+                load={ownerType === 'user' ? loadUsers : siteSizes ? loadSitesBySize : loadSites}
+                reloadKey={`${ownerType}${siteSizes ? ':size' : ''}`}
                 placeholder={ownerType === 'user' ? 'Pick a user…' : 'Pick a site…'} />
             </div>
           </Field>
@@ -98,6 +100,12 @@ export function CleanupPage() {
             </Button>
           )}
         </div>
+        {ownerType === 'site' && (
+          <label className="mt-3 flex w-fit items-center gap-2 border-t border-[var(--border)] pt-3 text-xs text-[var(--text-dim)]">
+            <input type="checkbox" checked={siteSizes} onChange={(e) => setSiteSizes(e.target.checked)} />
+            {t('cleanup.showSiteSizes')}
+          </label>
+        )}
       </Card>
 
       {job && (
