@@ -29,24 +29,29 @@
 
 ## Overview
 
-SwissKnife is a lightweight cross-platform desktop client for the Microsoft Graph API — built for IT administrators who prefer clean UI actions over bulky PowerShell scripts. One window gives you Entra ID, Teams, Chats, OneDrive, SharePoint, Intune, devices, app registrations, licensing, audit logs, usage reports, and a raw Graph playground.
+SwissKnife is a lightweight cross-platform desktop client for the Microsoft Graph API — built for IT administrators who prefer clean UI actions over bulky PowerShell scripts. One window gives you Entra ID, Teams, Chats, mail, OneDrive, SharePoint, Intune, devices, app registrations, licensing, storage cleanup, audit logs, usage reports, guided on/offboarding runbooks, and a raw Graph playground.
+
+Everything is pick-by-name: users, groups, teams, channels, sites, roles, devices and chats load into searchable pickers, so you rarely type a raw ID.
 
 Authentication is **app-only (client credentials)** or **delegated (device code)**. Secrets live only in the OS keychain, the access token never leaves the Go backend, and every write/destructive action is guarded by a typed confirmation and recorded in a local audit log.
 
 ## Features
 
 - **Dashboard** — tenant overview: user/group/domain counts and license usage (paid vs free/trial, seats remaining)
+- **Playbooks** — guided onboarding & offboarding runbooks that chain the individual actions into one reviewed flow
 - **Users & Admin** — search, snapshot, create/update/delete, block/unblock, reset password, revoke sessions, manager, usage location, restore deleted users
 - **Security** — reset MFA & list authentication methods, admin (directory) role assignment
 - **Licensing** — tenant SKUs, per-user licenses, assign/remove
 - **Teams / Groups / Chats** — channels, membership, Teamify, group & group-chat creation
+- **Mail** — send email as any user (typed confirmation, audit-logged)
 - **Files** — OneDrive & SharePoint browse, upload (large-file sessions), download, delete, sharing links
-- **Offboarding** — copy a departed employee's OneDrive to a target account, with preview, progress and a report
+- **Offboarding** — copy a departed employee's OneDrive to a target account or an auto-picked backup pool (by free space), with preview, a live cancellable copy log that survives navigation, and a full report
+- **Cleanup — reclaim space** — find duplicate files and version-history bloat across OneDrive & SharePoint (all document libraries), trim old versions or delete extras; optional per-site size scan sorts the biggest sites first
 - **Devices** — Entra devices (enable/disable/delete) + BitLocker recovery keys, plus Intune (wipe/retire/lock)
 - **App registrations** — inventory + expiring secret/certificate monitoring
 - **Reports** — Microsoft 365 usage reports (CSV) · **Service health** & message center
 - **Raw Graph** — GET/POST/PATCH/PUT/DELETE playground with history & favorites
-- **Everywhere** — results as master-detail / JSON / tree, CSV export, dark & light themes, custom accent color, English + Russian, read-only mode, in-app update check
+- **Everywhere** — searchable pickers instead of raw IDs, results as master-detail / JSON / tree, CSV export, dark & light themes, custom accent color, English + Russian, read-only mode, in-app update check
 
 ## Screenshots
 
