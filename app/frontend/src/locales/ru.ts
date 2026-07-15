@@ -57,6 +57,11 @@ const ru: Dict<typeof en> = {
     top: 'Кол-во',
     rows: '{{n}} строк',
     required: 'обязательно',
+    log: 'Лог',
+    working: 'работаю…',
+    canceling: 'Отмена…',
+    canceled: 'Отменено',
+    clear: 'Очистить',
   },
   connect: {
     title: 'Подключение к тенанту',

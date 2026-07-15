@@ -140,6 +140,7 @@ export const api = {
       one(Drive.CreateLink(t, id, item, type, scope)),
     copyBetweenUsers: (src: string, dst: string, destFolder: string, overwrite: boolean) =>
       Drive.CopyBetweenUsers(src, dst, destFolder, overwrite) as Promise<services.CopyResult>,
+    cancelTransfer: () => Drive.CancelTransfer(),
     offboardingPreview: (src: string) => Drive.OffboardingPreview(src) as Promise<services.CopyPreview>,
     quota: (user: string) => Drive.Quota(user) as Promise<services.DriveQuota>,
     pickTarget: (targets: string[], needed: number) => Drive.PickTarget(targets, needed) as Promise<string>,
@@ -190,6 +191,7 @@ export const api = {
     findVersionBloat: (ownerType: string, ownerId: string, minVersions: number, maxFiles: number) =>
       Cleanup.FindVersionBloat(ownerType, ownerId, minVersions, maxFiles) as Promise<services.VersionBloat[]>,
     trimVersions: (itemRef: string, keep: number, confirm: string) => Cleanup.TrimVersions(itemRef, keep, confirm) as Promise<any>,
+    cancelScan: () => Cleanup.CancelScan(),
   },
   health: {
     overview: () => list(ServiceHealth.Overview()),

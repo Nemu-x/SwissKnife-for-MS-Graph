@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Check } from 'lucide-react'
-import { dropdownStyle, nudgeIntoView } from '../lib/dropdown'
+import { dropdownStyle } from '../lib/dropdown'
 
 export interface Option {
   value: string
@@ -30,11 +30,7 @@ export function MultiSelect({
   const [rect, setRect] = useState<DOMRect | null>(null)
 
   const place = () => btnRef.current && setRect(btnRef.current.getBoundingClientRect())
-  useLayoutEffect(() => {
-    if (!open) return
-    if (btnRef.current) nudgeIntoView(btnRef.current)
-    place()
-  }, [open])
+  useLayoutEffect(() => { if (open) place() }, [open])
   useEffect(() => {
     if (!open) return
     const h = () => place()

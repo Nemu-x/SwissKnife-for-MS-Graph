@@ -57,6 +57,11 @@ const en = {
     top: 'Top',
     rows: '{{n}} rows',
     required: 'required',
+    log: 'Log',
+    working: 'working…',
+    canceling: 'Canceling…',
+    canceled: 'Canceled',
+    clear: 'Clear',
   },
   connect: {
     title: 'Connect to a tenant',

@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Search, Copy, ArrowRight } from 'lucide-react'
-import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { Page } from '../components/Layout'
 import { Card, Field, Input, Textarea, Button, Badge, ErrorNote, Spinner } from '../components/ui'
+import { JobConsole } from '../components/JobConsole'
 import { UpnInput } from '../components/UpnInput'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
@@ -12,7 +12,7 @@ import type { services } from '../../wailsjs/go/models'
 
 export function OffboardingPage() {
   const { t } = useTranslation()
-  const { readOnly, toast } = useStore()
+  const { readOnly, jobs, startTransfer, cancelTransfer, clearJob } = useStore()
 
   const [source, setSource] = useState('')
   const [target, setTarget] = useState('')
@@ -25,42 +25,21 @@ export function OffboardingPage() {
   const [previewing, setPreviewing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const [copying, setCopying] = useState(false)
-  const [progress, setProgress] = useState<{ name: string; pct: number } | null>(null)
-  const [report, setReport] = useState<services.CopyResult | null>(null)
-
-  useEffect(() => {
-    const off = EventsOn('transfer:progress', (d: any) => {
-      const pct = d.total > 0 ? Math.round((d.done / d.total) * 100) : 0
-      setProgress({ name: d.name, pct })
-    })
-    return () => off()
-  }, [])
+  // The copy runs in the store, so its state survives leaving and returning.
+  const job = jobs.transfer
+  const copying = !!job?.running
+  const report = (job?.result as services.CopyResult | null) ?? null
 
   const runPreview = async () => {
-    setPreviewing(true); setError(null); setPreview(null); setReport(null)
+    setPreviewing(true); setError(null); setPreview(null)
     try {
       setPreview(await api.drive.offboardingPreview(source))
     } catch (e) { setError(errMessage(e)) } finally { setPreviewing(false) }
   }
 
-  const runCopy = async () => {
-    setCopying(true); setError(null); setReport(null); setProgress(null)
-    try {
-      // Folder defaults to the departed user's name (local-part of the UPN).
-      const folder = dest.trim() || source.split('@')[0]
-      let tgt = target
-      if (usePool) {
-        const prev = preview || (await api.drive.offboardingPreview(source))
-        const list = pool.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)
-        tgt = await api.drive.pickTarget(list, prev.totalBytes)
-        setTarget(tgt)
-        toast('ok', t('offboarding.pickedTarget', { t: tgt }))
-      }
-      const r = await api.drive.copyBetweenUsers(source, tgt, folder, overwrite)
-      setReport(r)
-      toast('ok', `${r.copied?.length || 0} ${t('offboarding.copied').toLowerCase()}`)
-    } catch (e) { setError(errMessage(e)) } finally { setCopying(false); setProgress(null) }
+  const runCopy = () => {
+    setError(null)
+    startTransfer({ source, target, dest, overwrite, usePool, pool })
   }
 
   return (
@@ -119,26 +98,18 @@ export function OffboardingPage() {
             </Card>
           )}
 
-          {progress && copying && (
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] p-3">
-              <div className="mb-1 flex justify-between text-xs text-[var(--text-dim)]">
-                <span className="truncate">{progress.name}</span><span>{progress.pct}%</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded bg-[var(--bg-elev-2)]">
-                <div className="h-full bg-[var(--accent)] transition-all" style={{ width: `${progress.pct}%` }} />
-              </div>
-            </div>
-          )}
+          {job && <JobConsole job={job} onCancel={cancelTransfer} onClear={() => clearJob('transfer')} />}
         </div>
 
         <Card title={t('offboarding.report')} className="min-h-[300px]">
           {!report && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
           {report && (
             <div className="flex flex-col gap-4">
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Badge kind="ok">{t('offboarding.copied')}: {report.copied?.length || 0}</Badge>
                 <Badge kind="warn">{t('offboarding.skipped')}: {Object.keys(report.skipped || {}).length}</Badge>
                 <Badge kind="danger">{t('offboarding.failed')}: {Object.keys(report.failed || {}).length}</Badge>
+                {report.canceled && <Badge kind="warn">{t('common.canceled')}</Badge>}
               </div>
               <ReportList title={t('offboarding.copied')} items={(report.copied || []).map((n) => [n, ''])} ok />
               <ReportList title={t('offboarding.skipped')} items={Object.entries(report.skipped || {})} />

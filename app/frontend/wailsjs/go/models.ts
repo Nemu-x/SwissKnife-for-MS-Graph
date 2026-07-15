@@ -147,6 +147,7 @@ export namespace services {
 	    copied: string[];
 	    skipped: Record<string, string>;
 	    failed: Record<string, string>;
+	    canceled: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new CopyResult(source);
@@ -157,6 +158,7 @@ export namespace services {
 	        this.copied = source["copied"];
 	        this.skipped = source["skipped"];
 	        this.failed = source["failed"];
+	        this.canceled = source["canceled"];
 	    }
 	}
 	export class LicenseLine {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -17,8 +18,13 @@ import (
 // DriveService serves both OneDrive and SharePoint drives.
 // ownerType: "user" (a user OneDrive) | "site" (a SharePoint site drive).
 type DriveService struct {
-	s *session.Session
+	s      *session.Session
+	cancel atomic.Bool // set by CancelTransfer to abort an in-flight copy
 }
+
+// CancelTransfer requests that the current offboarding copy stop after the
+// file in flight. The copy returns its partial result with Canceled = true.
+func (d *DriveService) CancelTransfer() { d.cancel.Store(true) }
 
 func NewDriveService(s *session.Session) *DriveService { return &DriveService{s: s} }
 
@@ -84,6 +90,14 @@ func (d *DriveService) Search(ownerType, ownerID, query string) ([]json.RawMessa
 func (d *DriveService) emitProgress(name string, done, total int64) {
 	wrt.EventsEmit(d.s.Ctx(), "transfer:progress", map[string]any{
 		"name": name, "done": done, "total": total,
+	})
+}
+
+// emitFile reports one item's outcome plus running counters so the UI can keep
+// a live log even when the operator leaves and returns to the page.
+func (d *DriveService) emitFile(name, status, reason string, copied int) {
+	wrt.EventsEmit(d.s.Ctx(), "transfer:file", map[string]any{
+		"name": name, "status": status, "reason": reason, "copied": copied,
 	})
 }
 
@@ -187,9 +201,10 @@ func (d *DriveService) CreateLink(ownerType, ownerID, itemID, linkType, scope st
 
 // CopyResult is the outcome of a OneDrive-to-OneDrive copy.
 type CopyResult struct {
-	Copied  []string          `json:"copied"`
-	Skipped map[string]string `json:"skipped"` // name -> reason
-	Failed  map[string]string `json:"failed"`  // name -> error
+	Copied   []string          `json:"copied"`
+	Skipped  map[string]string `json:"skipped"` // name -> reason
+	Failed   map[string]string `json:"failed"`  // name -> error
+	Canceled bool              `json:"canceled"`
 }
 
 // CopyPreview summarizes what an offboarding copy would transfer.
@@ -287,6 +302,7 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 	if err := d.s.GuardWrite(); err != nil {
 		return nil, err
 	}
+	d.cancel.Store(false) // clear any stale cancel flag from a prior run
 	c, err := d.s.Client()
 	if err != nil {
 		return nil, err
@@ -320,6 +336,9 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 	var walk func(itemID, rel string) error
 	copyItems := func(items []json.RawMessage, rel string) {
 		for _, raw := range items {
+			if d.cancel.Load() {
+				return
+			}
 			var it struct {
 				ID     string          `json:"id"`
 				Name   string          `json:"name"`
@@ -335,17 +354,20 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 			if it.Folder != nil {
 				if err := walk(it.ID, relPath); err != nil {
 					res.Failed[relPath+"/"] = err.Error()
+					d.emitFile(relPath+"/", "failed", err.Error(), len(res.Copied))
 				}
 				continue
 			}
 			if rel == "" && tgtNames[it.Name] {
 				res.Skipped[relPath] = "exists in target"
+				d.emitFile(relPath, "skipped", "exists in target", len(res.Copied))
 				continue
 			}
 			local := filepath.Join(tmp, filepath.FromSlash(relPath))
 			src := "/users/" + url.PathEscape(sourceUser) + "/drive/items/" + url.PathEscape(it.ID)
 			if err := c.DownloadItem(d.s.Ctx(), src, local, nil); err != nil {
 				res.Failed[relPath] = err.Error()
+				d.emitFile(relPath, "failed", err.Error(), len(res.Copied))
 				continue
 			}
 			remotePath := relPath
@@ -357,14 +379,19 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 				d.emitProgress(relPath, done, total)
 			}); err != nil {
 				res.Failed[relPath] = err.Error()
+				d.emitFile(relPath, "failed", err.Error(), len(res.Copied))
 				continue
 			}
 			res.Copied = append(res.Copied, relPath)
+			d.emitFile(relPath, "copied", "", len(res.Copied))
 			os.Remove(local)
 		}
 	}
 
 	walk = func(itemID, rel string) error {
+		if d.cancel.Load() {
+			return nil
+		}
 		items, err := d.Children("user", sourceUser, itemID)
 		if err != nil {
 			return err
@@ -378,6 +405,7 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 		return nil, err
 	}
 	copyItems(rootItems, "")
+	res.Canceled = d.cancel.Load()
 
 	d.s.Record("drive.copyBetweenUsers", sourceUser+" -> "+targetUser,
 		"dest="+dest+" copied="+itoa(len(res.Copied))+" skipped="+itoa(len(res.Skipped))+" failed="+itoa(len(res.Failed)), nil)

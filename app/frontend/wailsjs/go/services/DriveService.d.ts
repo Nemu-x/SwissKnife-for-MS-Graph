@@ -3,6 +3,8 @@
 import {json} from '../models';
 import {services} from '../models';
 
+export function CancelTransfer():Promise<void>;
+
 export function Children(arg1:string,arg2:string,arg3:string):Promise<Array<json.RawMessage>>;
 
 export function CopyBetweenUsers(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<services.CopyResult>;

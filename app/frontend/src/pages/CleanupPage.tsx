@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Search, Trash2, Building2, Scissors, Files as FilesIcon, History } from 'lucide-react'
 import { Page } from '../components/Layout'
-import { Card, Button, Field, Select, Badge, Spinner, ErrorNote, Input } from '../components/ui'
+import { Card, Button, Field, Select, Badge, Spinner, Input } from '../components/ui'
 import { EntityPicker } from '../components/EntityPicker'
+import { JobConsole } from '../components/JobConsole'
 import { loadUsers, loadSites } from '../lib/pickers'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
@@ -15,27 +16,23 @@ type Mode = 'duplicates' | 'versions'
 
 export function CleanupPage() {
   const { t } = useTranslation()
-  const { readOnly, toast } = useStore()
+  const { readOnly, toast, jobs, startCleanupScan, cancelCleanupScan, clearJob } = useStore()
   const { askConfirm, confirmElement } = useConfirm()
 
   const [mode, setMode] = useState<Mode>('versions')
   const [ownerType, setOwnerType] = useState<'user' | 'site'>('user')
   const [ownerId, setOwnerId] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [groups, setGroups] = useState<services.DupGroup[] | null>(null)
-  const [bloat, setBloat] = useState<services.VersionBloat[] | null>(null)
   const [keep, setKeep] = useState(3)
 
-  const reset = () => { setGroups(null); setBloat(null); setError(null) }
+  // The scan runs in the store, so its progress/log survive page navigation.
+  const job = jobs.cleanup
+  const busy = !!job?.running
+  const result = job?.result as { mode: Mode; groups?: services.DupGroup[]; bloat?: services.VersionBloat[] } | null | undefined
+  // Only show results that match the currently selected tab.
+  const groups = mode === 'duplicates' && result?.mode === 'duplicates' ? result.groups ?? null : null
+  const bloat = mode === 'versions' && result?.mode === 'versions' ? result.bloat ?? null : null
 
-  const scan = async () => {
-    setBusy(true); reset()
-    try {
-      if (mode === 'duplicates') setGroups(await api.cleanup.findDuplicates(ownerType, ownerId))
-      else setBloat(await api.cleanup.findVersionBloat(ownerType, ownerId, 2, 3000))
-    } catch (e) { setError(errMessage(e)) } finally { setBusy(false) }
-  }
+  const scan = () => startCleanupScan({ mode, ownerType, ownerId })
 
   const deleteExtras = () => {
     if (!groups) return
@@ -62,7 +59,7 @@ export function CleanupPage() {
 
       <div className="mb-4 inline-flex rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] p-1">
         {([['versions', <History size={15} key="v" />, t('cleanup.tabVersions')], ['duplicates', <FilesIcon size={15} key="d" />, t('cleanup.tabDuplicates')]] as const).map(([m, icon, label]) => (
-          <button key={m} onClick={() => { setMode(m); reset() }}
+          <button key={m} onClick={() => setMode(m)}
             className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium ${mode === m ? 'bg-[var(--accent)] text-[var(--accent-fg)]' : 'text-[var(--text-dim)]'}`}>
             {icon}{label}
           </button>
@@ -103,7 +100,11 @@ export function CleanupPage() {
         </div>
       </Card>
 
-      {error && <ErrorNote>{error}</ErrorNote>}
+      {job && (
+        <div className="mb-4">
+          <JobConsole job={job} onCancel={cancelCleanupScan} onClear={() => clearJob('cleanup')} />
+        </div>
+      )}
 
       {/* Versions */}
       {mode === 'versions' && bloat && bloat.length === 0 && <p className="text-sm text-[var(--ok)]">{t('cleanup.noVersions')}</p>}

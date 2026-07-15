@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net/url"
 	"sort"
+	"sync/atomic"
+
+	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"swissknife-app/internal/session"
 )
@@ -12,10 +15,20 @@ import (
 // CleanupService reclaims OneDrive/SharePoint storage: duplicate files and
 // version-history bloat. For SharePoint sites it scans every document library.
 type CleanupService struct {
-	s *session.Session
+	s      *session.Session
+	cancel atomic.Bool // set by CancelScan to abort an in-flight scan
 }
 
 func NewCleanupService(s *session.Session) *CleanupService { return &CleanupService{s: s} }
+
+// CancelScan requests that the current scan stop; it returns whatever it has
+// found so far rather than an error.
+func (cl *CleanupService) CancelScan() { cl.cancel.Store(true) }
+
+// emit sends a live progress line to the UI ("cleanup:progress" event).
+func (cl *CleanupService) emit(stage string, done, total int) {
+	wrt.EventsEmit(cl.s.Ctx(), "cleanup:progress", map[string]any{"stage": stage, "done": done, "total": total})
+}
 
 // driveBases returns the API base path(s) for the owner's drive(s).
 // A user has one drive; a site can have several document libraries.
@@ -64,11 +77,17 @@ func (cl *CleanupService) walkFiles(ownerType, ownerID string) ([]fileRec, error
 	var files []fileRec
 	var walk func(base, itemsPath, rel string) error
 	walk = func(base, itemsPath, rel string) error {
+		if cl.cancel.Load() {
+			return nil
+		}
 		items, err := c.ListAll(cl.s.Ctx(), itemsPath, nil, 0)
 		if err != nil {
 			return err
 		}
 		for _, raw := range items {
+			if cl.cancel.Load() {
+				return nil
+			}
 			var it struct {
 				ID     string          `json:"id"`
 				Name   string          `json:"name"`
@@ -96,6 +115,9 @@ func (cl *CleanupService) walkFiles(ownerType, ownerID string) ([]fileRec, error
 				id: it.ID, name: it.Name, path: relPath, base: base, size: it.Size,
 				quickXor: it.File.Hashes.QuickXor, sha: it.File.Hashes.Sha256,
 			})
+			if len(files)%100 == 0 {
+				cl.emit("Scanning files", len(files), 0)
+			}
 		}
 		return nil
 	}
@@ -125,6 +147,7 @@ type DupGroup struct {
 
 // FindDuplicates groups byte-identical files (by content hash, else name+size).
 func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup, error) {
+	cl.cancel.Store(false)
 	files, err := cl.walkFiles(ownerType, ownerID)
 	if err != nil {
 		return nil, err
@@ -151,6 +174,7 @@ func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup,
 		}
 		out = append(out, g)
 	}
+	cl.emit("Done", len(files), len(files))
 	sort.Slice(out, func(i, j int) bool { return out[i].Wasted > out[j].Wasted })
 	return out, nil
 }
@@ -201,6 +225,7 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 	if maxFiles <= 0 {
 		maxFiles = 3000
 	}
+	cl.cancel.Store(false)
 	files, err := cl.walkFiles(ownerType, ownerID)
 	if err != nil {
 		return nil, err
@@ -216,7 +241,14 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 	}
 
 	var out []VersionBloat
-	for _, f := range files {
+	for idx, f := range files {
+		if cl.cancel.Load() {
+			cl.emit("Canceled", idx, len(files))
+			break
+		}
+		if idx%25 == 0 {
+			cl.emit("Checking versions", idx, len(files))
+		}
 		var vr struct {
 			Value []struct {
 				Size int64 `json:"size"`
@@ -242,6 +274,7 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 			CurrentSize: f.size, Reclaimable: reclaimable,
 		})
 	}
+	cl.emit("Done", len(files), len(files))
 	sort.Slice(out, func(i, j int) bool { return out[i].Reclaimable > out[j].Reclaimable })
 	return out, nil
 }

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import type { Option } from './MultiSelect'
-import { dropdownStyle, nudgeIntoView } from '../lib/dropdown'
+import { dropdownStyle } from '../lib/dropdown'
 
 // Single-select combobox that loads its options on first open. You can also type
 // a raw value (id/UPN) and press Enter to use it — so manual entry still works.
@@ -28,11 +28,7 @@ export function EntityPicker({
   const [rect, setRect] = useState<DOMRect | null>(null)
 
   const place = () => btnRef.current && setRect(btnRef.current.getBoundingClientRect())
-  useLayoutEffect(() => {
-    if (!open) return
-    if (btnRef.current) nudgeIntoView(btnRef.current)
-    place()
-  }, [open])
+  useLayoutEffect(() => { if (open) place() }, [open])
   useEffect(() => {
     if (!open) return
     const h = () => place()
