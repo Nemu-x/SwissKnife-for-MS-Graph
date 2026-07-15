@@ -12,7 +12,7 @@ import type { services } from '../../wailsjs/go/models'
 
 export function OffboardingPage() {
   const { t } = useTranslation()
-  const { readOnly, jobs, startTransfer, cancelTransfer, clearJob } = useStore()
+  const { readOnly, jobs, jobLog, startTransfer, cancelTransfer, clearJob } = useStore()
 
   const [source, setSource] = useState('')
   const [target, setTarget] = useState('')
@@ -32,9 +32,15 @@ export function OffboardingPage() {
 
   const runPreview = async () => {
     setPreviewing(true); setError(null); setPreview(null)
+    jobLog('transfer', `🔍 Preview ${source}…`)
     try {
-      setPreview(await api.drive.offboardingPreview(source))
-    } catch (e) { setError(errMessage(e)) } finally { setPreviewing(false) }
+      const p = await api.drive.offboardingPreview(source)
+      setPreview(p)
+      jobLog('transfer', `✓ Preview — ${p.files} files · ${p.folders} folders · ${humanBytes(p.totalBytes)}`)
+    } catch (e) {
+      setError(errMessage(e))
+      jobLog('transfer', `✗ Preview error: ${errMessage(e)}`)
+    } finally { setPreviewing(false) }
   }
 
   const runCopy = () => {
@@ -97,26 +103,35 @@ export function OffboardingPage() {
               </p>
             </Card>
           )}
-
-          {job && <JobConsole job={job} onCancel={cancelTransfer} onClear={() => clearJob('transfer')} />}
         </div>
 
-        <Card title={t('offboarding.report')} className="min-h-[300px]">
-          {!report && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
-          {report && (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-wrap gap-2">
-                <Badge kind="ok">{t('offboarding.copied')}: {report.copied?.length || 0}</Badge>
-                <Badge kind="warn">{t('offboarding.skipped')}: {Object.keys(report.skipped || {}).length}</Badge>
-                <Badge kind="danger">{t('offboarding.failed')}: {Object.keys(report.failed || {}).length}</Badge>
-                {report.canceled && <Badge kind="warn">{t('common.canceled')}</Badge>}
-              </div>
-              <ReportList title={t('offboarding.copied')} items={(report.copied || []).map((n) => [n, ''])} ok />
-              <ReportList title={t('offboarding.skipped')} items={Object.entries(report.skipped || {})} />
-              <ReportList title={t('offboarding.failed')} items={Object.entries(report.failed || {})} danger />
-            </div>
+        {/* Right column: live copy log on top, the final report beneath it. */}
+        <div className="flex min-w-0 flex-col gap-4">
+          {job && (job.log.length > 0 || job.running) ? (
+            <JobConsole job={job} onCancel={cancelTransfer} onClear={() => clearJob('transfer')} />
+          ) : (
+            <Card title={t('common.log')} className="min-h-[120px]">
+              <p className="text-sm text-[var(--text-faint)]">{t('offboarding.logEmpty')}</p>
+            </Card>
           )}
-        </Card>
+
+          <Card title={t('offboarding.report')} className="min-h-[220px]">
+            {!report && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
+            {report && (
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge kind="ok">{t('offboarding.copied')}: {report.copied?.length || 0}</Badge>
+                  <Badge kind="warn">{t('offboarding.skipped')}: {Object.keys(report.skipped || {}).length}</Badge>
+                  <Badge kind="danger">{t('offboarding.failed')}: {Object.keys(report.failed || {}).length}</Badge>
+                  {report.canceled && <Badge kind="warn">{t('common.canceled')}</Badge>}
+                </div>
+                <ReportList title={t('offboarding.copied')} items={(report.copied || []).map((n) => [n, ''])} ok />
+                <ReportList title={t('offboarding.skipped')} items={Object.entries(report.skipped || {})} />
+                <ReportList title={t('offboarding.failed')} items={Object.entries(report.failed || {})} danger />
+              </div>
+            )}
+          </Card>
+        </div>
       </div>
     </Page>
   )

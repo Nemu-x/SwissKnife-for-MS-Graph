@@ -211,6 +211,7 @@ const en = {
     running: 'Copying…',
     previewResult: '{{files}} files · {{folders}} folders · {{size}}',
     report: 'Report',
+    logEmpty: 'Run a preview or start a copy — progress appears here.',
     copied: 'Copied',
     skipped: 'Skipped',
     failed: 'Failed',

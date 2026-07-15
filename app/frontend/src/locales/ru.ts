@@ -211,6 +211,7 @@ const ru: Dict<typeof en> = {
     running: 'Копирование…',
     previewResult: 'файлов: {{files}} · папок: {{folders}} · {{size}}',
     report: 'Отчёт',
+    logEmpty: 'Запусти превью или копирование — прогресс появится здесь.',
     copied: 'Скопировано',
     skipped: 'Пропущено',
     failed: 'Ошибки',

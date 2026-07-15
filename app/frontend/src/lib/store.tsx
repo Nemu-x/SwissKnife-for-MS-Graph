@@ -50,6 +50,7 @@ interface Store {
   checkAccess: () => Promise<void>
 
   jobs: Record<string, JobState>
+  jobLog: (key: string, line: string) => void
   startTransfer: (p: TransferParams) => Promise<void>
   cancelTransfer: () => void
   startCleanupScan: (p: CleanupParams) => Promise<void>
@@ -187,11 +188,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     jobLog('cleanup', `▶ Scanning ${p.ownerType} · ${p.mode}…`)
     try {
       if (p.mode === 'duplicates') {
-        const g = await api.cleanup.findDuplicates(p.ownerType, p.ownerId)
+        const g = (await api.cleanup.findDuplicates(p.ownerType, p.ownerId)) || []
         patchJob('cleanup', { result: { mode: 'duplicates', groups: g } })
         jobLog('cleanup', `✓ Done — ${g.length} duplicate group(s)`)
       } else {
-        const b = await api.cleanup.findVersionBloat(p.ownerType, p.ownerId, 2, 3000)
+        const b = (await api.cleanup.findVersionBloat(p.ownerType, p.ownerId, 2, 3000)) || []
         patchJob('cleanup', { result: { mode: 'versions', bloat: b } })
         jobLog('cleanup', `✓ Done — ${b.length} file(s) with version bloat`)
       }
@@ -242,6 +243,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     },
     jobs,
+    jobLog,
     startTransfer,
     cancelTransfer,
     startCleanupScan,

@@ -240,7 +240,7 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 		files = files[:maxFiles]
 	}
 
-	var out []VersionBloat
+	out := make([]VersionBloat, 0)
 	for idx, f := range files {
 		if cl.cancel.Load() {
 			cl.emit("Canceled", idx, len(files))
