@@ -96,7 +96,10 @@ Prerequisites: **Go 1.26+**, **Node 22+**, and the [Wails CLI](https://wails.io)
 ```bash
 cd app
 wails dev      # hot-reload development
-wails build    # production binary → app/build/bin/
+wails build    # production binary → app/build/bin/ (About shows e.g. 0.6.0-dev)
+
+# bake an exact version into About, like CI does:
+wails build -ldflags "-X main.version=$(git describe --tags --always)"
 ```
 
 ## Setup: Azure App Registration

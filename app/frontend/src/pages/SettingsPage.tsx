@@ -124,7 +124,11 @@ export function SettingsPage() {
               {checking ? <Spinner /> : <RefreshCw size={15} />} {checking ? t('settings.checking') : t('settings.checkUpdates')}
             </Button>
             {update && !update.updateAvailable && (
-              <span className="text-sm text-[var(--ok)]">{t('settings.upToDate')}</span>
+              // A dev build can't be meaningfully compared to release tags —
+              // say what the latest release is instead of claiming "latest".
+              update.currentVersion.includes('dev') && update.latestVersion
+                ? <span className="text-sm text-[var(--text-dim)]">{t('settings.devBuild', { v: update.latestVersion })}</span>
+                : <span className="text-sm text-[var(--ok)]">{t('settings.upToDate')}</span>
             )}
             {update && update.updateAvailable && (
               <div className="flex items-center gap-2">

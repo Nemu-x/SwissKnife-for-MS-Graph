@@ -29,7 +29,25 @@ env:
   APP_DIR: app
 
 jobs:
+  # Keep About accurate for local dev builds: the tag being released must match
+  # the baseVersion constant that local builds fall back to.
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match baseVersion in app/app.go
+        run: |
+          case "$GITHUB_REF" in refs/tags/v*) ;; *) echo "Not a tag build — skipping."; exit 0 ;; esac
+          BASE=$(grep -oP 'baseVersion = "\K[^"]+' app/app.go)
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$BASE" != "$TAG" ]; then
+            echo "::error::Tag v$TAG does not match baseVersion \"$BASE\" in app/app.go — bump the constant before tagging."
+            exit 1
+          fi
+          echo "baseVersion $BASE matches tag."
+
   windows:
+    needs: version-check
     strategy:
       fail-fast: false
       matrix:
@@ -69,6 +87,7 @@ jobs:
           path: dist/*
 
   macos:
+    needs: version-check
     strategy:
       fail-fast: false
       matrix:
@@ -103,6 +122,7 @@ jobs:
           path: dist/*.dmg
 
   linux:
+    needs: version-check
     strategy:
       fail-fast: false
       matrix:

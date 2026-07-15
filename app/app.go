@@ -7,8 +7,21 @@ import (
 	"swissknife-app/internal/session"
 )
 
+// baseVersion is the current release line. Bump it together with tagging a
+// release — the Release workflow fails if the tag and this constant disagree.
+const baseVersion = "0.6.0"
+
 // version is injected at build time via -ldflags "-X main.version=...".
+// Local builds (no ldflags) fall back to baseVersion with a -dev suffix
+// (Wails builds with -buildvcs=false, so git metadata is not available).
 var version = "dev"
+
+func resolveVersion() string {
+	if version != "dev" {
+		return version
+	}
+	return baseVersion + "-dev"
+}
 
 // App is the root binding: lifecycle and metadata.
 type App struct {
@@ -26,5 +39,5 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) Version() string {
-	return version
+	return resolveVersion()
 }

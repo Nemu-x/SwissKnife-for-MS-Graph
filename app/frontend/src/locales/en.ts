@@ -113,6 +113,7 @@ const en = {
     checkUpdates: 'Check for updates',
     checking: 'Checking…',
     upToDate: 'You are on the latest version.',
+    devBuild: 'Dev build — latest release is {{v}}.',
     updateAvailable: 'Update available: {{v}}',
     download: 'Download',
   },

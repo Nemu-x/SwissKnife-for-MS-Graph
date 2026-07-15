@@ -25,7 +25,7 @@ func main() {
 	audit := auditlog.New(store.Dir())
 	sess := session.New(audit)
 
-	updateSvc := services.NewUpdateService(version)
+	updateSvc := services.NewUpdateService(resolveVersion())
 	app := NewApp(sess, updateSvc)
 
 	err = wails.Run(&options.App{

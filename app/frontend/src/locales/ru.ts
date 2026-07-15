@@ -113,6 +113,7 @@ const ru: Dict<typeof en> = {
     checkUpdates: 'Проверить обновления',
     checking: 'Проверка…',
     upToDate: 'У вас последняя версия.',
+    devBuild: 'Dev-сборка — последний релиз: {{v}}.',
     updateAvailable: 'Доступно обновление: {{v}}',
     download: 'Скачать',
   },
