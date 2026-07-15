@@ -44,7 +44,13 @@ jobs:
             echo "::error::Tag v$TAG does not match baseVersion \"$BASE\" in app/app.go — bump the constant before tagging."
             exit 1
           fi
-          echo "baseVersion $BASE matches tag."
+          # The NSIS installer stamps its version info from wails.json.
+          WJ=$(grep -oP '"productVersion": "\K[^"]+' app/wails.json)
+          if [ "$WJ" != "$TAG" ]; then
+            echo "::error::Tag v$TAG does not match info.productVersion \"$WJ\" in app/wails.json — bump it before tagging."
+            exit 1
+          fi
+          echo "baseVersion + wails.json productVersion match tag $TAG."
 
   windows:
     needs: version-check
