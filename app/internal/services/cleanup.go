@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"sort"
 	"sync/atomic"
@@ -28,6 +29,26 @@ func (cl *CleanupService) CancelScan() { cl.cancel.Store(true) }
 // emit sends a live progress line to the UI ("cleanup:progress" event).
 func (cl *CleanupService) emit(stage string, done, total int) {
 	wrt.EventsEmit(cl.s.Ctx(), "cleanup:progress", map[string]any{"stage": stage, "done": done, "total": total})
+}
+
+// emitLog appends a durable line to the UI console ("cleanup:log" event) so the
+// operator can see exactly what was walked, not just a spinner.
+func (cl *CleanupService) emitLog(text string) {
+	wrt.EventsEmit(cl.s.Ctx(), "cleanup:log", text)
+}
+
+// humanSize formats a byte count as a short human-readable string.
+func humanSize(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 // driveBases returns the API base path(s) for the owner's drive(s).
@@ -73,6 +94,9 @@ func (cl *CleanupService) walkFiles(ownerType, ownerID string) ([]fileRec, error
 	bases, err := cl.driveBases(ownerType, ownerID)
 	if err != nil {
 		return nil, err
+	}
+	if ownerType == "site" {
+		cl.emitLog(fmt.Sprintf("Enumerating %d document librar%s…", len(bases), pluralY(len(bases))))
 	}
 	var files []fileRec
 	var walk func(base, itemsPath, rel string) error
@@ -121,12 +145,28 @@ func (cl *CleanupService) walkFiles(ownerType, ownerID string) ([]fileRec, error
 		}
 		return nil
 	}
-	for _, base := range bases {
+	for i, base := range bases {
+		before := len(files)
+		var bytes int64
 		if err := walk(base, base+"/root/children", ""); err != nil {
 			return nil, err
 		}
+		for _, f := range files[before:] {
+			bytes += f.size
+		}
+		if len(bases) > 1 {
+			cl.emitLog(fmt.Sprintf("Library %d/%d: %d files, %s", i+1, len(bases), len(files)-before, humanSize(bytes)))
+		}
 	}
 	return files, nil
+}
+
+// pluralY returns "y" for 1 and "ies" otherwise, for "librar{y|ies}".
+func pluralY(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
 }
 
 // --- Duplicate files ---
@@ -151,6 +191,14 @@ func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup,
 	files, err := cl.walkFiles(ownerType, ownerID)
 	if err != nil {
 		return nil, err
+	}
+	var volume int64
+	for _, f := range files {
+		volume += f.size
+	}
+	cl.emitLog(fmt.Sprintf("Volume: %d files, %s total", len(files), humanSize(volume)))
+	if len(files) == 0 {
+		cl.emitLog("No files found — the account may lack read access to this site's libraries (needs Sites.Read.All / Files.Read.All).")
 	}
 	groups := map[string][]fileRec{}
 	for _, f := range files {
@@ -230,6 +278,19 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 	if err != nil {
 		return nil, err
 	}
+	// Pre-scan summary: report the total volume so the operator can judge whether
+	// a deep version scan is worthwhile before it runs.
+	var volume int64
+	for _, f := range files {
+		volume += f.size
+	}
+	cl.emitLog(fmt.Sprintf("Volume: %d files, %s total", len(files), humanSize(volume)))
+	if len(files) == 0 {
+		cl.emitLog("No files found — the account may lack read access to this site's libraries (needs Sites.Read.All / Files.Read.All).")
+		cl.emit("Done", 0, 0)
+		return make([]VersionBloat, 0), nil
+	}
+
 	c, err := cl.s.Client()
 	if err != nil {
 		return nil, err
@@ -237,10 +298,14 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 	// Probe the largest files first — that's where version bloat matters.
 	sort.Slice(files, func(i, j int) bool { return files[i].size > files[j].size })
 	if len(files) > maxFiles {
+		cl.emitLog(fmt.Sprintf("Probing the %d largest files (of %d) for version history…", maxFiles, len(files)))
 		files = files[:maxFiles]
+	} else {
+		cl.emitLog(fmt.Sprintf("Probing %d files for version history…", len(files)))
 	}
 
 	out := make([]VersionBloat, 0)
+	probeErrors := 0
 	for idx, f := range files {
 		if cl.cancel.Load() {
 			cl.emit("Canceled", idx, len(files))
@@ -256,6 +321,7 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 		}
 		ref := f.base + "/items/" + url.PathEscape(f.id)
 		if err := c.Get(cl.s.Ctx(), ref+"/versions", url.Values{"$select": {"id,size"}}, &vr); err != nil {
+			probeErrors++
 			continue
 		}
 		if len(vr.Value) < minVersions {
@@ -275,6 +341,10 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 		})
 	}
 	cl.emit("Done", len(files), len(files))
+	if probeErrors > 0 {
+		cl.emitLog(fmt.Sprintf("%d file(s) could not be checked (version lookup failed).", probeErrors))
+	}
+	cl.emitLog(fmt.Sprintf("Found %d file(s) with reclaimable version history.", len(out)))
 	sort.Slice(out, func(i, j int) bool { return out[i].Reclaimable > out[j].Reclaimable })
 	return out, nil
 }

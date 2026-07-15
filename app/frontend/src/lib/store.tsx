@@ -148,7 +148,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const offC = EventsOn('cleanup:progress', (d: any) => {
       patchJob('cleanup', { progress: d.total > 0 ? `${d.stage} ${d.done}/${d.total}` : `${d.stage} ${d.done}…` })
     })
-    return () => { offP(); offF(); offC() }
+    const offCL = EventsOn('cleanup:log', (text: string) => jobLog('cleanup', text))
+    return () => { offP(); offF(); offC(); offCL() }
   }, [patchJob, jobLog])
 
   const startTransfer = useCallback(async (p: TransferParams) => {
