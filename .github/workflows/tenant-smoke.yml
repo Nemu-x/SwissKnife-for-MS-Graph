@@ -1,0 +1,40 @@
+# Read-only smoke tests against a real (TEST!) Microsoft 365 tenant.
+# Catches what the local fakes cannot: real auth flow, real Graph responses,
+# permission/consent regressions.
+#
+# Setup once (repo secrets): SMOKE_TENANT_ID, SMOKE_CLIENT_ID, SMOKE_CLIENT_SECRET
+# — an app registration in a developer tenant with read-only Application
+# permissions (Organization.Read.All, User.Read.All, Directory.Read.All,
+# Application.Read.All). The job skips quietly when the secrets are absent.
+
+name: Tenant smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 5 * * 1'   # Mondays 05:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: app/go.sum
+      - name: Run smoke tests
+        working-directory: app
+        env:
+          SMOKE_TENANT_ID: ${{ secrets.SMOKE_TENANT_ID }}
+          SMOKE_CLIENT_ID: ${{ secrets.SMOKE_CLIENT_ID }}
+          SMOKE_CLIENT_SECRET: ${{ secrets.SMOKE_CLIENT_SECRET }}
+        run: |
+          if [ -z "$SMOKE_TENANT_ID" ]; then
+            echo "SMOKE_* secrets not configured — skipping (set them to enable real-tenant smoke)."
+            exit 0
+          fi
+          go test -tags=smoke ./internal/smoke/ -v -count=1

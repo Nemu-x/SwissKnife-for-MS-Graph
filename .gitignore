@@ -22,3 +22,7 @@ build/
 # Virtualenv
 venv/
 .env/
+
+# Playwright
+app/frontend/test-results/
+app/frontend/playwright-report/

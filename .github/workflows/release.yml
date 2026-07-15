@@ -81,6 +81,10 @@ jobs:
           $installer = Get-ChildItem "${{ env.APP_DIR }}/build/bin" -Filter "*installer.exe" | Select-Object -First 1
           if (-not $installer) { throw "NSIS installer not found in build/bin — check the makensis step" }
           Copy-Item $installer.FullName "dist/SwissKnifeGraph-windows-${{ matrix.arch }}-installer.exe" -Force
+          # Sanity: neither artifact may be a stub.
+          Get-ChildItem dist | ForEach-Object {
+            if ($_.Length -lt 5MB) { throw "$($_.Name) is suspiciously small: $($_.Length) bytes" }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}
@@ -116,6 +120,12 @@ jobs:
         run: |
           mkdir -p dist
           bash packaging/macos/create-dmg.sh "${{ env.APP_DIR }}/build/bin" "dist/SwissKnifeGraph-macos-${{ matrix.arch }}.dmg"
+      - name: Sanity-check DMG
+        run: |
+          DMG="dist/SwissKnifeGraph-macos-${{ matrix.arch }}.dmg"
+          [ -f "$DMG" ] || { echo "::error::DMG missing"; exit 1; }
+          SIZE=$(stat -f%z "$DMG")
+          [ "$SIZE" -gt 5000000 ] || { echo "::error::DMG suspiciously small: $SIZE bytes"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
@@ -194,6 +204,21 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # The release must never ship without its core artifacts (ARM64 legs are
+      # best-effort and intentionally not on this list).
+      - name: Verify core assets present
+        run: |
+          for f in \
+            SwissKnifeGraph-windows-amd64-installer.exe \
+            SwissKnifeGraph-windows-amd64-portable.exe \
+            SwissKnifeGraph-macos-arm64.dmg \
+            SwissKnifeGraph-macos-intel.dmg \
+            SwissKnifeGraph-linux-amd64.tar.gz \
+            SwissKnifeGraph-linux-amd64.deb \
+            SwissKnifeGraph-linux-amd64.rpm \
+            SwissKnifeGraph-linux-amd64.AppImage; do
+            [ -s "dist/$f" ] || { echo "::error::missing or empty core asset: $f"; exit 1; }
+          done
       - name: Checksums
         run: cd dist && sha256sum * > SHA256SUMS.txt
       # Sign the checksums with minisign so downloads can't be tampered with.

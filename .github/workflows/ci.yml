@@ -1,4 +1,5 @@
-# Fast checks on pushes and PRs to main: Go vet + tests, frontend typecheck + build.
+# Fast checks on pushes and PRs to main: Go vet + lint + tests, frontend
+# typecheck + unit tests + build + GUI smoke (Playwright over stubbed bindings).
 name: CI
 
 on:
@@ -29,6 +30,11 @@ jobs:
         run: |
           go vet ./...
           go test ./... -count=1
+      - name: Lint (golangci-lint)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          working-directory: app
+          version: latest
 
   frontend:
     runs-on: ubuntu-24.04
@@ -37,9 +43,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install + typecheck + build
+      - name: Install + typecheck + unit tests + build
         working-directory: app/frontend
         run: |
           npm ci
           npx tsc --noEmit
+          npm run test
           npm run build
+      - name: Install Playwright chromium
+        working-directory: app/frontend
+        run: npx playwright install chromium --with-deps
+      - name: GUI smoke (Playwright)
+        working-directory: app/frontend
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: app/frontend/test-results/

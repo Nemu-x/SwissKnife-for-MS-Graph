@@ -7,6 +7,7 @@ import { JobConsole } from '../components/JobConsole'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore, type BulkItem, type BulkRowResult } from '../lib/store'
 import { api } from '../lib/api'
+import { parseCsv } from '../lib/csv'
 
 type OpId = 'createUsers' | 'assignLicense' | 'addToGroup'
 
@@ -34,29 +35,6 @@ const OPS: Record<OpId, { headers: string[]; required: string[]; run: (r: Record
       await api.groups.addMember(r.groupId, r.upn)
     },
   },
-}
-
-// Minimal RFC-4180-ish CSV parser (quotes, escaped quotes, CRLF).
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = []
-  let row: string[] = []
-  let cur = ''
-  let q = false
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]
-    if (q) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') { cur += '"'; i++ } else q = false
-      } else cur += ch
-    } else if (ch === '"') q = true
-    else if (ch === ',') { row.push(cur); cur = '' }
-    else if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && text[i + 1] === '\n') i++
-      row.push(cur); rows.push(row); row = []; cur = ''
-    } else cur += ch
-  }
-  if (cur !== '' || row.length) { row.push(cur); rows.push(row) }
-  return rows.filter((r) => r.some((c) => c.trim() !== ''))
 }
 
 export function BulkPage() {

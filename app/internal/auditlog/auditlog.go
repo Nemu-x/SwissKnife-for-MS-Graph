@@ -46,7 +46,8 @@ func (l *Log) Write(e Entry) {
 		return
 	}
 	defer f.Close()
-	f.Write(append(data, '\n'))
+	// Best-effort: a failed audit write must never break the operation itself.
+	_, _ = f.Write(append(data, '\n'))
 }
 
 // Tail returns the last n entries (for the Activity tab).
