@@ -68,8 +68,16 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
       # windows-latest runners no longer ship NSIS; without makensis Wails only
       # prints a warning and silently skips the installer (bit us in v0.6.0).
+      # choco does not shim makensis, so the install dir must go on PATH too.
       - name: Install NSIS
-        run: choco install nsis -y
+        shell: pwsh
+        run: |
+          choco install nsis -y
+          $nsis = @("C:\Program Files (x86)\NSIS", "C:\Program Files (x86)\NSIS\Bin", "C:\Program Files\NSIS") |
+            Where-Object { Test-Path (Join-Path $_ 'makensis.exe') } | Select-Object -First 1
+          if (-not $nsis) { throw "makensis.exe not found after choco install" }
+          Add-Content -Path $env:GITHUB_PATH -Value $nsis
+          & (Join-Path $nsis 'makensis.exe') /VERSION
       - name: Build (windows/${{ matrix.arch }} + NSIS installer)
         working-directory: ${{ env.APP_DIR }}
         run: wails build -platform windows/${{ matrix.arch }} -nsis -ldflags "-X main.version=${{ github.ref_name }}"
