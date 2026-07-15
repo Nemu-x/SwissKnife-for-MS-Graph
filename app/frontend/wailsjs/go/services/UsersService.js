@@ -22,6 +22,10 @@ export function GetManager(arg1) {
   return window['go']['services']['UsersService']['GetManager'](arg1);
 }
 
+export function InviteGuest(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['services']['UsersService']['InviteGuest'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function LicenseDetails(arg1) {
   return window['go']['services']['UsersService']['LicenseDetails'](arg1);
 }

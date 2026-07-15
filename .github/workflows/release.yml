@@ -1,5 +1,6 @@
-# Builds SwissKnife for MS Graph desktop for Windows, macOS (universal), and Linux,
-# then attaches the artifacts to a GitHub Release.
+# Builds SwissKnife for MS Graph desktop for Windows (x64 + ARM64, installer and
+# portable), macOS (Apple Silicon + Intel DMGs), and Linux (x64 + ARM64 tar.gz,
+# deb, rpm, AppImage), then attaches everything to a GitHub Release.
 #
 # Trigger: push a tag v* (e.g. v0.2.0) for the full release set, or run manually
 # (workflow_dispatch builds artifacts without publishing a release).
@@ -29,7 +30,13 @@ env:
 
 jobs:
   windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
     runs-on: windows-latest
+    # ARM64 is best-effort: a failure there must not block the whole release.
+    continue-on-error: ${{ matrix.arch == 'arm64' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -41,23 +48,37 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
-      - name: Build (windows/amd64 + NSIS installer)
+      # windows-latest runners no longer ship NSIS; without makensis Wails only
+      # prints a warning and silently skips the installer (bit us in v0.6.0).
+      - name: Install NSIS
+        run: choco install nsis -y
+      - name: Build (windows/${{ matrix.arch }} + NSIS installer)
         working-directory: ${{ env.APP_DIR }}
-        run: wails build -platform windows/amd64 -nsis -ldflags "-X main.version=${{ github.ref_name }}"
+        run: wails build -platform windows/${{ matrix.arch }} -nsis -ldflags "-X main.version=${{ github.ref_name }}"
       - name: Stage artifacts
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item "${{ env.APP_DIR }}/build/bin/SwissKnifeGraph.exe" "dist/SwissKnifeGraph-windows-amd64.exe" -Force
+          Copy-Item "${{ env.APP_DIR }}/build/bin/SwissKnifeGraph.exe" "dist/SwissKnifeGraph-windows-${{ matrix.arch }}-portable.exe" -Force
           $installer = Get-ChildItem "${{ env.APP_DIR }}/build/bin" -Filter "*installer.exe" | Select-Object -First 1
-          if ($installer) { Copy-Item $installer.FullName "dist/SwissKnifeGraph-windows-amd64-installer.exe" -Force }
+          if (-not $installer) { throw "NSIS installer not found in build/bin — check the makensis step" }
+          Copy-Item $installer.FullName "dist/SwissKnifeGraph-windows-${{ matrix.arch }}-installer.exe" -Force
       - uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: windows-${{ matrix.arch }}
           path: dist/*
 
   macos:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+          - arch: intel
+            runner: macos-15-intel
+            platform_arch: amd64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -69,27 +90,30 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
-      - name: Build (darwin/universal)
+      - name: Build (darwin/${{ matrix.platform_arch || matrix.arch }})
         working-directory: ${{ env.APP_DIR }}
-        run: wails build -platform darwin/universal -ldflags "-X main.version=${{ github.ref_name }}"
-      - name: Package .app into zip
-        working-directory: ${{ env.APP_DIR }}
-        run: |
-          cd build/bin
-          APP=$(ls -d *.app | head -1)
-          echo "Zipping $APP"
-          ditto -c -k --keepParent "$APP" "SwissKnifeGraph-macos-universal.zip"
-      - name: Stage artifacts
+        run: wails build -platform darwin/${{ matrix.platform_arch || matrix.arch }} -ldflags "-X main.version=${{ github.ref_name }}"
+      - name: Package DMG (drag-to-Applications + install notes)
         run: |
           mkdir -p dist
-          cp "${{ env.APP_DIR }}/build/bin/SwissKnifeGraph-macos-universal.zip" dist/
+          bash packaging/macos/create-dmg.sh "${{ env.APP_DIR }}/build/bin" "dist/SwissKnifeGraph-macos-${{ matrix.arch }}.dmg"
       - uses: actions/upload-artifact@v4
         with:
-          name: macos
-          path: dist/*
+          name: macos-${{ matrix.arch }}
+          path: dist/*.dmg
 
   linux:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            aitool: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            aitool: aarch64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -102,30 +126,43 @@ jobs:
       - name: Install Linux build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y build-essential libgtk-3-dev libwebkit2gtk-4.1-dev
       - name: Install Wails + nfpm
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
-      - name: Build (linux/amd64)
+      - name: Build (linux/${{ matrix.arch }})
         working-directory: ${{ env.APP_DIR }}
         # Ubuntu 24.04 ships webkit2gtk 4.1 only; the webkit2_41 tag targets it.
-        run: wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-X main.version=${{ github.ref_name }}"
+        run: wails build -platform linux/${{ matrix.arch }} -tags webkit2_41 -ldflags "-X main.version=${{ github.ref_name }}"
       - name: Package tar.gz + .deb + .rpm
         # Runs from repo root so the paths in packaging/nfpm.yaml resolve.
         env:
           VERSION: ${{ github.ref_name }}
+          NFPM_ARCH: ${{ matrix.arch }}
         run: |
           VER="${VERSION#v}"
           [ -z "$VER" ] && VER="0.0.0"
           mkdir -p dist
           BIN=$(ls app/build/bin | head -1)
-          tar -C app/build/bin -czf "dist/SwissKnifeGraph-linux-amd64.tar.gz" "$BIN"
-          VERSION="$VER" nfpm package -f packaging/nfpm.yaml -p deb -t "dist/SwissKnifeGraph-linux-amd64.deb"
-          VERSION="$VER" nfpm package -f packaging/nfpm.yaml -p rpm -t "dist/SwissKnifeGraph-linux-amd64.rpm"
+          tar -C app/build/bin -czf "dist/SwissKnifeGraph-linux-${{ matrix.arch }}.tar.gz" "$BIN"
+          VERSION="$VER" nfpm package -f packaging/nfpm.yaml -p deb -t "dist/SwissKnifeGraph-linux-${{ matrix.arch }}.deb"
+          VERSION="$VER" nfpm package -f packaging/nfpm.yaml -p rpm -t "dist/SwissKnifeGraph-linux-${{ matrix.arch }}.rpm"
+      - name: Build AppImage
+        run: |
+          APPDIR=AppDir
+          # Binary is renamed to match the Exec= entry of the .desktop file.
+          mkdir -p "$APPDIR/usr/bin"
+          cp app/build/bin/SwissKnifeGraph "$APPDIR/usr/bin/swissknife-graph"
+          cp packaging/linux/swissknife-graph.desktop "$APPDIR/"
+          cp app/build/appicon.png "$APPDIR/swissknife-graph.png"
+          ln -s usr/bin/swissknife-graph "$APPDIR/AppRun"
+          curl -fsSL -o appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.aitool }}.AppImage"
+          chmod +x appimagetool
+          ARCH=${{ matrix.aitool }} ./appimagetool --appimage-extract-and-run "$APPDIR" "dist/SwissKnifeGraph-linux-${{ matrix.arch }}.AppImage"
       - uses: actions/upload-artifact@v4
         with:
-          name: linux
+          name: linux-${{ matrix.arch }}
           path: dist/*
 
   publish:

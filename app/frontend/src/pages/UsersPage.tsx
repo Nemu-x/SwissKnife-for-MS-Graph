@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Search, UserCog, Ban, CheckCircle, KeyRound, LogOut, UserPlus, Trash2,
-  UserSquare, MapPin, ShieldAlert, ListRestart, RotateCcw,
+  UserSquare, MapPin, ShieldAlert, ListRestart, RotateCcw, Ticket, MailPlus, Copy,
 } from 'lucide-react'
 import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
 import { ResultView } from '../components/ResultView'
@@ -30,6 +30,22 @@ export function UsersPage() {
   const [loc, setLoc] = useState('')
   const [restoreId, setRestoreId] = useState('')
   const [patch, setPatch] = useState('{\n  "jobTitle": "",\n  "department": ""\n}')
+  const [tap, setTap] = useState<GraphObject | null>(null)
+  const [tapQr, setTapQr] = useState('')
+  const [tapLifetime, setTapLifetime] = useState(60)
+  const [tapOnce, setTapOnce] = useState(true)
+  const [invite, setInvite] = useState({ email: '', name: '', sendMail: true })
+
+  // Issue a Temporary Access Pass and show it once, with a QR for phone entry.
+  const makeTap = async () => {
+    try {
+      const r = await api.authMethods.createTAP(target, tapLifetime, tapOnce)
+      setTap(r)
+      setTapQr('')
+      const QRCode = await import('qrcode')
+      setTapQr(await QRCode.toDataURL(String(r.temporaryAccessPass || ''), { margin: 1, width: 220 }))
+    } catch (e) { toast('err', errMessage(e)) }
+  }
 
   const listUsers = () => res.run(() => api.users.list(search, 0))
   const doWrite = async (fn: () => Promise<any>, ok: string) => {
@@ -83,6 +99,18 @@ export function UsersPage() {
               <RotateCcw size={15} /> {t('users.resetMfa')}
             </Button>
           </div>
+          <div className="my-1 border-t border-[var(--border)]" />
+          <div className="flex items-center gap-2">
+            <Field label={t('users.tapLifetime')}>
+              <Input type="number" value={tapLifetime} onChange={(e) => setTapLifetime(Math.max(10, Number(e.target.value) || 60))} className="w-24" />
+            </Field>
+            <label className="mt-5 flex items-center gap-2 text-sm text-[var(--text-dim)]">
+              <input type="checkbox" checked={tapOnce} onChange={(e) => setTapOnce(e.target.checked)} /> {t('users.tapOnce')}
+            </label>
+          </div>
+          <Button variant="primary" disabled={readOnly || !target} onClick={makeTap}>
+            <Ticket size={15} /> {t('users.createTap')}
+          </Button>
         </DrawerForm>
       ),
     },
@@ -122,6 +150,16 @@ export function UsersPage() {
             onClick={() => askConfirm(target, (c) => doWrite(() => api.users.delete(target, c), t('users.deleteUser')))}>
             <Trash2 size={15} /> {t('users.deleteUser')}
           </Button>
+          <div className="my-1 border-t border-[var(--border)]" />
+          <Input placeholder="guest@example.com" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} />
+          <Input placeholder={t('users.inviteName')} value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} />
+          <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+            <input type="checkbox" checked={invite.sendMail} onChange={(e) => setInvite({ ...invite, sendMail: e.target.checked })} /> {t('users.inviteSendMail')}
+          </label>
+          <Button variant="subtle" disabled={readOnly || !invite.email}
+            onClick={() => doShow(() => api.users.inviteGuest(invite.email, invite.name, '', '', invite.sendMail), t('users.inviteGuest'))}>
+            <MailPlus size={15} /> {t('users.inviteGuest')}
+          </Button>
         </DrawerForm>
       ),
     },
@@ -142,6 +180,23 @@ export function UsersPage() {
   return (
     <>
       {confirmElement}
+      {tap && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setTap(null)}>
+          <div className="w-[380px] rounded-2xl border border-[var(--border)] bg-[var(--bg-elev)] p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 text-sm font-medium">{t('users.tapTitle')}</div>
+            <div className="rounded-lg bg-[var(--bg)] p-3 text-center font-mono text-xl tracking-wider">{String(tap.temporaryAccessPass || '')}</div>
+            {tapQr && <img src={tapQr} alt="TAP QR" width={220} height={220} className="mx-auto mt-3 rounded-lg bg-white p-2" />}
+            <div className="mt-2 text-center text-xs text-[var(--text-faint)]">{t('users.tapHint')}</div>
+            <div className="mt-3 flex gap-2">
+              <Button variant="primary" className="flex-1"
+                onClick={() => { navigator.clipboard.writeText(String(tap.temporaryAccessPass || '')); toast('ok', t('users.tapCopied')) }}>
+                <Copy size={15} /> {t('users.tapCopy')}
+              </Button>
+              <Button className="flex-1" onClick={() => setTap(null)}>{t('users.tapClose')}</Button>
+            </div>
+          </div>
+        </div>
+      )}
       <ActionPage
         title={t('nav.users')}
         search={{ value: search, onChange: setSearch, onSubmit: listUsers, placeholder: t('common.search') }}

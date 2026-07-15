@@ -21,3 +21,7 @@ export function FindVersionBloat(arg1, arg2, arg3, arg4) {
 export function TrimVersions(arg1, arg2, arg3) {
   return window['go']['services']['CleanupService']['TrimVersions'](arg1, arg2, arg3);
 }
+
+export function TrimVersionsMany(arg1, arg2, arg3) {
+  return window['go']['services']['CleanupService']['TrimVersionsMany'](arg1, arg2, arg3);
+}

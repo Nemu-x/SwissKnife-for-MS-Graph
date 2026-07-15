@@ -10,6 +10,7 @@ import (
 
 	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/session"
 )
 
@@ -349,6 +350,31 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 	return out, nil
 }
 
+// trimOne deletes old versions of a single item, keeping the newest `keep`.
+// Versions come newest-first; keep the first `keep`, delete the rest.
+func (cl *CleanupService) trimOne(c *graphapi.Client, itemRef string, keep int) (removed int, failures map[string]string, err error) {
+	var vr struct {
+		Value []struct {
+			ID string `json:"id"`
+		} `json:"value"`
+	}
+	if err := c.Get(cl.s.Ctx(), itemRef+"/versions", url.Values{"$select": {"id"}}, &vr); err != nil {
+		return 0, nil, err
+	}
+	failures = map[string]string{}
+	for i, v := range vr.Value {
+		if i < keep || v.ID == "current" {
+			continue
+		}
+		if e := c.Delete(cl.s.Ctx(), itemRef+"/versions/"+url.PathEscape(v.ID)); e != nil {
+			failures[v.ID] = e.Error()
+			continue
+		}
+		removed++
+	}
+	return removed, failures, nil
+}
+
 // TrimVersions deletes old versions of an item, keeping the newest `keep`.
 // Destructive: confirm == "TRIM".
 func (cl *CleanupService) TrimVersions(itemRef string, keep int, confirm string) (map[string]any, error) {
@@ -365,27 +391,65 @@ func (cl *CleanupService) TrimVersions(itemRef string, keep int, confirm string)
 	if err != nil {
 		return nil, err
 	}
-	var vr struct {
-		Value []struct {
-			ID string `json:"id"`
-		} `json:"value"`
-	}
-	if err := c.Get(cl.s.Ctx(), itemRef+"/versions", url.Values{"$select": {"id"}}, &vr); err != nil {
+	removed, failures, err := cl.trimOne(c, itemRef, keep)
+	if err != nil {
 		return nil, err
-	}
-	// Versions come newest-first; keep the first `keep`, delete the rest.
-	removed := 0
-	failures := map[string]string{}
-	for i, v := range vr.Value {
-		if i < keep || v.ID == "current" {
-			continue
-		}
-		if e := c.Delete(cl.s.Ctx(), itemRef+"/versions/"+url.PathEscape(v.ID)); e != nil {
-			failures[v.ID] = e.Error()
-			continue
-		}
-		removed++
 	}
 	cl.s.Record("cleanup.trimVersions", itemRef, "removed="+itoa(removed), nil)
 	return map[string]any{"removed": removed, "failures": failures}, nil
+}
+
+// TrimResult reports the outcome of trimming one item in a bulk run.
+type TrimResult struct {
+	Ref     string `json:"ref"`
+	Removed int    `json:"removed"`
+	Error   string `json:"error,omitempty"`
+}
+
+// TrimVersionsMany trims version history on many items in one confirmed run,
+// streaming progress to the job console. Destructive: confirm == "TRIM".
+// Per-item failures are reported, not fatal; CancelScan aborts between items.
+func (cl *CleanupService) TrimVersionsMany(itemRefs []string, keep int, confirm string) ([]TrimResult, error) {
+	if err := cl.s.GuardWrite(); err != nil {
+		return nil, err
+	}
+	if confirm != "TRIM" {
+		return nil, errors.New("type TRIM to confirm version trimming")
+	}
+	if keep < 1 {
+		keep = 1
+	}
+	c, err := cl.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	cl.cancel.Store(false)
+	cl.emitLog(fmt.Sprintf("Trimming %d file(s), keeping the latest %d version(s)…", len(itemRefs), keep))
+	out := make([]TrimResult, 0, len(itemRefs))
+	totalRemoved, failed := 0, 0
+	for i, ref := range itemRefs {
+		if cl.cancel.Load() {
+			cl.emit("Canceled", i, len(itemRefs))
+			cl.emitLog(fmt.Sprintf("Canceled after %d of %d file(s).", i, len(itemRefs)))
+			break
+		}
+		cl.emit("Trimming versions", i, len(itemRefs))
+		removed, failures, err := cl.trimOne(c, ref, keep)
+		r := TrimResult{Ref: ref, Removed: removed}
+		if err != nil {
+			r.Error = err.Error()
+		} else if len(failures) > 0 {
+			r.Error = fmt.Sprintf("%d version(s) could not be deleted", len(failures))
+		}
+		if r.Error != "" {
+			failed++
+			cl.emitLog(fmt.Sprintf("Failed: %s — %s", ref, r.Error))
+		}
+		totalRemoved += removed
+		out = append(out, r)
+	}
+	cl.emit("Done", len(out), len(itemRefs))
+	cl.emitLog(fmt.Sprintf("Trim done — %d version(s) removed across %d file(s), %d failure(s).", totalRemoved, len(out), failed))
+	cl.s.Record("cleanup.trimVersionsMany", itoa(len(out))+" items", "removed="+itoa(totalRemoved), nil)
+	return out, nil
 }

@@ -72,12 +72,12 @@ Latest release — direct links (always point to the newest version):
 
 | Platform | Download |
 | --- | --- |
-| Windows (x64, installer) | [SwissKnifeGraph-windows-amd64-installer.exe](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-amd64-installer.exe) |
-| Windows (x64, portable) | [SwissKnifeGraph-windows-amd64.exe](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-amd64.exe) |
-| macOS (universal) | [SwissKnifeGraph-macos-universal.zip](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-macos-universal.zip) |
-| Linux (x64, tar.gz) | [SwissKnifeGraph-linux-amd64.tar.gz](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.tar.gz) |
-| Linux (x64, deb) | [SwissKnifeGraph-linux-amd64.deb](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.deb) |
-| Linux (x64, rpm) | [SwissKnifeGraph-linux-amd64.rpm](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.rpm) |
+| Windows x64 | [installer](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-amd64-installer.exe) · [portable](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-amd64-portable.exe) |
+| Windows ARM64 | [installer](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-arm64-installer.exe) · [portable](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-arm64-portable.exe) |
+| macOS Apple Silicon | [SwissKnifeGraph-macos-arm64.dmg](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-macos-arm64.dmg) |
+| macOS Intel | [SwissKnifeGraph-macos-intel.dmg](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-macos-intel.dmg) |
+| Linux x64 | [AppImage](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.AppImage) · [deb](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.deb) · [rpm](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.rpm) · [tar.gz](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.tar.gz) |
+| Linux ARM64 | [AppImage](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.AppImage) · [deb](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.deb) · [rpm](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.rpm) · [tar.gz](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.tar.gz) |
 | Arch (AUR) | `yay -S swissknife-graph-bin` |
 
 Verify downloads against [`SHA256SUMS.txt`](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SHA256SUMS.txt), signed with minisign ([`.minisig`](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SHA256SUMS.txt.minisig), public key in [`minisign.pub`](minisign.pub)):
@@ -87,7 +87,7 @@ minisign -Vm SHA256SUMS.txt -P $(cat minisign.pub)
 sha256sum -c SHA256SUMS.txt
 ```
 
-macOS is unsigned for now — if blocked: `xattr -dr com.apple.quarantine SwissKnifeGraph.app`. Linux needs `webkit2gtk-4.1` + `gtk3` from your distro.
+macOS is unsigned for now — the DMG ships install notes and a one-click "Fix Quarantine.command"; manually: `sudo xattr -r -d com.apple.quarantine "/Applications/SwissKnifeGraph.app"`. Linux deb/rpm/tar.gz need `webkit2gtk-4.1` + `gtk3` from your distro; the AppImage still needs those system libraries present. Windows ARM64 builds are best-effort.
 
 ## Build from source
 

@@ -31,6 +31,37 @@ func (a *AppsService) List(search string, maxItems int) ([]json.RawMessage, erro
 	return c.ListAll(a.s.Ctx(), "/applications", params, maxItems)
 }
 
+// AddSecret issues a new client secret on an app registration (rotation).
+// objectID is the application OBJECT id, not the appId. The secret text is
+// returned once and never stored anywhere.
+func (a *AppsService) AddSecret(objectID, displayName string, months int) (map[string]any, error) {
+	if err := a.s.GuardWrite(); err != nil {
+		return nil, err
+	}
+	c, err := a.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	if months < 1 || months > 24 {
+		months = 6
+	}
+	if displayName == "" {
+		displayName = "SwissKnife rotation " + time.Now().Format("2006-01-02")
+	}
+	var resp map[string]any
+	err = c.Post(a.s.Ctx(), "/applications/"+url.PathEscape(objectID)+"/addPassword", map[string]any{
+		"passwordCredential": map[string]any{
+			"displayName": displayName,
+			"endDateTime": time.Now().AddDate(0, months, 0).UTC().Format(time.RFC3339),
+		},
+	}, &resp)
+	a.s.Record("apps.addSecret", objectID, displayName, err)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 // ExpiringCredential is one secret/cert nearing or past expiry.
 type ExpiringCredential struct {
 	AppName     string `json:"appName"`

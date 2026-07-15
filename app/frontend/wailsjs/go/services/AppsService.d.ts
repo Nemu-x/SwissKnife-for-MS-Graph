@@ -3,6 +3,8 @@
 import {services} from '../models';
 import {json} from '../models';
 
+export function AddSecret(arg1:string,arg2:string,arg3:number):Promise<Record<string, any>>;
+
 export function Expiring(arg1:number):Promise<Array<services.ExpiringCredential>>;
 
 export function List(arg1:string,arg2:number):Promise<Array<json.RawMessage>>;

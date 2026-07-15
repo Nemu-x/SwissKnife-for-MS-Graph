@@ -318,6 +318,12 @@ export namespace services {
 	    confirm: string;
 	    block: boolean;
 	    revokeSessions: boolean;
+	    oof: boolean;
+	    oofMessage: string;
+	    forwardTo: string;
+	    hideFromGal: boolean;
+	    calendarTo: string;
+	    removeFromGroups: boolean;
 	    removeAllLicenses: boolean;
 	    backupToUser: string;
 	    backupFolder: string;
@@ -333,6 +339,12 @@ export namespace services {
 	        this.confirm = source["confirm"];
 	        this.block = source["block"];
 	        this.revokeSessions = source["revokeSessions"];
+	        this.oof = source["oof"];
+	        this.oofMessage = source["oofMessage"];
+	        this.forwardTo = source["forwardTo"];
+	        this.hideFromGal = source["hideFromGal"];
+	        this.calendarTo = source["calendarTo"];
+	        this.removeFromGroups = source["removeFromGroups"];
 	        this.removeAllLicenses = source["removeAllLicenses"];
 	        this.backupToUser = source["backupToUser"];
 	        this.backupFolder = source["backupFolder"];
@@ -472,6 +484,22 @@ export namespace services {
 	    }
 	}
 	
+	export class TrimResult {
+	    ref: string;
+	    removed: number;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TrimResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ref = source["ref"];
+	        this.removed = source["removed"];
+	        this.error = source["error"];
+	    }
+	}
 	export class UpdateInfo {
 	    currentVersion: string;
 	    latestVersion: string;

@@ -15,6 +15,8 @@ import { IntunePage } from './IntunePage'
 import { DevicesPage } from './DevicesPage'
 import { AppsPage } from './AppsPage'
 import { ReportsPage } from './ReportsPage'
+import { BulkPage } from './BulkPage'
+import { SecurityPage } from './SecurityPage'
 import { CleanupPage } from './CleanupPage'
 import { HealthPage } from './HealthPage'
 import { AuditPage } from './AuditPage'
@@ -23,14 +25,15 @@ import { ActivityPage } from './ActivityPage'
 import { SettingsPage } from './SettingsPage'
 
 export type PageId =
-  | 'connect' | 'dashboard' | 'playbooks' | 'users' | 'licensing' | 'roles' | 'groups' | 'teams' | 'chats'
-  | 'mail' | 'files' | 'offboarding' | 'intune' | 'devices' | 'apps' | 'reports' | 'cleanup' | 'health'
+  | 'connect' | 'dashboard' | 'playbooks' | 'bulk' | 'users' | 'licensing' | 'roles' | 'groups' | 'teams' | 'chats'
+  | 'mail' | 'files' | 'offboarding' | 'intune' | 'devices' | 'apps' | 'security' | 'reports' | 'cleanup' | 'health'
   | 'audit' | 'raw' | 'activity' | 'settings'
 
 export const pages: Record<PageId, ComponentType> = {
   connect: ConnectPage,
   dashboard: DashboardPage,
   playbooks: PlaybooksPage,
+  bulk: BulkPage,
   users: UsersPage,
   licensing: LicensingPage,
   roles: RolesPage,
@@ -43,6 +46,7 @@ export const pages: Record<PageId, ComponentType> = {
   intune: IntunePage,
   devices: DevicesPage,
   apps: AppsPage,
+  security: SecurityPage,
   reports: ReportsPage,
   cleanup: CleanupPage,
   health: HealthPage,

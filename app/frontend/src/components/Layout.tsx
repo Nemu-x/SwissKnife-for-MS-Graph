@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   Plug, LayoutDashboard, PlayCircle, Users, KeyRound, ShieldCheck, Boxes, MessagesSquare, MessageCircle, Mail,
   FolderOpen, UserMinus, Smartphone, MonitorSmartphone, AppWindow, BarChart3, Sparkles, HeartPulse,
-  ScrollText, TerminalSquare, Activity, Settings, Lock,
+  ScrollText, TerminalSquare, Activity, Settings, Lock, Layers, ShieldAlert,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import logo from '../assets/images/logo.png'
@@ -13,6 +13,7 @@ const items: { id: PageId; icon: ReactNode; key: string }[] = [
   { id: 'connect', icon: <Plug size={17} />, key: 'nav.connect' },
   { id: 'dashboard', icon: <LayoutDashboard size={17} />, key: 'nav.dashboard' },
   { id: 'playbooks', icon: <PlayCircle size={17} />, key: 'nav.playbooks' },
+  { id: 'bulk', icon: <Layers size={17} />, key: 'nav.bulk' },
   { id: 'users', icon: <Users size={17} />, key: 'nav.users' },
   { id: 'licensing', icon: <KeyRound size={17} />, key: 'nav.licensing' },
   { id: 'roles', icon: <ShieldCheck size={17} />, key: 'nav.roles' },
@@ -25,6 +26,7 @@ const items: { id: PageId; icon: ReactNode; key: string }[] = [
   { id: 'intune', icon: <Smartphone size={17} />, key: 'nav.intune' },
   { id: 'devices', icon: <MonitorSmartphone size={17} />, key: 'nav.devices' },
   { id: 'apps', icon: <AppWindow size={17} />, key: 'nav.apps' },
+  { id: 'security', icon: <ShieldAlert size={17} />, key: 'nav.security' },
   { id: 'reports', icon: <BarChart3 size={17} />, key: 'nav.reports' },
   { id: 'cleanup', icon: <Sparkles size={17} />, key: 'nav.cleanup' },
   { id: 'health', icon: <HeartPulse size={17} />, key: 'nav.health' },

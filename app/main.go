@@ -56,6 +56,7 @@ func main() {
 			services.NewIntuneService(sess),
 			services.NewDevicesService(sess),
 			services.NewAppsService(sess),
+			services.NewSecurityService(sess),
 			services.NewReportsService(sess),
 			services.NewCleanupService(sess),
 			services.NewServiceHealthService(sess),

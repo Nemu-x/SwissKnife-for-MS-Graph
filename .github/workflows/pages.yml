@@ -2,12 +2,20 @@
 # after each release. The site is rebuilt from the latest releases every run
 # (via gh), so the version, download buttons, and release notes stay current.
 #
+# Trigger note: the Release workflow publishes the GitHub Release with the
+# default GITHUB_TOKEN, and GitHub never cascades workflows off events created
+# by that token — so `release: published` alone would never fire here. We key
+# off the Release workflow completing instead (workflow_run fires regardless).
+#
 # Setup once: repo Settings → Pages → Source = "GitHub Actions".
 # Optional secret AUR_SSH_PRIVATE_KEY enables the AUR publish (skipped if absent).
 
 name: Pages & packages
 
 on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   release:
     types: [published]
   workflow_dispatch:
@@ -21,6 +29,8 @@ concurrency:
 
 jobs:
   build-site:
+    # For workflow_run, only proceed when the Release run actually succeeded.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -46,9 +56,12 @@ jobs:
         uses: actions/deploy-pages@v4
 
   publish-aur:
-    # Real releases, or a manual dispatch pinned to a version tag. Skips quietly
-    # when AUR_SSH_PRIVATE_KEY is not configured.
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
+    # A successful Release run, a real release event, or a manual dispatch pinned
+    # to a version tag. Skips quietly when AUR_SSH_PRIVATE_KEY is not configured.
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')) ||
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -63,9 +76,15 @@ jobs:
       - name: Prepare PKGBUILD (version + checksum from release asset)
         if: steps.gate.outputs.enabled == 'true'
         run: |
-          VER="${GITHUB_REF_NAME#v}"
-          [ "$VER" = "$GITHUB_REF_NAME" ] && VER="${{ github.event.release.tag_name }}" && VER="${VER#v}"
-          TAG="v${VER}"
+          # Resolve the release tag per trigger; fall back to the latest release.
+          TAG=""
+          case "$GITHUB_EVENT_NAME" in
+            workflow_run) TAG="${{ github.event.workflow_run.head_branch }}" ;;
+            release)      TAG="${{ github.event.release.tag_name }}" ;;
+            *)            case "$GITHUB_REF" in refs/tags/v*) TAG="$GITHUB_REF_NAME" ;; esac ;;
+          esac
+          [ -z "$TAG" ] && TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          VER="${TAG#v}"
           mkdir -p aurpkg dl
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -D dl -p 'SwissKnifeGraph-linux-amd64.tar.gz'
           SHA_AMD=$(sha256sum dl/SwissKnifeGraph-linux-amd64.tar.gz | cut -d' ' -f1)
@@ -83,4 +102,4 @@ jobs:
           commit_username: Nemu-x
           commit_email: Nemu-x@users.noreply.github.com
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: Update to ${{ github.event.release.tag_name || github.ref_name }}
+          commit_message: Update to ${{ github.event.workflow_run.head_branch || github.event.release.tag_name || github.ref_name }}

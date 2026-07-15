@@ -36,6 +36,33 @@ func (a *AuthMethodsService) List(user string) ([]json.RawMessage, error) {
 	return c.ListAll(a.s.Ctx(), "/users/"+url.PathEscape(user)+"/authentication/methods", nil, 0)
 }
 
+// CreateTAP issues a Temporary Access Pass so the user can sign in and register
+// MFA. The pass text is returned once and never stored anywhere.
+func (a *AuthMethodsService) CreateTAP(user string, lifetimeMinutes int, oneTime bool) (map[string]any, error) {
+	if err := a.s.GuardWrite(); err != nil {
+		return nil, err
+	}
+	c, err := a.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	// Graph accepts 10 minutes .. 30 days.
+	if lifetimeMinutes < 10 {
+		lifetimeMinutes = 60
+	}
+	if lifetimeMinutes > 43200 {
+		lifetimeMinutes = 43200
+	}
+	var resp map[string]any
+	err = c.Post(a.s.Ctx(), "/users/"+url.PathEscape(user)+"/authentication/temporaryAccessPassMethods",
+		map[string]any{"lifetimeInMinutes": lifetimeMinutes, "isUsableOnce": oneTime}, &resp)
+	a.s.Record("authMethods.createTAP", user, "lifetime="+strconv.Itoa(lifetimeMinutes), err)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 // ResetMFA removes all non-password authentication methods so the user must
 // re-register MFA. Destructive: requires typed confirm on the UPN.
 func (a *AuthMethodsService) ResetMFA(user, confirm string) (map[string]any, error) {

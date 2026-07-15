@@ -23,6 +23,7 @@ import * as Apps from '../../wailsjs/go/services/AppsService'
 import * as Reports from '../../wailsjs/go/services/ReportsService'
 import * as Cleanup from '../../wailsjs/go/services/CleanupService'
 import * as ServiceHealth from '../../wailsjs/go/services/ServiceHealthService'
+import * as Security from '../../wailsjs/go/services/SecurityService'
 import * as Update from '../../wailsjs/go/services/UpdateService'
 import type { secrets, services } from '../../wailsjs/go/models'
 
@@ -62,6 +63,8 @@ export const api = {
     revokeSessions: (u: string, confirm: string) => Users.RevokeSessions(u, confirm),
     create: (name: string, upn: string, nick: string, pw: string, force: boolean, loc: string) =>
       one(Users.CreateUser(name, upn, nick, pw, force, loc)),
+    inviteGuest: (email: string, name: string, redirectUrl: string, message: string, sendMail: boolean) =>
+      Users.InviteGuest(email, name, redirectUrl, message, sendMail) as Promise<GraphObject>,
     update: (u: string, patchJSON: string) => Users.Update(u, patchJSON),
     setUsageLocation: (u: string, loc: string) => Users.SetUsageLocation(u, loc),
     delete: (u: string, confirm: string) => Users.Delete(u, confirm),
@@ -73,6 +76,8 @@ export const api = {
   authMethods: {
     list: (u: string) => list(AuthMethods.List(u)),
     resetMFA: (u: string, confirm: string) => AuthMethods.ResetMFA(u, confirm) as Promise<any>,
+    createTAP: (u: string, lifetimeMinutes: number, oneTime: boolean) =>
+      AuthMethods.CreateTAP(u, lifetimeMinutes, oneTime) as Promise<GraphObject>,
   },
   roles: {
     list: () => list(Roles.List()),
@@ -181,6 +186,14 @@ export const api = {
   apps: {
     list: (search: string, max: number) => list(Apps.List(search, max)),
     expiring: (days: number) => Apps.Expiring(days) as Promise<services.ExpiringCredential[]>,
+    addSecret: (objectId: string, name: string, months: number) =>
+      Apps.AddSecret(objectId, name, months) as Promise<GraphObject>,
+  },
+  security: {
+    caPolicies: () => list(Security.CAPolicies()),
+    servicePrincipals: (search: string, max: number) => list(Security.ServicePrincipals(search, max)),
+    oauthGrants: (spId: string) => list(Security.OAuthGrants(spId)),
+    appRoleAssignments: (spId: string) => list(Security.AppRoleAssignments(spId)),
   },
   reports: {
     names: () => Reports.Names() as Promise<string[]>,
@@ -192,6 +205,8 @@ export const api = {
     findVersionBloat: (ownerType: string, ownerId: string, minVersions: number, maxFiles: number) =>
       Cleanup.FindVersionBloat(ownerType, ownerId, minVersions, maxFiles) as Promise<services.VersionBloat[]>,
     trimVersions: (itemRef: string, keep: number, confirm: string) => Cleanup.TrimVersions(itemRef, keep, confirm) as Promise<any>,
+    trimVersionsMany: (refs: string[], keep: number, confirm: string) =>
+      Cleanup.TrimVersionsMany(refs, keep, confirm) as Promise<services.TrimResult[]>,
     cancelScan: () => Cleanup.CancelScan(),
   },
   health: {

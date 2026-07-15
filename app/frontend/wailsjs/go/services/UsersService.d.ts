@@ -12,6 +12,8 @@ export function Get(arg1:string):Promise<json.RawMessage>;
 
 export function GetManager(arg1:string):Promise<json.RawMessage>;
 
+export function InviteGuest(arg1:string,arg2:string,arg3:string,arg4:string,arg5:boolean):Promise<Record<string, any>>;
+
 export function LicenseDetails(arg1:string):Promise<Array<json.RawMessage>>;
 
 export function List(arg1:string,arg2:number):Promise<Array<json.RawMessage>>;

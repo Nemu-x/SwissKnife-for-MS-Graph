@@ -22,13 +22,37 @@ DL = f"https://github.com/{REPO}/releases/latest/download"
 
 # Download buttons for the latest release (stable asset names, version-free).
 ASSETS = [
-    ("Windows", "Installer (.exe)", "SwissKnifeGraph-windows-amd64-installer.exe"),
-    ("Windows", "Portable (.exe)", "SwissKnifeGraph-windows-amd64.exe"),
+    ("Windows", "x64 installer (.exe)", "SwissKnifeGraph-windows-amd64-installer.exe"),
+    ("Windows", "x64 portable (.exe)", "SwissKnifeGraph-windows-amd64-portable.exe"),
+    ("Windows", "ARM64 installer (.exe)", "SwissKnifeGraph-windows-arm64-installer.exe"),
+    ("Windows", "ARM64 portable (.exe)", "SwissKnifeGraph-windows-arm64-portable.exe"),
+    ("macOS", "Apple Silicon (.dmg)", "SwissKnifeGraph-macos-arm64.dmg"),
+    ("macOS", "Intel (.dmg)", "SwissKnifeGraph-macos-intel.dmg"),
+    ("Linux", "x64 AppImage", "SwissKnifeGraph-linux-amd64.AppImage"),
+    ("Linux", "x64 tarball (.tar.gz)", "SwissKnifeGraph-linux-amd64.tar.gz"),
+    ("Linux", "x64 Debian (.deb)", "SwissKnifeGraph-linux-amd64.deb"),
+    ("Linux", "x64 RPM (.rpm)", "SwissKnifeGraph-linux-amd64.rpm"),
+    ("Linux", "ARM64 AppImage", "SwissKnifeGraph-linux-arm64.AppImage"),
+    ("Linux", "ARM64 tarball (.tar.gz)", "SwissKnifeGraph-linux-arm64.tar.gz"),
+    ("Linux", "ARM64 Debian (.deb)", "SwissKnifeGraph-linux-arm64.deb"),
+    ("Linux", "ARM64 RPM (.rpm)", "SwissKnifeGraph-linux-arm64.rpm"),
+    # Legacy names (≤ v0.6.0) — only rendered while the latest release still has them.
+    ("Windows", "x64 portable (.exe)", "SwissKnifeGraph-windows-amd64.exe"),
     ("macOS", "Universal (.zip)", "SwissKnifeGraph-macos-universal.zip"),
-    ("Linux", "Tarball (.tar.gz)", "SwissKnifeGraph-linux-amd64.tar.gz"),
-    ("Linux", "Debian (.deb)", "SwissKnifeGraph-linux-amd64.deb"),
-    ("Linux", "RPM (.rpm)", "SwissKnifeGraph-linux-amd64.rpm"),
 ]
+
+
+def gh_assets(tag):
+    """Names of the assets actually attached to a release, so we only render
+    download buttons that exist (asset sets changed between versions)."""
+    try:
+        out = subprocess.run(
+            ["gh", "release", "view", tag, "--repo", REPO, "--json", "assets"],
+            capture_output=True, text=True, check=True,
+            encoding="utf-8", errors="replace").stdout
+        return {a["name"] for a in json.loads(out).get("assets", [])}
+    except Exception:
+        return None
 
 
 def gh_releases(limit=5):
@@ -89,9 +113,14 @@ def render(rels):
     latest = rels[0] if rels else None
     version = latest["tagName"] if latest else "—"
 
+    # Hide buttons for assets the latest release doesn't actually have
+    # (e.g. best-effort ARM64 builds, or pre-DMG releases).
+    available = gh_assets(latest["tagName"]) if latest else None
+    shown = [a for a in ASSETS if available is None or a[2] in available]
+
     buttons = "\n".join(
         f'<a class="dl" href="{DL}/{fname}"><span class="os">{os}</span>{label}</a>'
-        for os, label, fname in ASSETS
+        for os, label, fname in shown
     )
 
     notes = []
@@ -111,6 +140,7 @@ def render(rels):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SwissKnife for MS Graph — Downloads</title>
+<link rel="icon" type="image/png" href="appicon.png">
 <style>
   :root {{
     --bg:#0f1117; --elev:#171a23; --elev2:#1e222d; --border:#2a2f3a;
@@ -122,7 +152,7 @@ def render(rels):
   a {{ color:var(--accent2); text-decoration:none; }}
   .wrap {{ max-width:900px; margin:0 auto; padding:2.5rem 1.25rem 4rem; }}
   header {{ text-align:center; padding:3rem 0 1.5rem; }}
-  .logo {{ font-size:3.2rem; }}
+  .logo img {{ width:88px; height:88px; border-radius:20px; }}
   h1 {{ font-size:2.1rem; margin:.5rem 0 .25rem; }}
   .tagline {{ color:var(--dim); font-size:1.05rem; }}
   .ver {{ display:inline-block; margin-top:1rem; padding:.35rem .9rem; border-radius:999px;
@@ -149,7 +179,7 @@ def render(rels):
 </style></head>
 <body><div class="wrap">
   <header>
-    <div class="logo">🗡️</div>
+    <div class="logo"><img src="appicon.png" alt="SwissKnife logo"></div>
     <h1>SwissKnife for MS Graph</h1>
     <p class="tagline">A clean, fast, cross-platform Microsoft Graph desktop client for IT admins.</p>
     <div class="ver">Latest: {html.escape(version)}</div>
@@ -184,9 +214,14 @@ def main():
     ap.add_argument("--out", default="site")
     args = ap.parse_args()
     import os
+    import shutil
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "index.html"), "w", encoding="utf-8") as f:
         f.write(render(gh_releases()))
+    # Real app icon for the header + favicon (generate.py lives in packaging/site/).
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    shutil.copy(os.path.join(root, "app", "build", "appicon.png"),
+                os.path.join(args.out, "appicon.png"))
     print("wrote", os.path.join(args.out, "index.html"))
 
 

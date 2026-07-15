@@ -146,6 +146,12 @@ type OffboardRequest struct {
 	Confirm           string `json:"confirm"`
 	Block             bool   `json:"block"`
 	RevokeSessions    bool   `json:"revokeSessions"`
+	Oof               bool   `json:"oof"`
+	OofMessage        string `json:"oofMessage"`
+	ForwardTo         string `json:"forwardTo"`
+	HideFromGal       bool   `json:"hideFromGal"`
+	CalendarTo        string `json:"calendarTo"`
+	RemoveFromGroups  bool   `json:"removeFromGroups"`
 	RemoveAllLicenses bool   `json:"removeAllLicenses"`
 	BackupToUser      string `json:"backupToUser"`
 	BackupFolder      string `json:"backupFolder"`
@@ -175,6 +181,51 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			return c.Post(p.s.Ctx(), "/users/"+u+"/revokeSignInSessions", map[string]any{}, nil)
 		})
 	}
+	if req.Oof {
+		r.do("Set auto-reply (OOF)", req.Upn, func() error {
+			msg := req.OofMessage
+			if msg == "" {
+				msg = "This employee is no longer with the organization. Your message will not be forwarded automatically."
+			}
+			return c.Patch(p.s.Ctx(), "/users/"+u+"/mailboxSettings", map[string]any{
+				"automaticRepliesSetting": map[string]any{
+					"status":               "alwaysEnabled",
+					"internalReplyMessage": msg,
+					"externalReplyMessage": msg,
+				},
+			}, nil)
+		})
+	}
+	if req.ForwardTo != "" {
+		// Server-side inbox rule; unlike Exchange mailbox forwarding this is
+		// available through Graph (Mail.ReadWrite) and survives sign-in block.
+		r.do("Forward mail (inbox rule)", req.Upn+" → "+req.ForwardTo, func() error {
+			return c.Post(p.s.Ctx(), "/users/"+u+"/mailFolders/inbox/messageRules", map[string]any{
+				"displayName": "Offboarding: forward to " + req.ForwardTo,
+				"sequence":    1,
+				"isEnabled":   true,
+				"actions": map[string]any{
+					"forwardTo": []any{
+						map[string]any{"emailAddress": map[string]any{"address": req.ForwardTo}},
+					},
+					"stopProcessingRules": false,
+				},
+			}, nil)
+		})
+	}
+	if req.HideFromGal {
+		r.do("Hide from address lists", req.Upn, func() error {
+			return c.Patch(p.s.Ctx(), "/users/"+u, map[string]any{"showInAddressList": false}, nil)
+		})
+	}
+	if req.CalendarTo != "" {
+		r.do("Share calendar (read)", req.Upn+" → "+req.CalendarTo, func() error {
+			return c.Post(p.s.Ctx(), "/users/"+u+"/calendar/calendarPermissions", map[string]any{
+				"emailAddress": map[string]any{"address": req.CalendarTo},
+				"role":         "read",
+			}, nil)
+		})
+	}
 	if req.BackupToUser != "" {
 		drive := NewDriveService(p.s)
 		r.do("Backup OneDrive", req.Upn+" → "+req.BackupToUser, func() error {
@@ -185,6 +236,38 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			_, e := drive.CopyBetweenUsers(req.Upn, req.BackupToUser, folder, false)
 			return e
 		})
+	}
+	if req.RemoveFromGroups {
+		// One report step per group so the operator sees exactly what happened.
+		// Dynamic-membership and Exchange-managed (distribution) groups fail
+		// individually with the Graph error; the rest still get removed.
+		var idResp struct {
+			ID string `json:"id"`
+		}
+		if err := c.Get(p.s.Ctx(), "/users/"+u, url.Values{"$select": {"id"}}, &idResp); err != nil {
+			r.do("Remove from groups", req.Upn, func() error { return err })
+		} else if items, err := c.ListAll(p.s.Ctx(), "/users/"+u+"/memberOf", url.Values{"$select": {"id,displayName"}}, 0); err != nil {
+			r.do("Remove from groups", req.Upn, func() error { return err })
+		} else {
+			for _, raw := range items {
+				var g struct {
+					Type        string `json:"@odata.type"`
+					ID          string `json:"id"`
+					DisplayName string `json:"displayName"`
+				}
+				if json.Unmarshal(raw, &g) != nil || g.Type != "#microsoft.graph.group" {
+					continue
+				}
+				gid := g.ID
+				name := g.DisplayName
+				if name == "" {
+					name = gid
+				}
+				r.do("Remove from group", name, func() error {
+					return c.Delete(p.s.Ctx(), "/groups/"+url.PathEscape(gid)+"/members/"+url.PathEscape(idResp.ID)+"/$ref")
+				})
+			}
+		}
 	}
 	if req.RemoveAllLicenses {
 		r.do("Remove licenses", req.Upn, func() error {

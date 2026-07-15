@@ -26,6 +26,7 @@ var accessProbes = map[string]string{
 	"devices":   "/devices",
 	"intune":    "/deviceManagement/managedDevices",
 	"apps":      "/applications",
+	"security":  "/identity/conditionalAccess/policies",
 	"audit":     "/auditLogs/signIns",
 	"health":    "/admin/serviceAnnouncement/healthOverviews",
 	"teams":     "/groups",

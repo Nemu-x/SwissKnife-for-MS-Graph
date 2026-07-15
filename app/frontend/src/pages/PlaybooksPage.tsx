@@ -24,7 +24,11 @@ export function PlaybooksPage() {
   const [skuIds, setSkuIds] = useState<string[]>([])
   const [groupIds, setGroupIds] = useState<string[]>([])
   const [teamIds, setTeamIds] = useState<string[]>([])
-  const [off, setOff] = useState({ upn: '', block: true, revokeSessions: true, removeAllLicenses: true, backupToUser: '', backupFolder: '', delete: false })
+  const [off, setOff] = useState({
+    upn: '', block: true, revokeSessions: true,
+    oof: false, oofMessage: '', forwardTo: '', hideFromGal: false, calendarTo: '', removeFromGroups: false,
+    removeAllLicenses: true, backupToUser: '', backupFolder: '', delete: false,
+  })
 
   const [skuOpts, setSkuOpts] = useState<Option[]>([])
   const [groupOpts, setGroupOpts] = useState<Option[]>([])
@@ -119,12 +123,17 @@ export function PlaybooksPage() {
           <Card title={t('playbooks.offboard')}>
             <div className="flex flex-col gap-2">
               <Field label={t('playbooks.upn')}><UpnInput value={off.upn} onChange={(v) => setOff({ ...off, upn: v })} /></Field>
-              {([['block', 'block'], ['revokeSessions', 'revoke'], ['removeAllLicenses', 'removeLicenses'], ['delete', 'deleteUser']] as const).map(([k, label]) => (
+              {([['block', 'block'], ['revokeSessions', 'revoke'], ['oof', 'oof'], ['hideFromGal', 'hideFromGal'], ['removeFromGroups', 'removeFromGroups'], ['removeAllLicenses', 'removeLicenses'], ['delete', 'deleteUser']] as const).map(([k, label]) => (
                 <label key={k} className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
                   <input type="checkbox" checked={(off as any)[k]} onChange={(e) => setOff({ ...off, [k]: e.target.checked })} />
                   {t(`playbooks.${label}`)}
                 </label>
               ))}
+              {off.oof && (
+                <Input placeholder={t('playbooks.oofMessage')} value={off.oofMessage} onChange={(e) => setOff({ ...off, oofMessage: e.target.value })} />
+              )}
+              <Field label={t('playbooks.forwardTo')}><UpnInput value={off.forwardTo} onChange={(v) => setOff({ ...off, forwardTo: v })} placeholder="manager@contoso.com" /></Field>
+              <Field label={t('playbooks.calendarTo')}><UpnInput value={off.calendarTo} onChange={(v) => setOff({ ...off, calendarTo: v })} placeholder="manager@contoso.com" /></Field>
               <Field label={t('playbooks.backupTo')}><UpnInput value={off.backupToUser} onChange={(v) => setOff({ ...off, backupToUser: v })} placeholder="backup@contoso.com" /></Field>
               <Input placeholder={t('playbooks.backupFolder')} value={off.backupFolder} onChange={(e) => setOff({ ...off, backupFolder: e.target.value })} />
               <Button variant="danger" disabled={readOnly || busy || !off.upn} onClick={() => askConfirm(off.upn, (c) => runOffboard(c)())}>

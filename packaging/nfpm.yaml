@@ -1,7 +1,8 @@
 # nfpm config for SwissKnife .deb / .rpm packages.
-# Consumed by the Release workflow; VERSION is injected from the git tag.
+# Consumed by the Release workflow; VERSION comes from the git tag and
+# NFPM_ARCH from the build matrix (amd64 / arm64).
 name: swissknife-graph
-arch: amd64
+arch: ${NFPM_ARCH}
 platform: linux
 version: ${VERSION}
 section: utils

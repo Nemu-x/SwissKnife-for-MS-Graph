@@ -14,9 +14,12 @@ import type { services } from '../../wailsjs/go/models'
 
 type Mode = 'duplicates' | 'versions'
 
+// A scan row plus client-side bookkeeping for items already trimmed in place.
+type BloatRow = services.VersionBloat & { trimmed?: boolean; removedCount?: number }
+
 export function CleanupPage() {
   const { t } = useTranslation()
-  const { readOnly, toast, jobs, startCleanupScan, cancelCleanupScan, clearJob } = useStore()
+  const { readOnly, toast, jobs, startCleanupScan, cancelCleanupScan, clearJob, patchJob } = useStore()
   const { askConfirm, confirmElement } = useConfirm()
 
   const [mode, setMode] = useState<Mode>('versions')
@@ -24,16 +27,18 @@ export function CleanupPage() {
   const [ownerId, setOwnerId] = useState('')
   const [siteSizes, setSiteSizes] = useState(false)
   const [keep, setKeep] = useState(3)
+  // Refs picked for a bulk trim; keyed by item ref so it survives re-sorts.
+  const [sel, setSel] = useState<Record<string, boolean>>({})
 
   // The scan runs in the store, so its progress/log survive page navigation.
   const job = jobs.cleanup
   const busy = !!job?.running
-  const result = job?.result as { mode: Mode; groups?: services.DupGroup[]; bloat?: services.VersionBloat[] } | null | undefined
+  const result = job?.result as { mode: Mode; groups?: services.DupGroup[]; bloat?: BloatRow[] } | null | undefined
   // Only show results that match the currently selected tab.
   const groups = mode === 'duplicates' && result?.mode === 'duplicates' ? result.groups ?? null : null
   const bloat = mode === 'versions' && result?.mode === 'versions' ? result.bloat ?? null : null
 
-  const scan = () => startCleanupScan({ mode, ownerType, ownerId })
+  const scan = () => { setSel({}); startCleanupScan({ mode, ownerType, ownerId }) }
 
   const deleteExtras = () => {
     if (!groups) return
@@ -45,11 +50,58 @@ export function CleanupPage() {
     }, t('cleanup.deleteExtras'))
   }
 
+  // Fold trim outcomes back into the scan result in place, so the list stays
+  // useful without a full re-scan. Failed items keep their row untouched.
+  const applyTrim = (results: { ref: string; removed: number; error?: string }[]) => {
+    const byRef = new Map(results.map((r) => [r.ref, r]))
+    const cur = job?.result as { mode: Mode; bloat?: BloatRow[] } | null | undefined
+    if (!cur || cur.mode !== 'versions' || !cur.bloat) return
+    const bloatNext = cur.bloat.map((b) => {
+      const r = byRef.get(b.ref)
+      if (!r || r.error) return b
+      return { ...b, reclaimable: 0, versions: Math.min(b.versions, keep), trimmed: true, removedCount: r.removed }
+    })
+    patchJob('cleanup', { result: { ...cur, bloat: bloatNext } })
+    setSel({})
+  }
+
   const trim = (ref: string, name: string) =>
     askConfirm('TRIM', async (c) => {
-      try { const r = await api.cleanup.trimVersions(ref, keep, c); toast('ok', `${r.removed} versions removed`); scan() }
-      catch (e) { toast('err', errMessage(e)) }
+      try {
+        const r = await api.cleanup.trimVersions(ref, keep, c)
+        toast('ok', `${r.removed} versions removed`)
+        applyTrim([{ ref, removed: r.removed }])
+      } catch (e) { toast('err', errMessage(e)) }
     }, `${t('cleanup.trim')} — ${name}`)
+
+  const trimmable = (bloat || []).filter((b) => !b.trimmed)
+  const selected = trimmable.filter((b) => sel[b.ref])
+  const selectedBytes = selected.reduce((a, b) => a + b.reclaimable, 0)
+  const allSelected = trimmable.length > 0 && selected.length === trimmable.length
+  const toggleAll = () => {
+    if (allSelected) { setSel({}); return }
+    const next: Record<string, boolean> = {}
+    trimmable.forEach((b) => { next[b.ref] = true })
+    setSel(next)
+  }
+
+  const trimSelected = () => {
+    const refs = selected.map((b) => b.ref)
+    if (refs.length === 0) return
+    askConfirm('TRIM', async (c) => {
+      // Run as a job: the backend streams cleanup:progress/log events, and the
+      // console's Cancel button (CancelScan) aborts between items.
+      patchJob('cleanup', { running: true, canceled: false, error: null, startedAt: Date.now(), progress: 'Trimming…' })
+      try {
+        const rs = (await api.cleanup.trimVersionsMany(refs, keep, c)) || []
+        const removed = rs.reduce((a, r) => a + r.removed, 0)
+        const failed = rs.filter((r) => r.error).length
+        toast(failed > 0 ? 'err' : 'ok', failed > 0 ? t('cleanup.trimFailures', { n: failed }) : `${removed} versions removed`)
+        applyTrim(rs)
+      } catch (e) { toast('err', errMessage(e)) }
+      finally { patchJob('cleanup', { running: false, progress: '' }) }
+    }, `${t('cleanup.trimSelected', { n: refs.length })} · ${humanBytes(selectedBytes)}`)
+  }
 
   const totalDupWasted = (groups || []).reduce((a, g) => a + g.wasted, 0)
   const totalVerWasted = (bloat || []).reduce((a, b) => a + b.reclaimable, 0)
@@ -118,16 +170,33 @@ export function CleanupPage() {
       {mode === 'versions' && bloat && bloat.length === 0 && <p className="text-sm text-[var(--ok)]">{t('cleanup.noVersions')}</p>}
       {mode === 'versions' && bloat && bloat.length > 0 && (
         <>
-          <div className="mb-3 text-sm text-[var(--text-dim)]">{t('cleanup.totalWasted', { size: humanBytes(totalVerWasted) })}</div>
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+              <input type="checkbox" checked={allSelected} disabled={trimmable.length === 0} onChange={toggleAll} />
+              {t('cleanup.selectAll')}
+            </label>
+            <span className="text-sm text-[var(--text-dim)]">{t('cleanup.totalWasted', { size: humanBytes(totalVerWasted) })}</span>
+            {selected.length > 0 && (
+              <Button variant="danger" disabled={readOnly || busy} onClick={trimSelected} className="ml-auto">
+                <Scissors size={15} /> {t('cleanup.trimSelected', { n: selected.length })} · {humanBytes(selectedBytes)}
+              </Button>
+            )}
+          </div>
           <div className="flex flex-col gap-2">
-            {bloat.map((b, i) => (
-              <div key={i} className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-3">
+            {bloat.map((b) => (
+              <div key={b.ref} className={`flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-3 ${b.trimmed ? 'opacity-60' : ''}`}>
+                <input type="checkbox" checked={!b.trimmed && !!sel[b.ref]} disabled={!!b.trimmed || busy}
+                  onChange={(e) => setSel((s) => ({ ...s, [b.ref]: e.target.checked }))} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium" title={b.path}>{b.name}</div>
                   <div className="text-xs text-[var(--text-faint)]">{t('cleanup.versions', { n: b.versions })} · {humanBytes(b.currentSize)} {t('cleanup.current')}</div>
                 </div>
-                <Badge kind="warn">{t('cleanup.wasted')}: {humanBytes(b.reclaimable)}</Badge>
-                <Button variant="danger" disabled={readOnly} onClick={() => trim(b.ref, b.name)}><Scissors size={14} /> {t('cleanup.trim')}</Button>
+                {b.trimmed
+                  ? <Badge kind="ok">{t('cleanup.trimmed', { n: b.removedCount ?? 0 })}</Badge>
+                  : <Badge kind="warn">{t('cleanup.wasted')}: {humanBytes(b.reclaimable)}</Badge>}
+                <Button variant="danger" disabled={readOnly || busy || !!b.trimmed} onClick={() => trim(b.ref, b.name)}>
+                  <Scissors size={14} /> {t('cleanup.trim')}
+                </Button>
               </div>
             ))}
           </div>

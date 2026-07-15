@@ -11,3 +11,5 @@ export function FindDuplicates(arg1:string,arg2:string):Promise<Array<services.D
 export function FindVersionBloat(arg1:string,arg2:string,arg3:number,arg4:number):Promise<Array<services.VersionBloat>>;
 
 export function TrimVersions(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
+
+export function TrimVersionsMany(arg1:Array<string>,arg2:number,arg3:string):Promise<Array<services.TrimResult>>;

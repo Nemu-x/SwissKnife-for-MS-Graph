@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode, useCallback, useRef } from 'react'
 import { api, errMessage, type Status } from './api'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import i18n from '../i18n'
@@ -21,6 +21,9 @@ export type JobState = {
 }
 export type TransferParams = { source: string; target: string; dest: string; overwrite: boolean; usePool: boolean; pool: string }
 export type CleanupParams = { mode: 'duplicates' | 'versions'; ownerType: 'user' | 'site'; ownerId: string }
+// One row of a bulk CSV run: a human label plus the API call to make.
+export type BulkItem = { label: string; run: () => Promise<string | void> }
+export type BulkRowResult = { label: string; ok: boolean; detail?: string; error?: string }
 
 const emptyJob = (): JobState => ({ running: false, canceled: false, progress: '', log: [], result: null, error: null, startedAt: 0 })
 const stamp = (s: string) => `${new Date().toLocaleTimeString()}  ${s}`
@@ -51,10 +54,13 @@ interface Store {
 
   jobs: Record<string, JobState>
   jobLog: (key: string, line: string) => void
+  patchJob: (key: string, patch: Partial<JobState>) => void
   startTransfer: (p: TransferParams) => Promise<void>
   cancelTransfer: () => void
   startCleanupScan: (p: CleanupParams) => Promise<void>
   cancelCleanupScan: () => void
+  startBulkRun: (items: BulkItem[]) => Promise<void>
+  cancelBulkRun: () => void
   clearJob: (key: string) => void
 
   toasts: Toast[]
@@ -211,6 +217,44 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     api.cleanup.cancelScan().catch(() => {})
   }, [patchJob, jobLog])
 
+  // Bulk CSV runner: sequential on purpose (throttle-friendly; the Graph client
+  // already retries 429s). Rows fail independently; cancel stops between rows.
+  const bulkCancel = useRef(false)
+  const startBulkRun = useCallback(async (items: BulkItem[]) => {
+    bulkCancel.current = false
+    patchJob('bulk', { ...emptyJob(), running: true, startedAt: Date.now(), progress: 'Starting…' })
+    jobLog('bulk', `▶ Running ${items.length} row(s)…`)
+    const results: BulkRowResult[] = []
+    let ok = 0
+    let failed = 0
+    for (let i = 0; i < items.length; i++) {
+      if (bulkCancel.current) {
+        jobLog('bulk', `⏹ Canceled after ${i} of ${items.length} row(s).`)
+        break
+      }
+      const it = items[i]
+      patchJob('bulk', { progress: `${i + 1}/${items.length} — ${it.label}` })
+      try {
+        const d = await it.run()
+        results.push({ label: it.label, ok: true, detail: d || undefined })
+        ok++
+      } catch (e) {
+        const msg = errMessage(e)
+        results.push({ label: it.label, ok: false, error: msg })
+        failed++
+        jobLog('bulk', `✗ ${it.label}: ${msg}`)
+      }
+    }
+    jobLog('bulk', `✓ Done — ${ok} ok, ${failed} failed`)
+    patchJob('bulk', { running: false, progress: '', result: results })
+  }, [patchJob, jobLog])
+
+  const cancelBulkRun = useCallback(() => {
+    bulkCancel.current = true
+    patchJob('bulk', { canceled: true, progress: 'Canceling…' })
+    jobLog('bulk', '⏹ Cancel requested — stopping after the current row…')
+  }, [patchJob, jobLog])
+
   const value: Store = {
     status,
     setStatus,
@@ -245,10 +289,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     jobs,
     jobLog,
+    patchJob,
     startTransfer,
     cancelTransfer,
     startCleanupScan,
     cancelCleanupScan,
+    startBulkRun,
+    cancelBulkRun,
     clearJob,
     toasts,
     toast,

@@ -138,6 +138,39 @@ func (u *UsersService) RevokeSessions(user, confirm string) error {
 	return err
 }
 
+// InviteGuest sends a B2B invitation to an external email address. Returns the
+// created invitation (including inviteRedeemUrl and the guest user id).
+func (u *UsersService) InviteGuest(email, displayName, redirectURL, message string, sendMail bool) (map[string]any, error) {
+	if err := u.s.GuardWrite(); err != nil {
+		return nil, err
+	}
+	c, err := u.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	if redirectURL == "" {
+		redirectURL = "https://myapps.microsoft.com"
+	}
+	body := map[string]any{
+		"invitedUserEmailAddress": email,
+		"inviteRedirectUrl":       redirectURL,
+		"sendInvitationMessage":   sendMail,
+	}
+	if displayName != "" {
+		body["invitedUserDisplayName"] = displayName
+	}
+	if message != "" {
+		body["invitedUserMessageInfo"] = map[string]any{"customizedMessageBody": message}
+	}
+	var resp map[string]any
+	err = c.Post(u.s.Ctx(), "/invitations", body, &resp)
+	u.s.Record("users.inviteGuest", email, "sendMail="+strconv.FormatBool(sendMail), err)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 // escapeODataLiteral doubles single quotes inside an OData literal.
 func escapeODataLiteral(s string) string {
 	out := make([]rune, 0, len(s))
