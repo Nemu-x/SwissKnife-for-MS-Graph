@@ -61,6 +61,7 @@ func TestOffboardRunsStepsInOrderAndNeverDeletesUnlessAsked(t *testing.T) {
 	}
 
 	want := []string{
+		"GET /users/dep@contoso.com",                                 // identity for the notification card
 		"PATCH /users/dep@contoso.com",                               // block sign-in
 		"POST /users/dep@contoso.com/revokeSignInSessions",           // revoke
 		"PATCH /users/dep@contoso.com/mailboxSettings",               // OOF

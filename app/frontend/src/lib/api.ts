@@ -26,6 +26,7 @@ import * as ServiceHealth from '../../wailsjs/go/services/ServiceHealthService'
 import * as Security from '../../wailsjs/go/services/SecurityService'
 import * as Update from '../../wailsjs/go/services/UpdateService'
 import * as Journal from '../../wailsjs/go/services/JournalService'
+import * as Notify from '../../wailsjs/go/services/NotifyService'
 import type { journal, secrets, services } from '../../wailsjs/go/models'
 import { parseErr, type ParsedError } from './graphError'
 
@@ -227,6 +228,11 @@ export const api = {
   journal: {
     list: (limit = 100) => Journal.List(limit) as Promise<journal.RunSummary[]>,
     get: (opId: string) => Journal.Get(opId) as Promise<journal.Run>,
+  },
+  notify: {
+    get: () => Notify.Get() as Promise<services.NotifyConfig>,
+    set: (cfg: services.NotifyConfig) => Notify.Set(cfg) as Promise<void>,
+    test: () => Notify.Test() as Promise<void>,
   },
 }
 

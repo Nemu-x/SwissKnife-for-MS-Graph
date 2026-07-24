@@ -6,6 +6,10 @@ export function AddMember(arg1, arg2, arg3) {
   return window['go']['services']['ChatsService']['AddMember'](arg1, arg2, arg3);
 }
 
+export function BackupUserChats(arg1, arg2, arg3) {
+  return window['go']['services']['ChatsService']['BackupUserChats'](arg1, arg2, arg3);
+}
+
 export function CreateGroupChat(arg1, arg2) {
   return window['go']['services']['ChatsService']['CreateGroupChat'](arg1, arg2);
 }

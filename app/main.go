@@ -29,6 +29,7 @@ func main() {
 	runs := journal.New(filepath.Join(store.Dir(), "runs"))
 	runs.Prune(200) // keep the newest 200 runs
 	sess.SetJournal(runs)
+	sess.SetConfigDir(store.Dir())
 
 	updateSvc := services.NewUpdateService(resolveVersion())
 	app := NewApp(sess, updateSvc)
@@ -68,6 +69,7 @@ func main() {
 			services.NewAuditService(sess),
 			services.NewRawService(sess),
 			services.NewJournalService(sess),
+			services.NewNotifyService(sess),
 			updateSvc,
 		},
 	})

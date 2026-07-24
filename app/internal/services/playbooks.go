@@ -55,6 +55,7 @@ var stepKeys = map[string]string{
 	"Share calendar (read)":     "steps.shareCalendar",
 	"Scan OneDrive":             "steps.scanOneDrive",
 	"Backup OneDrive":           "steps.backupOneDrive",
+	"Backup Teams chats":        "steps.backupChats",
 	"Remove from groups":        "steps.removeFromGroups",
 	"Remove from group":         "steps.removeFromGroup",
 	"Remove licenses":           "steps.removeLicenses",
@@ -220,6 +221,9 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 	})
 	if createErr != nil {
 		p.s.Record("playbook.onboard", req.Upn, "create failed", createErr)
+		// The team still needs to hear about a failed onboarding.
+		p.recordSummary("summary.onboard", req.Upn, r)
+		go notifyPlaybookSummary(p.s, "onboard", req.Upn, req.DisplayName, r.steps, r.canceled, nil)
 		return r.result(), nil
 	}
 
@@ -264,6 +268,17 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 
 	p.s.Record("playbook.onboard", req.Upn, "steps="+itoa(len(r.steps)), nil)
 	p.recordSummary("summary.onboard", req.Upn, r)
+	extras := [][2]string{}
+	if len(req.SkuIDs) > 0 {
+		extras = append(extras, [2]string{"Licenses", itoa(len(req.SkuIDs))})
+	}
+	if len(req.GroupIDs) > 0 {
+		extras = append(extras, [2]string{"Groups", itoa(len(req.GroupIDs))})
+	}
+	if len(req.TeamIDs) > 0 {
+		extras = append(extras, [2]string{"Teams", itoa(len(req.TeamIDs))})
+	}
+	go notifyPlaybookSummary(p.s, "onboard", req.Upn, req.DisplayName, r.steps, r.canceled, extras)
 	return r.result(), nil
 }
 
@@ -282,6 +297,7 @@ type OffboardRequest struct {
 	RemoveAllLicenses bool   `json:"removeAllLicenses"`
 	BackupToUser      string `json:"backupToUser"`
 	BackupFolder      string `json:"backupFolder"`
+	BackupChats       bool   `json:"backupChats"`
 	Delete            bool   `json:"delete"`
 }
 
@@ -307,6 +323,14 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 		defer func() { r.journal.End(op.ID, map[string]any{"ok": r.ok, "canceled": r.canceled, "steps": len(r.steps)}) }()
 	}
 	u := url.PathEscape(req.Upn)
+
+	// Best-effort identity for the notification card (before the account is
+	// blocked/deleted); failures just leave the card with the bare UPN.
+	var who struct {
+		DisplayName string `json:"displayName"`
+		JobTitle    string `json:"jobTitle"`
+	}
+	_ = c.Get(op.Ctx, "/users/"+u, url.Values{"$select": {"displayName,jobTitle"}}, &who)
 
 	if req.Block {
 		r.do("Block sign-in", req.Upn, func() error {
@@ -407,6 +431,21 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			return detail, nil
 		})
 	}
+	if req.BackupChats && req.BackupToUser != "" {
+		chats := NewChatsService(p.s)
+		r.doD("Backup Teams chats", req.Upn+" → "+req.BackupToUser, func() (string, error) {
+			folder := req.BackupFolder
+			if folder == "" {
+				folder = req.Upn
+			}
+			res, e := chats.backupUserChatsCtx(op.Ctx, req.Upn, req.BackupToUser, folder)
+			if e != nil {
+				return "", e
+			}
+			r.setDetail("stepDetails.chats", map[string]any{"chats": res.Chats, "messages": res.Messages})
+			return itoa(res.Messages) + " message(s) in " + itoa(res.Chats) + " chat(s)", nil
+		})
+	}
 	if req.RemoveFromGroups && !r.stop() {
 		// One report step per group so the operator sees exactly what happened.
 		// Dynamic-membership and Exchange-managed (distribution) groups fail
@@ -468,6 +507,46 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 
 	p.s.Record("playbook.offboard", req.Upn, "steps="+itoa(len(r.steps)), nil)
 	p.recordSummary("summary.offboard", req.Upn, r)
+
+	// Card facts: where the data went and what was cleaned up.
+	extras := [][2]string{}
+	if who.JobTitle != "" {
+		extras = append(extras, [2]string{"Title", who.JobTitle})
+	}
+	if req.BackupToUser != "" {
+		folder := req.BackupFolder
+		if folder == "" {
+			folder = req.Upn
+		}
+		v := req.BackupToUser + " / " + folder
+		for _, st := range r.steps {
+			if st.Name == "Backup OneDrive" && st.Detail != "" {
+				v += " — " + st.Detail
+			}
+		}
+		extras = append(extras, [2]string{"OneDrive backup", v})
+	}
+	if req.ForwardTo != "" {
+		extras = append(extras, [2]string{"Mail forward", req.ForwardTo})
+	}
+	if req.BackupChats {
+		for _, st := range r.steps {
+			if st.Name == "Backup Teams chats" && st.OK && st.Detail != "" {
+				extras = append(extras, [2]string{"Teams chats", st.Detail})
+			}
+		}
+	}
+	if req.RemoveFromGroups {
+		removed := 0
+		for _, st := range r.steps {
+			if st.Name == "Remove from group" && st.OK {
+				removed++
+			}
+		}
+		extras = append(extras, [2]string{"Groups removed", itoa(removed)})
+	}
+	// Best-effort Teams card; a goroutine so the UI gets the result instantly.
+	go notifyPlaybookSummary(p.s, "offboard", req.Upn, who.DisplayName, r.steps, r.canceled, extras)
 	return r.result(), nil
 }
 

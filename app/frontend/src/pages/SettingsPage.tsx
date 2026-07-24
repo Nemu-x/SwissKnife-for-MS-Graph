@@ -39,6 +39,21 @@ export function SettingsPage() {
     setUpdateProgress(`${humanBytes(d.done)} / ${humanBytes(d.total)} — ${pct}%`)
   }), [])
 
+  // Teams webhook notifications (playbook summaries → channel card).
+  const [notify, setNotify] = useState({ webhookUrl: '', notifyPlaybooks: false })
+  const [notifyBusy, setNotifyBusy] = useState(false)
+  useEffect(() => { api.notify.get().then((c) => setNotify({ webhookUrl: c.webhookUrl || '', notifyPlaybooks: !!c.notifyPlaybooks })).catch(() => {}) }, [])
+  const saveNotify = async () => {
+    setNotifyBusy(true)
+    try { await api.notify.set(notify as any); toast('ok', t('settings.teamsSaved')) }
+    catch (e) { toast('err', errMessage(e)) } finally { setNotifyBusy(false) }
+  }
+  const testNotify = async () => {
+    setNotifyBusy(true)
+    try { await api.notify.set(notify as any); await api.notify.test(); toast('ok', t('settings.teamsTestOk')) }
+    catch (e) { toast('err', errMessage(e)) } finally { setNotifyBusy(false) }
+  }
+
   const updateNow = async () => {
     if (!update?.assetUrl) return
     setUpdating(true); setUpdateProgress('')
@@ -147,6 +162,39 @@ export function SettingsPage() {
               {checkingAccess ? <Spinner /> : <RefreshCw size={15} />} {t('settings.checkAccess')}
             </Button>
           )}
+        </Card>
+
+        <Card title={t('settings.teams')}>
+          <p className="text-xs text-[var(--text-faint)]">
+            {t('settings.teamsHint')}{' '}
+            <button
+              onClick={() => api.update.openReleases('https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki/Teams-Notifications')}
+              className="text-[var(--accent)] underline-offset-2 hover:underline">
+              {t('settings.teamsGuide')}
+            </button>
+          </p>
+          <div className="mt-3 flex flex-col gap-2">
+            <input
+              value={notify.webhookUrl}
+              onChange={(e) => setNotify({ ...notify, webhookUrl: e.target.value })}
+              aria-label={t('settings.teams')}
+              placeholder="https://…logic.azure.com/workflows/…"
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 font-mono text-xs outline-none focus:border-[var(--accent)]"
+            />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={notify.notifyPlaybooks}
+                onChange={(e) => setNotify({ ...notify, notifyPlaybooks: e.target.checked })} />
+              {t('settings.teamsPlaybooks')}
+            </label>
+            <div className="flex gap-2">
+              <Button variant="subtle" disabled={notifyBusy} onClick={saveNotify}>
+                {notifyBusy ? <Spinner /> : null} {t('common.save')}
+              </Button>
+              <Button variant="subtle" disabled={notifyBusy || !notify.webhookUrl} onClick={testNotify}>
+                {t('settings.teamsTest')}
+              </Button>
+            </div>
+          </div>
         </Card>
 
         <Card title={t('settings.support')}>

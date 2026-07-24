@@ -22,6 +22,7 @@ type Session struct {
 	client      *graphapi.Client
 	profileName string
 	readOnly    bool
+	configDir   string
 
 	Audit   *auditlog.Log
 	Ops     *ops.Registry
@@ -34,6 +35,20 @@ func New(audit *auditlog.Log) *Session {
 
 // SetJournal attaches the persistent run journal (nil-safe: services check).
 func (s *Session) SetJournal(j *journal.Log) { s.Journal = j }
+
+// SetConfigDir stores the per-user config directory (%APPDATA%\SwissKnifeGraph)
+// for services that persist small settings files (e.g. notifications).
+func (s *Session) SetConfigDir(dir string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.configDir = dir
+}
+
+func (s *Session) ConfigDir() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.configDir
+}
 
 // SetAppContext stores the Wails context (cancellation on app shutdown).
 func (s *Session) SetAppContext(ctx context.Context) {

@@ -57,6 +57,8 @@ var permHints = []struct{ needle, perm string }{
 	{"/licenseDetails", "User.Read.All"},
 	{"/revokeSignInSessions", "User.ReadWrite.All"},
 	{"/authentication/", "UserAuthenticationMethod.ReadWrite.All"},
+	{"/getAllMessages", "Chat.Read.All (protected API — request access at aka.ms/teamsgraph/requestaccess)"},
+	{"/chats", "Chat.Read.All (protected API — request access at aka.ms/teamsgraph/requestaccess)"},
 	{"/managedDevices", "DeviceManagementManagedDevices.ReadWrite.All"},
 	{"/drive", "Files.ReadWrite.All"},
 	{"/invitations", "User.Invite.All"},

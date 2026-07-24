@@ -86,8 +86,9 @@ func TestOffboardCancelSkipsRemainingSteps(t *testing.T) {
 	var pb *PlaybookService
 	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
-		// Operator hits Cancel while the very first step is executing.
-		if len(calls) == 1 {
+		// Call 1 is the identity prefetch; the operator hits Cancel while the
+		// first STEP (call 2) is executing.
+		if len(calls) == 2 {
 			pb.Cancel()
 		}
 		w.Write([]byte(`{}`))
@@ -104,7 +105,7 @@ func TestOffboardCancelSkipsRemainingSteps(t *testing.T) {
 	if len(res.Steps) != 1 {
 		t.Fatalf("only the in-flight step should be reported, got %+v", res.Steps)
 	}
-	if len(calls) != 1 {
+	if len(calls) != 2 {
 		t.Fatalf("no further Graph calls after cancel, got %v", calls)
 	}
 }
