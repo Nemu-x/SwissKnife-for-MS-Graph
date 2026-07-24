@@ -295,6 +295,7 @@ const ru: Dict<typeof en> = {
     runningNote: 'Выполняется в фоне — можно переходить по страницам, прогресс сохранится.',
     doneToast: 'Плейбук завершён',
     doneWithErrors: 'Плейбук завершён с ошибками — проверьте шаги',
+    permissionHint: 'Не хватает права: выдайте {{p}} (Application) в Entra → App registrations → API permissions → Grant admin consent.',
     removeLicensesWarn: 'Без лицензии ящик будет безвозвратно удалён через ~30 дней. Чтобы сохранить почту — сначала конвертируйте юзера в shared mailbox в админ-центре, потом снимайте лицензии.',
     deleteUserWarn: 'Удаление аккаунта удалит и его ящик (в т.ч. shared), и OneDrive. Восстановление — только 30 дней.',
   },

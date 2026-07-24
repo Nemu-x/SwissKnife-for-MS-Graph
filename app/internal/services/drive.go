@@ -384,7 +384,8 @@ func (d *DriveService) OffboardingPreview(sourceUser string) (*CopyPreview, erro
 // directory (no hardcoded /tmp — fixes the legacy bug). destFolder is an optional
 // subfolder in the target drive (e.g. "Backups/alice"); "" copies into the root.
 func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder string, overwrite bool) (*CopyResult, error) {
-	return d.copyBetweenUsersCtx(d.s.Ctx(), sourceUser, targetUser, destFolder, overwrite, nil)
+	res, err := d.copyBetweenUsersCtx(d.s.Ctx(), sourceUser, targetUser, destFolder, overwrite, nil)
+	return res, wrapOpErr(err)
 }
 
 // copyBetweenUsersCtx is CopyBetweenUsers with an explicit parent context (a

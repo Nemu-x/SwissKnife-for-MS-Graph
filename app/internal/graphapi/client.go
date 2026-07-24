@@ -240,6 +240,9 @@ func parseGraphError(resp *http.Response, raw []byte) *GraphError {
 		Code:       http.StatusText(resp.StatusCode),
 		RequestID:  resp.Header.Get("request-id"),
 	}
+	if resp.Request != nil && resp.Request.URL != nil {
+		ge.Path = resp.Request.URL.Path
+	}
 	var envelope struct {
 		Error struct {
 			Code       string `json:"code"`

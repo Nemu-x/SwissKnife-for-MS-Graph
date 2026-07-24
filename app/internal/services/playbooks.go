@@ -2,9 +2,11 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 
+	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/ops"
 	"swissknife-app/internal/session"
 )
@@ -23,10 +25,12 @@ func (p *PlaybookService) Cancel() { p.s.Ops.CancelKind(ops.KindPlaybook) }
 
 // Step is one action within a playbook run.
 type Step struct {
-	Name   string `json:"name"`
-	OK     bool   `json:"ok"`
-	Detail string `json:"detail,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Name      string `json:"name"`
+	OK        bool   `json:"ok"`
+	Detail    string `json:"detail,omitempty"`
+	Error     string `json:"error,omitempty"`
+	ErrorCode string `json:"errorCode,omitempty"` // Graph error code, when the step failed on a Graph call
+	Hint      string `json:"hint,omitempty"`      // missing Graph permission, when derivable (403)
 }
 
 // PlaybookResult is the outcome of a playbook run.
@@ -81,11 +85,27 @@ func (r *runner) doD(name, detail string, fn func() (string, error)) error {
 	if err != nil {
 		st.Error = err.Error()
 		r.ok = false
+		// Surface Graph error structure so the UI can show actionable hints
+		// ("grant Mail.ReadWrite in Entra") instead of a bare 403 string.
+		var ge *graphapi.GraphError
+		if errors.As(err, &ge) {
+			st.Error = ge.Message
+			st.ErrorCode = ge.Code
+			if ge.StatusCode == 403 {
+				st.Hint = permissionHint(ge.Path)
+			}
+		}
 	}
 	r.steps = append(r.steps, st)
 	done := map[string]any{"status": "done", "index": len(r.steps) - 1, "name": name, "detail": detail, "ok": st.OK}
 	if st.Error != "" {
 		done["error"] = st.Error
+	}
+	if st.ErrorCode != "" {
+		done["errorCode"] = st.ErrorCode
+	}
+	if st.Hint != "" {
+		done["hint"] = st.Hint
 	}
 	r.emitStep(done)
 	return err

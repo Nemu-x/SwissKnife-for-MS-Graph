@@ -402,6 +402,8 @@ export namespace services {
 	    ok: boolean;
 	    detail?: string;
 	    error?: string;
+	    errorCode?: string;
+	    hint?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Step(source);
@@ -413,6 +415,8 @@ export namespace services {
 	        this.ok = source["ok"];
 	        this.detail = source["detail"];
 	        this.error = source["error"];
+	        this.errorCode = source["errorCode"];
+	        this.hint = source["hint"];
 	    }
 	}
 	export class PlaybookResult {

@@ -23,7 +23,15 @@ export type JobState = {
   opId?: string // backend operation id (stamped by the op:start event)
 }
 // One playbook step as streamed from the backend ("playbook:step" events).
-export type PlaybookLiveStep = { name: string; detail?: string; running?: boolean; ok?: boolean; error?: string }
+export type PlaybookLiveStep = {
+  name: string
+  detail?: string
+  running?: boolean
+  ok?: boolean
+  error?: string
+  errorCode?: string
+  hint?: string // missing Graph permission (403), when the backend derived one
+}
 export type TransferParams = { source: string; target: string; dest: string; overwrite: boolean; usePool: boolean; pool: string }
 export type CleanupParams = { mode: 'duplicates' | 'versions'; ownerType: 'user' | 'site'; ownerId: string }
 // One row of a bulk CSV run: a human label plus the API call to make.
@@ -226,7 +234,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         } else {
           let i = steps.length - 1
           while (i >= 0 && !steps[i].running) i--
-          const done = { name: d.name, detail: d.detail, ok: !!d.ok, error: d.error }
+          const done = { name: d.name, detail: d.detail, ok: !!d.ok, error: d.error, errorCode: d.errorCode, hint: d.hint }
           if (i >= 0) steps[i] = done
           else steps.push(done)
         }

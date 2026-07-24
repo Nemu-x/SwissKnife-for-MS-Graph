@@ -295,6 +295,7 @@ const en = {
     runningNote: 'Running in the background — you can switch pages, progress is kept.',
     doneToast: 'Playbook finished',
     doneWithErrors: 'Playbook finished with errors — check the steps',
+    permissionHint: 'Missing permission: grant {{p}} (Application) in Entra → App registrations → API permissions → Grant admin consent.',
     removeLicensesWarn: 'Without a license the mailbox is permanently deleted after ~30 days. To keep the mail, convert the user to a shared mailbox in the admin center first, then remove licenses.',
     deleteUserWarn: 'Deleting the account also deletes its mailbox (shared too) and OneDrive. Recoverable for 30 days only.',
   },
