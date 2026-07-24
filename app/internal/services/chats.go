@@ -166,13 +166,17 @@ func (ch *ChatsService) backupUserChatsCtx(parent context.Context, sourceUser, t
 
 	// One paged walk over every chat the user participates in. Hard-capped so a
 	// decade of chat history cannot balloon memory; the cap is recorded in the
-	// archive (truncated flag) instead of failing silently.
+	// archive (truncated flag) instead of failing silently. One sentinel item
+	// past the cap distinguishes "exactly at the cap" from "actually more".
 	const maxExportMessages = 50000
-	raws, err := c.ListAll(parent, "/users/"+url.PathEscape(sourceUser)+"/chats/getAllMessages", topParams(50), maxExportMessages)
+	raws, err := c.ListAll(parent, "/users/"+url.PathEscape(sourceUser)+"/chats/getAllMessages", topParams(50), maxExportMessages+1)
 	if err != nil {
 		return nil, err
 	}
-	truncated := len(raws) >= maxExportMessages
+	truncated := len(raws) > maxExportMessages
+	if truncated {
+		raws = raws[:maxExportMessages]
+	}
 
 	// Chat labels (topic / other participants) — best-effort; ids otherwise.
 	labels := map[string]string{}

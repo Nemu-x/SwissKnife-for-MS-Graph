@@ -214,6 +214,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4 # for docs/releases/<tag>.md curated notes
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -251,9 +252,31 @@ jobs:
           echo "$MINISIGN_PASSWORD" | minisign -S -s minisign.key -m dist/SHA256SUMS.txt -x dist/SHA256SUMS.txt.minisig
           rm -f minisign.key
           echo "Signed dist/SHA256SUMS.txt.minisig"
-      - name: Publish GitHub Release
+      # Curated notes: docs/releases/<tag>.md written before tagging becomes the
+      # release body; without the file we fall back to auto-generated notes.
+      - name: Check for curated release notes
+        id: notes
+        run: |
+          if [ -s "docs/releases/${GITHUB_REF_NAME}.md" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Using curated notes: docs/releases/${GITHUB_REF_NAME}.md"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No curated notes found — auto-generating."
+          fi
+      - name: Publish GitHub Release (curated notes)
+        if: steps.notes.outputs.exists == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          name: "🗡️ SwissKnife for MS Graph ${{ github.ref_name }}"
+          files: dist/*
+          body_path: docs/releases/${{ github.ref_name }}.md
+          draft: false
+      - name: Publish GitHub Release (auto notes)
+        if: steps.notes.outputs.exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "🗡️ SwissKnife for MS Graph ${{ github.ref_name }}"
           files: dist/*
           generate_release_notes: true
           draft: false
