@@ -164,11 +164,15 @@ func (ch *ChatsService) backupUserChatsCtx(parent context.Context, sourceUser, t
 		return nil, err
 	}
 
-	// One paged walk over every chat the user participates in.
-	raws, err := c.ListAll(parent, "/users/"+url.PathEscape(sourceUser)+"/chats/getAllMessages", topParams(50), 0)
+	// One paged walk over every chat the user participates in. Hard-capped so a
+	// decade of chat history cannot balloon memory; the cap is recorded in the
+	// archive (truncated flag) instead of failing silently.
+	const maxExportMessages = 50000
+	raws, err := c.ListAll(parent, "/users/"+url.PathEscape(sourceUser)+"/chats/getAllMessages", topParams(50), maxExportMessages)
 	if err != nil {
 		return nil, err
 	}
+	truncated := len(raws) >= maxExportMessages
 
 	// Chat labels (topic / other participants) — best-effort; ids otherwise.
 	labels := map[string]string{}
@@ -224,8 +228,9 @@ func (ch *ChatsService) backupUserChatsCtx(parent context.Context, sourceUser, t
 	archive := struct {
 		User       string    `json:"user"`
 		ExportedAt string    `json:"exportedAt"`
+		Truncated  bool      `json:"truncated,omitempty"` // hit the export cap
 		Chats      []chatOut `json:"chats"`
-	}{User: sourceUser, ExportedAt: time.Now().Format(time.RFC3339)}
+	}{User: sourceUser, ExportedAt: time.Now().Format(time.RFC3339), Truncated: truncated}
 	for _, id := range order {
 		archive.Chats = append(archive.Chats, chatOut{ID: id, Label: labels[id], Messages: grouped[id]})
 		res.Messages += len(grouped[id])
@@ -245,7 +250,10 @@ func (ch *ChatsService) backupUserChatsCtx(parent context.Context, sourceUser, t
 		tmp.Close()
 		return nil, err
 	}
-	tmp.Close()
+	// A failed flush would upload a truncated archive — surface it instead.
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
 
 	remote := strings.Trim(destFolder, "/")
 	name := fmt.Sprintf("teams-chats-%s.json", time.Now().Format("2006-01-02-1504"))

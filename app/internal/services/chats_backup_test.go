@@ -1,6 +1,7 @@
 package services
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -25,8 +26,7 @@ func TestBackupUserChatsExportsAndUploads(t *testing.T) {
 				 "body":{"contentType":"html","content":"member added"}}]}`))
 		case r.Method == "PUT" && strings.Contains(r.URL.Path, ":/content"):
 			uploadPath = r.URL.Path
-			b := make([]byte, r.ContentLength)
-			_, _ = r.Body.Read(b)
+			b, _ := io.ReadAll(r.Body)
 			uploadBody = string(b)
 			w.Write([]byte(`{"id":"file1"}`))
 		default:

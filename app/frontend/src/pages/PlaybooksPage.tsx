@@ -241,7 +241,8 @@ export function PlaybooksPage() {
               <Field label={t('playbooks.backupTo')}><UpnInput value={off.backupToUser} onChange={(v) => setOff({ ...off, backupToUser: v })} placeholder="backup@contoso.com" /></Field>
               <Input placeholder={t('playbooks.backupFolder')} value={off.backupFolder} onChange={(e) => setOff({ ...off, backupFolder: e.target.value })} />
               <label className={`flex items-center gap-2 text-sm ${off.backupToUser ? 'text-[var(--text-dim)]' : 'text-[var(--text-faint)] opacity-60'}`}>
-                <input type="checkbox" disabled={!off.backupToUser} checked={off.backupChats}
+                {/* Display mirrors the backend guard: no target — no chat backup. */}
+                <input type="checkbox" disabled={!off.backupToUser} checked={off.backupChats && !!off.backupToUser}
                   onChange={(e) => setOff({ ...off, backupChats: e.target.checked })} />
                 {t('playbooks.backupChats')}{!off.backupToUser ? ` — ${t('playbooks.backupChatsNeedsTarget')}` : ''}
               </label>
