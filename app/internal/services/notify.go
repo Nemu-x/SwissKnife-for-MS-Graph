@@ -84,10 +84,18 @@ func (n *NotifyService) Test() error {
 		[][2]string{{"Status", "Webhook is working"}}, nil)
 }
 
+// notifyTestHook, when set, fires after a notification attempt fully completes
+// (including the audit record). Tests use it to wait deterministically for the
+// async goroutine instead of sleeping — production leaves it nil.
+var notifyTestHook func()
+
 // notifyPlaybookSummary posts a run summary card, best-effort: failures are
 // audited, never surfaced to the operator's run result. displayName and extras
 // enrich the card (who the person is, where the backup went, counters).
 func notifyPlaybookSummary(s *session.Session, kind, upn, displayName string, steps []Step, canceled bool, extras [][2]string) {
+	if notifyTestHook != nil {
+		defer notifyTestHook()
+	}
 	cfg := loadNotifyConfig(s.ConfigDir())
 	if !cfg.NotifyPlaybooks || cfg.WebhookURL == "" {
 		return

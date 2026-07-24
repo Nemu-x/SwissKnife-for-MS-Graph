@@ -49,6 +49,12 @@ func TestOffboardPostsTeamsSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Wait for the async notify goroutine to finish COMPLETELY (audit record
+	// included) before the test returns — otherwise TempDir cleanup races it.
+	done := make(chan struct{})
+	notifyTestHook = func() { close(done) }
+	t.Cleanup(func() { notifyTestHook = nil })
+
 	pb := NewPlaybookService(sess)
 	if _, err := pb.Offboard(fullOffboardRequest()); err != nil {
 		t.Fatal(err)
@@ -64,6 +70,11 @@ func TestOffboardPostsTeamsSummary(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("no webhook POST within 3s")
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("notify goroutine did not finish within 3s")
 	}
 }
 
@@ -87,13 +98,24 @@ func TestNotifyDisabledPostsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	done := make(chan struct{})
+	notifyTestHook = func() { close(done) }
+	t.Cleanup(func() { notifyTestHook = nil })
+
 	pb := NewPlaybookService(sess)
 	if _, err := pb.Offboard(fullOffboardRequest()); err != nil {
 		t.Fatal(err)
 	}
+	// Deterministic: wait until the notify goroutine ran to completion, then
+	// assert it never touched the webhook.
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("notify goroutine did not finish within 3s")
+	}
 	select {
 	case <-posted:
 		t.Fatal("disabled notifications must not post")
-	case <-time.After(300 * time.Millisecond): // grace window for a wrong-behaving goroutine
+	default:
 	}
 }
