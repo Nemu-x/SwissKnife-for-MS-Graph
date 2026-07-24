@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,25 +13,24 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"swissknife-app/internal/graphapi"
+	"swissknife-app/internal/ops"
 	"swissknife-app/internal/session"
 )
 
 // DriveService serves both OneDrive and SharePoint drives.
 // ownerType: "user" (a user OneDrive) | "site" (a SharePoint site drive).
 type DriveService struct {
-	s      *session.Session
-	cancel atomic.Bool // set by CancelTransfer to abort an in-flight copy
+	s *session.Session
 }
 
-// CancelTransfer requests that the current offboarding copy stop after the
-// file in flight. The copy returns its partial result with Canceled = true.
-func (d *DriveService) CancelTransfer() { d.cancel.Store(true) }
+// CancelTransfer cancels the live transfer operation: its context aborts
+// in-flight HTTP and the copy returns its partial result with Canceled = true.
+func (d *DriveService) CancelTransfer() { d.s.Ops.CancelKind(ops.KindTransfer) }
 
 func NewDriveService(s *session.Session) *DriveService { return &DriveService{s: s} }
 
@@ -163,16 +163,16 @@ func (d *DriveService) Search(ownerType, ownerID, query string) ([]json.RawMessa
 	return c.ListAll(d.s.Ctx(), base+"/root/search(q='"+url.PathEscape(escapeODataLiteral(query))+"')", nil, 200)
 }
 
-func (d *DriveService) emitProgress(name string, done, total int64) {
-	emitEvent(d.s.Ctx(), "transfer:progress", map[string]any{
+func (d *DriveService) emitProgress(op *ops.Operation, name string, done, total int64) {
+	emitOp(d.s.Ctx(), op, "transfer:progress", map[string]any{
 		"name": name, "done": done, "total": total,
 	})
 }
 
 // emitFile reports one item's outcome plus running counters so the UI can keep
 // a live log even when the operator leaves and returns to the page.
-func (d *DriveService) emitFile(name, status, reason string, copied int) {
-	emitEvent(d.s.Ctx(), "transfer:file", map[string]any{
+func (d *DriveService) emitFile(op *ops.Operation, name, status, reason string, copied int) {
+	emitOp(d.s.Ctx(), op, "transfer:file", map[string]any{
 		"name": name, "status": status, "reason": reason, "copied": copied,
 	})
 }
@@ -180,8 +180,8 @@ func (d *DriveService) emitFile(name, status, reason string, copied int) {
 // emitOverall reports whole-transfer progress (bytes processed vs. the scanned
 // total), letting the UI render an overall percentage. totalBytes may be 0 when
 // no preview was available; the UI then falls back to file counters.
-func (d *DriveService) emitOverall(doneBytes, totalBytes int64, doneFiles, totalFiles int) {
-	emitEvent(d.s.Ctx(), "transfer:overall", map[string]any{
+func (d *DriveService) emitOverall(op *ops.Operation, doneBytes, totalBytes int64, doneFiles, totalFiles int) {
+	emitOp(d.s.Ctx(), op, "transfer:overall", map[string]any{
 		"doneBytes": doneBytes, "totalBytes": totalBytes, "files": doneFiles, "totalFiles": totalFiles,
 	})
 }
@@ -204,7 +204,7 @@ func (d *DriveService) Download(ownerType, ownerID, itemID, suggestedName string
 		return "", err // dialog cancellation is not an error
 	}
 	err = c.DownloadItem(d.s.Ctx(), base+"/items/"+url.PathEscape(itemID), local,
-		func(done, total int64) { d.emitProgress(suggestedName, done, total) })
+		func(done, total int64) { d.emitProgress(nil, suggestedName, done, total) })
 	d.s.Record("drive.download", ownerType+":"+ownerID, "item="+itemID, err)
 	if err != nil {
 		return "", err
@@ -237,7 +237,7 @@ func (d *DriveService) Upload(ownerType, ownerID, remoteFolder string) (json.Raw
 	}
 	uploadRoot := base + "/root:/" + escapeDrivePath(remote+name)
 	out, err := c.UploadFile(d.s.Ctx(), uploadRoot, local,
-		func(done, total int64) { d.emitProgress(name, done, total) })
+		func(done, total int64) { d.emitProgress(nil, name, done, total) })
 	d.s.Record("drive.upload", ownerType+":"+ownerID, "path="+remote+name, err)
 	return out, err
 }
@@ -384,27 +384,38 @@ func (d *DriveService) OffboardingPreview(sourceUser string) (*CopyPreview, erro
 // directory (no hardcoded /tmp — fixes the legacy bug). destFolder is an optional
 // subfolder in the target drive (e.g. "Backups/alice"); "" copies into the root.
 func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder string, overwrite bool) (*CopyResult, error) {
-	return d.copyBetweenUsers(sourceUser, targetUser, destFolder, overwrite, nil)
+	return d.copyBetweenUsersCtx(d.s.Ctx(), sourceUser, targetUser, destFolder, overwrite, nil)
 }
 
-// copyBetweenUsers is CopyBetweenUsers with an optional pre-computed preview.
-// It first attempts a cloud-side copy (Graph copies items inside the service —
-// bytes never transit the operator's machine, folders copy recursively in one
-// operation). If that cannot even start, it falls back to the legacy
-// download/upload path through the local temp directory.
-func (d *DriveService) copyBetweenUsers(sourceUser, targetUser, destFolder string, overwrite bool, prev *CopyPreview) (*CopyResult, error) {
+// copyBetweenUsersCtx is CopyBetweenUsers with an explicit parent context (a
+// playbook passes its operation context so cancelling the playbook cancels the
+// copy) and an optional pre-computed preview. It first attempts a cloud-side
+// copy (Graph copies items inside the service — bytes never transit the
+// operator's machine, folders copy recursively in one operation). If that
+// cannot even start, it falls back to the legacy download/upload path through
+// the local temp directory.
+func (d *DriveService) copyBetweenUsersCtx(parent context.Context, sourceUser, targetUser, destFolder string, overwrite bool, prev *CopyPreview) (*CopyResult, error) {
 	if err := d.s.GuardWrite(); err != nil {
 		return nil, err
 	}
-	d.cancel.Store(false) // clear any stale cancel flag from a prior run
 	c, err := d.s.Client()
 	if err != nil {
 		return nil, err
 	}
-	if res, sErr := d.copyServerSide(c, sourceUser, targetUser, destFolder, overwrite); sErr == nil {
+	op, err := d.s.Ops.Start(parent, ops.KindTransfer)
+	if err != nil {
+		return nil, err
+	}
+	defer d.s.Ops.Finish(op)
+	emitOp(d.s.Ctx(), op, "op:start", map[string]any{"target": sourceUser + " → " + targetUser})
+
+	if res, sErr := d.copyServerSide(op, c, sourceUser, targetUser, destFolder, overwrite); sErr == nil {
 		return res, nil
 	} else {
-		d.emitFile("(server-side copy unavailable — using local copy)", "skipped", sErr.Error(), 0)
+		d.emitFile(op, "(server-side copy unavailable — using local copy)", "skipped", sErr.Error(), 0)
+	}
+	if op.Canceled() {
+		return &CopyResult{Skipped: map[string]string{}, Failed: map[string]string{}, Canceled: true}, nil
 	}
 	if prev == nil {
 		prev, _ = d.OffboardingPreview(sourceUser) // progress totals only; copy proceeds without them
@@ -416,7 +427,7 @@ func (d *DriveService) copyBetweenUsers(sourceUser, targetUser, destFolder strin
 	}
 	var doneBytes int64
 	doneFiles := 0
-	d.emitOverall(0, totalBytes, 0, totalFiles)
+	d.emitOverall(op, 0, totalBytes, 0, totalFiles)
 	tmp, err := os.MkdirTemp("", "swissknife-copy-*")
 	if err != nil {
 		return nil, err
@@ -446,7 +457,7 @@ func (d *DriveService) copyBetweenUsers(sourceUser, targetUser, destFolder strin
 	var walk func(itemID, rel string) error
 	copyItems := func(items []json.RawMessage, rel string) {
 		for _, raw := range items {
-			if d.cancel.Load() {
+			if op.Canceled() {
 				return
 			}
 			var it struct {
@@ -465,7 +476,7 @@ func (d *DriveService) copyBetweenUsers(sourceUser, targetUser, destFolder strin
 			if it.Folder != nil {
 				if err := walk(it.ID, relPath); err != nil {
 					res.Failed[relPath+"/"] = err.Error()
-					d.emitFile(relPath+"/", "failed", err.Error(), len(res.Copied))
+					d.emitFile(op, relPath+"/", "failed", err.Error(), len(res.Copied))
 				}
 				continue
 			}
@@ -474,19 +485,19 @@ func (d *DriveService) copyBetweenUsers(sourceUser, targetUser, destFolder strin
 			account := func() {
 				doneBytes += it.Size
 				doneFiles++
-				d.emitOverall(doneBytes, totalBytes, doneFiles, totalFiles)
+				d.emitOverall(op, doneBytes, totalBytes, doneFiles, totalFiles)
 			}
 			if rel == "" && tgtNames[it.Name] {
 				res.Skipped[relPath] = "exists in target"
-				d.emitFile(relPath, "skipped", "exists in target", len(res.Copied))
+				d.emitFile(op, relPath, "skipped", "exists in target", len(res.Copied))
 				account()
 				continue
 			}
 			local := filepath.Join(tmp, filepath.FromSlash(relPath))
 			src := "/users/" + url.PathEscape(sourceUser) + "/drive/items/" + url.PathEscape(it.ID)
-			if err := c.DownloadItem(d.s.Ctx(), src, local, nil); err != nil {
+			if err := c.DownloadItem(op.Ctx, src, local, nil); err != nil {
 				res.Failed[relPath] = err.Error()
-				d.emitFile(relPath, "failed", err.Error(), len(res.Copied))
+				d.emitFile(op, relPath, "failed", err.Error(), len(res.Copied))
 				account()
 				continue
 			}
@@ -495,23 +506,23 @@ func (d *DriveService) copyBetweenUsers(sourceUser, targetUser, destFolder strin
 				remotePath = dest + "/" + relPath
 			}
 			dst := "/users/" + url.PathEscape(targetUser) + "/drive/root:/" + escapeDrivePath(remotePath)
-			if _, err := c.UploadFile(d.s.Ctx(), dst, local, func(done, total int64) {
-				d.emitProgress(relPath, done, total)
+			if _, err := c.UploadFile(op.Ctx, dst, local, func(done, total int64) {
+				d.emitProgress(op, relPath, done, total)
 			}); err != nil {
 				res.Failed[relPath] = err.Error()
-				d.emitFile(relPath, "failed", err.Error(), len(res.Copied))
+				d.emitFile(op, relPath, "failed", err.Error(), len(res.Copied))
 				account()
 				continue
 			}
 			res.Copied = append(res.Copied, relPath)
-			d.emitFile(relPath, "copied", "", len(res.Copied))
+			d.emitFile(op, relPath, "copied", "", len(res.Copied))
 			account()
 			os.Remove(local)
 		}
 	}
 
 	walk = func(itemID, rel string) error {
-		if d.cancel.Load() {
+		if op.Canceled() {
 			return nil
 		}
 		items, err := d.Children("user", sourceUser, itemID)
@@ -527,7 +538,7 @@ func (d *DriveService) copyBetweenUsers(sourceUser, targetUser, destFolder strin
 		return nil, err
 	}
 	copyItems(rootItems, "")
-	res.Canceled = d.cancel.Load()
+	res.Canceled = op.Canceled()
 
 	d.s.Record("drive.copyBetweenUsers", sourceUser+" -> "+targetUser,
 		"dest="+dest+" copied="+itoa(len(res.Copied))+" skipped="+itoa(len(res.Skipped))+" failed="+itoa(len(res.Failed)), nil)
@@ -541,8 +552,8 @@ var errCopyCanceled = errors.New("canceled")
 // Graph's async driveItem copy — the copy runs entirely inside the cloud.
 // An error return means nothing was copied yet and the caller may fall back;
 // per-item failures after that are recorded in the result instead.
-func (d *DriveService) copyServerSide(c *graphapi.Client, sourceUser, targetUser, destFolder string, overwrite bool) (*CopyResult, error) {
-	ctx := d.s.Ctx()
+func (d *DriveService) copyServerSide(op *ops.Operation, c *graphapi.Client, sourceUser, targetUser, destFolder string, overwrite bool) (*CopyResult, error) {
+	ctx := op.Ctx
 	var drv struct {
 		ID string `json:"id"`
 	}
@@ -580,9 +591,9 @@ func (d *DriveService) copyServerSide(c *graphapi.Client, sourceUser, targetUser
 		behavior = "replace"
 	}
 	var doneBytes int64
-	d.emitOverall(0, totalBytes, 0, len(items))
+	d.emitOverall(op, 0, totalBytes, 0, len(items))
 	for i, it := range items {
-		if d.cancel.Load() {
+		if op.Canceled() {
 			res.Canceled = true
 			break
 		}
@@ -598,28 +609,28 @@ func (d *DriveService) copyServerSide(c *graphapi.Client, sourceUser, targetUser
 			var ge *graphapi.GraphError
 			if errors.As(postErr, &ge) && ge.Code == "nameAlreadyExists" {
 				res.Skipped[name] = "exists in target"
-				d.emitFile(name, "skipped", "exists in target", len(res.Copied))
+				d.emitFile(op, name, "skipped", "exists in target", len(res.Copied))
 			} else if len(res.Copied) == 0 && len(res.Failed) == 0 {
 				return nil, postErr // nothing copied yet — safe to fall back to local copy
 			} else {
 				res.Failed[name] = postErr.Error()
-				d.emitFile(name, "failed", postErr.Error(), len(res.Copied))
+				d.emitFile(op, name, "failed", postErr.Error(), len(res.Copied))
 			}
-		} else if waitErr := d.waitForCopy(loc, name, it.Size, doneBytes, totalBytes, len(res.Copied), len(items)); waitErr != nil {
+		} else if waitErr := d.waitForCopy(op, loc, name, it.Size, doneBytes, totalBytes, len(res.Copied), len(items)); waitErr != nil {
 			if errors.Is(waitErr, errCopyCanceled) {
 				res.Canceled = true
 				res.Skipped[name] = "cancel requested — the in-flight cloud copy may still finish"
-				d.emitFile(name, "skipped", "canceled", len(res.Copied))
+				d.emitFile(op, name, "skipped", "canceled", len(res.Copied))
 				break
 			}
 			res.Failed[name] = waitErr.Error()
-			d.emitFile(name, "failed", waitErr.Error(), len(res.Copied))
+			d.emitFile(op, name, "failed", waitErr.Error(), len(res.Copied))
 		} else {
 			res.Copied = append(res.Copied, name)
-			d.emitFile(name, "copied", "", len(res.Copied))
+			d.emitFile(op, name, "copied", "", len(res.Copied))
 		}
 		doneBytes += it.Size
-		d.emitOverall(doneBytes, totalBytes, i+1, len(items))
+		d.emitOverall(op, doneBytes, totalBytes, i+1, len(items))
 	}
 
 	d.s.Record("drive.copyServerSide", sourceUser+" -> "+targetUser,
@@ -677,17 +688,17 @@ var monitorClient = &http.Client{
 // waitForCopy polls a Graph async-operation monitor URL until the copy ends,
 // emitting fractional overall progress along the way. Transient poll errors are
 // tolerated; a stuck operation gives up after maxCopyWait.
-func (d *DriveService) waitForCopy(monitorURL, name string, size, doneBytes, totalBytes int64, copied, totalItems int) error {
+func (d *DriveService) waitForCopy(op *ops.Operation, monitorURL, name string, size, doneBytes, totalBytes int64, copied, totalItems int) error {
 	if monitorURL == "" {
 		return nil // some copies complete synchronously (204/201 without a monitor)
 	}
 	const maxCopyWait = 2 * time.Hour
 	const maxPollErrors = 5
-	ctx := d.s.Ctx()
+	ctx := op.Ctx
 	deadline := time.Now().Add(maxCopyWait)
 	pollErrors := 0
 	for {
-		if d.cancel.Load() {
+		if op.Canceled() {
 			return errCopyCanceled
 		}
 		if time.Now().After(deadline) {
@@ -729,8 +740,8 @@ func (d *DriveService) waitForCopy(monitorURL, name string, size, doneBytes, tot
 				return errors.New(msg)
 			}
 			// notStarted / waiting / inProgress / updating — keep polling.
-			d.emitOverall(doneBytes+int64(float64(size)*st.PercentageComplete/100), totalBytes, copied, totalItems)
-			d.emitProgress(name, int64(st.PercentageComplete), 100)
+			d.emitOverall(op, doneBytes+int64(float64(size)*st.PercentageComplete/100), totalBytes, copied, totalItems)
+			d.emitProgress(op, name, int64(st.PercentageComplete), 100)
 		}
 		select {
 		case <-ctx.Done():

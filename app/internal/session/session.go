@@ -9,6 +9,7 @@ import (
 
 	"swissknife-app/internal/auditlog"
 	"swissknife-app/internal/graphapi"
+	"swissknife-app/internal/ops"
 )
 
 var ErrNotConnected = errors.New("not connected — connect to a tenant first")
@@ -22,10 +23,11 @@ type Session struct {
 	readOnly    bool
 
 	Audit *auditlog.Log
+	Ops   *ops.Registry
 }
 
 func New(audit *auditlog.Log) *Session {
-	return &Session{ctx: context.Background(), Audit: audit}
+	return &Session{ctx: context.Background(), Audit: audit, Ops: ops.NewRegistry()}
 }
 
 // SetAppContext stores the Wails context (cancellation on app shutdown).
