@@ -36,8 +36,8 @@ func TestResumeCopyContinuesInterruptedRun(t *testing.T) {
 
 	sess := session.New(auditlog.New(t.TempDir()))
 	sess.SetClient(graphapi.New(graphapi.StaticToken("t"), graphapi.WithBaseURL(srv.URL)), "test")
-	j := journal.New(t.TempDir())
-	sess.SetJournal(j)
+	dir := t.TempDir()
+	j := journal.New(dir)
 
 	// Journal of a run that died: i1 finished, i2 was in flight, i3 never started.
 	j.Begin("run-x", map[string]any{"kind": "transfer", "target": "alice → arch", "source": "alice@contoso.com", "dest": "arch@contoso.com"})
@@ -51,9 +51,11 @@ func TestResumeCopyContinuesInterruptedRun(t *testing.T) {
 	})
 	j.Event("run-x", "item", map[string]any{"id": "i1", "status": "copied"})
 	j.Event("run-x", "item", map[string]any{"id": "i2", "status": "inflight", "monitor": srvURL + "/monitor-old"})
-	// no end record — interrupted; a fresh journal instance simulates restart
-	j2 := journal.New(t.TempDir())
-	_ = j2 // (kept for clarity: sess keeps the original dir, List marks it interrupted)
+	// No end record. Reopening the same directory with a fresh Log (no live
+	// writers) simulates the app restart — the run must read as interrupted.
+	j.Close()
+	restarted := journal.New(dir)
+	sess.SetJournal(restarted)
 
 	drive := NewDriveService(sess)
 	res, err := drive.ResumeCopy("run-x")
@@ -69,7 +71,7 @@ func TestResumeCopyContinuesInterruptedRun(t *testing.T) {
 		t.Fatalf("only i3 must be re-issued, got %v", copyPosts)
 	}
 
-	run, err := j.Get("run-x")
+	run, err := restarted.Get("run-x")
 	if err != nil {
 		t.Fatal(err)
 	}

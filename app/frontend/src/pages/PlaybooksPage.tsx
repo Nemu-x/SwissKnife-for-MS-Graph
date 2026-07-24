@@ -67,14 +67,26 @@ export function PlaybooksPage() {
     },
   }
   const loadPresets = (): Record<string, Partial<OffOptions>> => {
-    try { return JSON.parse(localStorage.getItem('playbook.presets') || '{}') } catch { return {} }
+    // Persisted data is untrusted: accept only an object of objects.
+    try {
+      const raw = JSON.parse(localStorage.getItem('playbook.presets') || '{}')
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+      const out: Record<string, Partial<OffOptions>> = {}
+      for (const [k, v] of Object.entries(raw)) {
+        if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = v as Partial<OffOptions>
+      }
+      return out
+    } catch { return {} }
   }
   const [presets, setPresets] = useState(loadPresets)
   const [presetSel, setPresetSel] = useState('')
   const [presetName, setPresetName] = useState('')
+  // Own-property check: a custom preset named "toString" must not resolve to
+  // the inherited Object.prototype member.
+  const isBuiltinPreset = (name: string) => Object.prototype.hasOwnProperty.call(BUILTIN_PRESETS, name)
   const applyPreset = (name: string) => {
     setPresetSel(name)
-    const p = BUILTIN_PRESETS[name] ?? presets[name]
+    const p = isBuiltinPreset(name) ? BUILTIN_PRESETS[name] : presets[name]
     if (p) setOff((o) => ({ ...o, ...p }))
   }
   const savePreset = () => {
@@ -87,7 +99,7 @@ export function PlaybooksPage() {
     setPresetSel(name); setPresetName('')
   }
   const deletePreset = () => {
-    if (!presetSel || BUILTIN_PRESETS[presetSel]) return
+    if (!presetSel || isBuiltinPreset(presetSel)) return
     const next = { ...presets }
     delete next[presetSel]
     setPresets(next)
@@ -138,7 +150,7 @@ export function PlaybooksPage() {
 
   const runOffboard = (confirm: string) => () => {
     startPlaybook('offboard', off.upn, () => api.playbooks.offboard({ ...off, confirm })).then((r) => {
-      if (!r) return // guard/validation failure: keep the previous defaults
+      if (!r || r.canceled) return // failed or canceled run: keep the previous defaults
       for (const k of ['forwardTo', 'calendarTo', 'backupToUser', 'backupFolder'] as const) {
         localStorage.setItem('defaults.offboard.' + k, off[k])
       }

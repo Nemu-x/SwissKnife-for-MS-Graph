@@ -705,7 +705,7 @@ func (d *DriveService) ResumeCopy(runID string) (res *CopyResult, err error) {
 	if err != nil {
 		return nil, err
 	}
-	if run.Kind != "transfer" || run.EndedAt != nil {
+	if run.Kind != "transfer" || run.EndedAt != nil || !run.Interrupted {
 		return nil, errors.New("this run is not an interrupted transfer")
 	}
 
@@ -794,6 +794,12 @@ func (d *DriveService) ResumeCopy(runID string) (res *CopyResult, err error) {
 		}
 		d.journalItem(runID, map[string]any{"id": it.id, "status": "inflight", "monitor": loc})
 		if waitErr := d.waitForCopy(op, loc, it.name, it.size, doneBytes, totalBytes, len(res.Copied), total); waitErr != nil {
+			if errors.Is(waitErr, errCopyCanceled) {
+				res.Canceled = true
+				res.Skipped[it.name] = "cancel requested — the in-flight cloud copy may still finish"
+				d.emitFile(op, it.name, "skipped", "canceled", len(res.Copied))
+				return
+			}
 			res.Failed[it.name] = waitErr.Error()
 			d.emitFile(op, it.name, "failed", waitErr.Error(), len(res.Copied))
 			d.journalItem(runID, map[string]any{"id": it.id, "status": "failed", "error": waitErr.Error()})

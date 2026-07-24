@@ -32,7 +32,12 @@ export function HistoryPage() {
   const resume = (id: string) => {
     setResuming(id)
     api.drive.resumeCopy(id)
-      .then((r) => { toast('ok', t('history.resumed', { n: r.copied?.length || 0 })); load() })
+      .then((r) => {
+        toast('ok', t('history.resumed', { n: r.copied?.length || 0 }))
+        load()
+        // Refresh the expanded detail too, so the events reflect the resume.
+        if (openId === id) api.journal.get(id).then(setDetail).catch(() => {})
+      })
       .catch((e) => toast('err', errMessage(e)))
       .finally(() => setResuming(''))
   }
@@ -84,8 +89,30 @@ export function HistoryPage() {
                         )}
                       </div>
                     )}
-                    {detail.events.map((ev, i) => {
-                      if (ev.t === 'step') {
+                    {(() => {
+                      // Transfer journals carry item names only in the plan
+                      // event; build an id→{name,size} map for the item rows.
+                      const plan: Record<string, any> = {}
+                      for (const ev of detail.events) {
+                        if (ev.t === 'plan') {
+                          for (const it of ((ev.data as any)?.items ?? [])) plan[it.id] = it
+                        }
+                      }
+                      return detail.events.map((ev, i) => {
+                        if (ev.t === 'item') {
+                          const d: any = ev.data || {}
+                          const name = plan[d.id]?.name ?? d.id
+                          const ok = d.status === 'copied' || d.status === 'skipped'
+                          return (
+                            <div key={i} className="flex items-start gap-2 text-sm">
+                              {ok ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[var(--ok)]" /> : <XCircle size={14} className="mt-0.5 shrink-0 text-[var(--danger)]" />}
+                              <span className="truncate text-[var(--text)]">{name}</span>
+                              <span className="shrink-0 text-xs text-[var(--text-faint)]">{d.status}</span>
+                              {d.error && <span className="truncate text-xs text-[var(--danger)]">{d.error}</span>}
+                            </div>
+                          )
+                        }
+                        if (ev.t === 'step') {
                         const d: any = ev.data || {}
                         const name = d.nameKey ? t(d.nameKey, { defaultValue: d.name }) : d.name
                         return (
@@ -97,11 +124,12 @@ export function HistoryPage() {
                           </div>
                         )
                       }
-                      if (ev.t === 'log') {
-                        return <div key={i} className="font-mono text-xs text-[var(--text-dim)]">{String((ev.data as any)?.text ?? '')}</div>
-                      }
-                      return null
-                    })}
+                        if (ev.t === 'log') {
+                          return <div key={i} className="font-mono text-xs text-[var(--text-dim)]">{String((ev.data as any)?.text ?? '')}</div>
+                        }
+                        return null
+                      })
+                    })()}
                     {detail.summary && (
                       <p className="mt-1 text-xs text-[var(--text-faint)]">
                         {t('history.summaryLine', {

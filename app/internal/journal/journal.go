@@ -127,7 +127,8 @@ func (l *Log) Close() {
 }
 
 // List returns the newest limit runs (opIds are time-sortable, so the file
-// name order is the time order). Only the first and last lines are read.
+// name order is the time order). Each file is scanned once to find its first
+// and last lines — full events are parsed only by Get.
 func (l *Log) List(limit int) []RunSummary {
 	entries, err := os.ReadDir(l.dir)
 	if err != nil {
@@ -206,6 +207,11 @@ func (l *Log) Get(opID string) (*Run, error) {
 			run.Events = append(run.Events, rec)
 		}
 	}
+	// An oversized line (ErrTooLong) would silently truncate the events the
+	// resume logic depends on — surface it instead of returning a partial run.
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
 	if run.Begin == nil {
 		return nil, os.ErrNotExist
 	}
@@ -217,14 +223,25 @@ func (l *Log) Get(opID string) (*Run, error) {
 }
 
 // Prune keeps the newest keep runs and deletes the rest (called at startup).
+// Live/open runs are never candidates, so a future mid-session caller cannot
+// delete a journal that is still being written.
 func (l *Log) Prune(keep int) {
 	entries, err := os.ReadDir(l.dir)
 	if err != nil {
 		return
 	}
+	l.mu.Lock()
+	active := make(map[string]bool, len(l.open)+len(l.live))
+	for id := range l.open {
+		active[id] = true
+	}
+	for id := range l.live {
+		active[id] = true
+	}
+	l.mu.Unlock()
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") && !active[strings.TrimSuffix(e.Name(), ".jsonl")] {
 			names = append(names, e.Name())
 		}
 	}
