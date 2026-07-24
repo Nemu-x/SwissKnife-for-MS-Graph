@@ -169,6 +169,16 @@ func TestOffboardBackupAddsScanAndBackupSteps(t *testing.T) {
 	if !scan.OK || !strings.Contains(scan.Detail, "0 files") {
 		t.Errorf("scan step should be OK with a size detail, got %+v", scan)
 	}
+	// Steps carry stable i18n keys so the UI can translate the report.
+	if scan.NameKey != "steps.scanOneDrive" || scan.DetailKey != "stepDetails.scanned" {
+		t.Errorf("scan step keys wrong: %+v", scan)
+	}
+	if scan.Params["files"] != 0 {
+		t.Errorf("scan params must carry the file count, got %v", scan.Params)
+	}
+	if res.Steps[backupIdx].NameKey != "steps.backupOneDrive" || res.Steps[backupIdx].DetailKey != "stepDetails.backup" {
+		t.Errorf("backup step keys wrong: %+v", res.Steps[backupIdx])
+	}
 	backup := res.Steps[backupIdx]
 	if !backup.OK || !strings.Contains(backup.Detail, "0 item(s) copied") {
 		t.Errorf("backup step should be OK with a copy summary, got %+v", backup)

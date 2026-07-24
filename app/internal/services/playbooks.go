@@ -23,14 +23,41 @@ func NewPlaybookService(s *session.Session) *PlaybookService { return &PlaybookS
 // step, and a running OneDrive backup (a child operation) cancels with it.
 func (p *PlaybookService) Cancel() { p.s.Ops.CancelKind(ops.KindPlaybook) }
 
-// Step is one action within a playbook run.
+// Step is one action within a playbook run. Name/Detail are English fallbacks;
+// NameKey/DetailKey (+Params) are stable i18n keys the frontend translates, so
+// reports render fully in the UI language (backend-i18n capability).
 type Step struct {
-	Name      string `json:"name"`
-	OK        bool   `json:"ok"`
-	Detail    string `json:"detail,omitempty"`
-	Error     string `json:"error,omitempty"`
-	ErrorCode string `json:"errorCode,omitempty"` // Graph error code, when the step failed on a Graph call
-	Hint      string `json:"hint,omitempty"`      // missing Graph permission, when derivable (403)
+	Name      string         `json:"name"`
+	NameKey   string         `json:"nameKey,omitempty"`
+	OK        bool           `json:"ok"`
+	Detail    string         `json:"detail,omitempty"`
+	DetailKey string         `json:"detailKey,omitempty"`
+	Params    map[string]any `json:"params,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	ErrorCode string         `json:"errorCode,omitempty"` // Graph error code, when the step failed on a Graph call
+	Hint      string         `json:"hint,omitempty"`      // missing Graph permission, when derivable (403)
+}
+
+// stepKeys maps step names to stable i18n keys; the English name stays in the
+// payload as the fallback for unknown keys.
+var stepKeys = map[string]string{
+	"Create user":               "steps.createUser",
+	"Assign licenses":           "steps.assignLicenses",
+	"Add to group":              "steps.addToGroup",
+	"Add to team":               "steps.addToTeam",
+	"Add to channel":            "steps.addToChannel",
+	"Block sign-in":             "steps.blockSignIn",
+	"Revoke sessions":           "steps.revokeSessions",
+	"Set auto-reply (OOF)":      "steps.oof",
+	"Forward mail (inbox rule)": "steps.forward",
+	"Hide from address lists":   "steps.hideFromGal",
+	"Share calendar (read)":     "steps.shareCalendar",
+	"Scan OneDrive":             "steps.scanOneDrive",
+	"Backup OneDrive":           "steps.backupOneDrive",
+	"Remove from groups":        "steps.removeFromGroups",
+	"Remove from group":         "steps.removeFromGroup",
+	"Remove licenses":           "steps.removeLicenses",
+	"Delete user":               "steps.deleteUser",
 }
 
 // PlaybookResult is the outcome of a playbook run.
@@ -46,6 +73,15 @@ type runner struct {
 	steps    []Step
 	ok       bool
 	canceled bool
+	// pending detail translation set by the running step's fn (setDetail).
+	pendingDetailKey string
+	pendingParams    map[string]any
+}
+
+// setDetail lets a step body attach a translatable detail (key + params) to
+// the step it is running in, alongside the English fallback it returns.
+func (r *runner) setDetail(key string, params map[string]any) {
+	r.pendingDetailKey, r.pendingParams = key, params
 }
 
 var errPlaybookCanceled = fmt.Errorf("playbook canceled")
@@ -76,12 +112,14 @@ func (r *runner) doD(name, detail string, fn func() (string, error)) error {
 	if r.stop() {
 		return errPlaybookCanceled
 	}
-	r.emitStep(map[string]any{"status": "running", "index": len(r.steps), "name": name, "detail": detail})
+	r.pendingDetailKey, r.pendingParams = "", nil
+	r.emitStep(map[string]any{"status": "running", "index": len(r.steps), "name": name, "nameKey": stepKeys[name], "detail": detail})
 	d, err := fn()
 	if d != "" {
 		detail = d
 	}
-	st := Step{Name: name, OK: err == nil, Detail: detail}
+	st := Step{Name: name, NameKey: stepKeys[name], OK: err == nil, Detail: detail,
+		DetailKey: r.pendingDetailKey, Params: r.pendingParams}
 	if err != nil {
 		st.Error = err.Error()
 		r.ok = false
@@ -97,7 +135,11 @@ func (r *runner) doD(name, detail string, fn func() (string, error)) error {
 		}
 	}
 	r.steps = append(r.steps, st)
-	done := map[string]any{"status": "done", "index": len(r.steps) - 1, "name": name, "detail": detail, "ok": st.OK}
+	done := map[string]any{"status": "done", "index": len(r.steps) - 1, "name": name, "nameKey": st.NameKey, "detail": detail, "ok": st.OK}
+	if st.DetailKey != "" {
+		done["detailKey"] = st.DetailKey
+		done["params"] = st.Params
+	}
 	if st.Error != "" {
 		done["error"] = st.Error
 	}
@@ -317,6 +359,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				return "", e
 			}
 			prev = pv
+			r.setDetail("stepDetails.scanned", map[string]any{"files": pv.Files, "bytes": pv.TotalBytes})
 			return itoa(pv.Files) + " files · " + humanSize(pv.TotalBytes), nil
 		})
 		r.doD("Backup OneDrive", req.Upn+" → "+req.BackupToUser, func() (string, error) {
@@ -330,8 +373,10 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			if e != nil {
 				return "", e
 			}
+			params := map[string]any{"copied": len(res.Copied), "skipped": len(res.Skipped), "canceled": res.Canceled}
 			detail := itoa(len(res.Copied)) + " item(s) copied"
 			if prev != nil {
+				params["bytes"] = prev.TotalBytes
 				detail += " · " + humanSize(prev.TotalBytes)
 			}
 			if len(res.Skipped) > 0 {
@@ -340,6 +385,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			if res.Canceled {
 				detail += " · canceled"
 			}
+			r.setDetail("stepDetails.backup", params)
 			if len(res.Failed) > 0 {
 				return detail, fmt.Errorf("%d file(s) failed — see the OneDrive transfer log", len(res.Failed))
 			}
