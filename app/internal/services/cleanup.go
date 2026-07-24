@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"swissknife-app/internal/graphapi"
+	"swissknife-app/internal/ops"
 	"swissknife-app/internal/session"
 )
 
@@ -16,24 +17,45 @@ import (
 // version-history bloat. For SharePoint sites it scans every document library.
 type CleanupService struct {
 	s      *session.Session
-	cancel atomic.Bool // set by CancelScan to abort an in-flight scan
+	cancel atomic.Bool    // fast-path abort flag, bridged from the op context
+	op     *ops.Operation // the run in flight (single-flight makes this safe)
 }
 
 func NewCleanupService(s *session.Session) *CleanupService { return &CleanupService{s: s} }
 
-// CancelScan requests that the current scan stop; it returns whatever it has
-// found so far rather than an error.
-func (cl *CleanupService) CancelScan() { cl.cancel.Store(true) }
+// CancelScan cancels the live cleanup operation; the walkers abort between
+// items and return whatever they found so far rather than an error.
+func (cl *CleanupService) CancelScan() { cl.s.Ops.CancelKind(ops.KindCleanup) }
+
+// beginScan registers the cleanup operation and bridges its context
+// cancellation into the legacy fast-path flag the walkers poll.
+func (cl *CleanupService) beginScan() (*ops.Operation, error) {
+	op, err := cl.s.Ops.Start(cl.s.Ctx(), ops.KindCleanup)
+	if err != nil {
+		return nil, err
+	}
+	cl.cancel.Store(false)
+	cl.op = op
+	go func() { <-op.Ctx.Done(); cl.cancel.Store(true) }()
+	emitOp(cl.s.Ctx(), op, "op:start", nil)
+	return op, nil
+}
+
+// endScan releases the operation slot and detaches it from the emit helpers.
+func (cl *CleanupService) endScan(op *ops.Operation) {
+	cl.op = nil
+	cl.s.Ops.Finish(op)
+}
 
 // emit sends a live progress line to the UI ("cleanup:progress" event).
 func (cl *CleanupService) emit(stage string, done, total int) {
-	emitEvent(cl.s.Ctx(), "cleanup:progress", map[string]any{"stage": stage, "done": done, "total": total})
+	emitOp(cl.s.Ctx(), cl.op, "cleanup:progress", map[string]any{"stage": stage, "done": done, "total": total})
 }
 
 // emitLog appends a durable line to the UI console ("cleanup:log" event) so the
 // operator can see exactly what was walked, not just a spinner.
 func (cl *CleanupService) emitLog(text string) {
-	emitEvent(cl.s.Ctx(), "cleanup:log", text)
+	emitOp(cl.s.Ctx(), cl.op, "cleanup:log", map[string]any{"text": text})
 }
 
 // humanSize formats a byte count as a short human-readable string.
@@ -186,7 +208,11 @@ type DupGroup struct {
 
 // FindDuplicates groups byte-identical files (by content hash, else name+size).
 func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup, error) {
-	cl.cancel.Store(false)
+	op, err := cl.beginScan()
+	if err != nil {
+		return nil, err
+	}
+	defer cl.endScan(op)
 	files, err := cl.walkFiles(ownerType, ownerID)
 	if err != nil {
 		return nil, err
@@ -272,7 +298,11 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 	if maxFiles <= 0 {
 		maxFiles = 3000
 	}
-	cl.cancel.Store(false)
+	op, err := cl.beginScan()
+	if err != nil {
+		return nil, err
+	}
+	defer cl.endScan(op)
 	files, err := cl.walkFiles(ownerType, ownerID)
 	if err != nil {
 		return nil, err
@@ -421,7 +451,11 @@ func (cl *CleanupService) TrimVersionsMany(itemRefs []string, keep int, confirm 
 	if err != nil {
 		return nil, err
 	}
-	cl.cancel.Store(false)
+	op, err := cl.beginScan()
+	if err != nil {
+		return nil, err
+	}
+	defer cl.endScan(op)
 	cl.emitLog(fmt.Sprintf("Trimming %d file(s), keeping the latest %d version(s)…", len(itemRefs), keep))
 	out := make([]TrimResult, 0, len(itemRefs))
 	totalRemoved, failed := 0, 0

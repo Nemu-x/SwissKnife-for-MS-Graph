@@ -1,33 +1,25 @@
 package services
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"sync/atomic"
 
+	"swissknife-app/internal/ops"
 	"swissknife-app/internal/session"
 )
 
 // PlaybookService runs multi-step composite operations (onboard / offboard) and
 // returns a per-step report so the operator sees exactly what happened.
 type PlaybookService struct {
-	s      *session.Session
-	cancel atomic.Bool
-	drive  atomic.Pointer[DriveService] // the drive service of the run in flight, for cancel propagation
+	s *session.Session
 }
 
 func NewPlaybookService(s *session.Session) *PlaybookService { return &PlaybookService{s: s} }
 
-// Cancel stops the running playbook after the step in flight; a running
-// OneDrive backup stops after the current item.
-func (p *PlaybookService) Cancel() {
-	p.cancel.Store(true)
-	if d := p.drive.Load(); d != nil {
-		d.CancelTransfer()
-	}
-}
+// Cancel cancels the live playbook operation: its context aborts the in-flight
+// step, and a running OneDrive backup (a child operation) cancels with it.
+func (p *PlaybookService) Cancel() { p.s.Ops.CancelKind(ops.KindPlaybook) }
 
 // Step is one action within a playbook run.
 type Step struct {
@@ -45,12 +37,11 @@ type PlaybookResult struct {
 }
 
 type runner struct {
-	ctx       context.Context
-	kind      string // "onboard" | "offboard" — lets the UI route events
-	cancelled func() bool
-	steps     []Step
-	ok        bool
-	canceled  bool
+	op       *ops.Operation
+	kind     string // "onboard" | "offboard" — lets the UI route events
+	steps    []Step
+	ok       bool
+	canceled bool
 }
 
 var errPlaybookCanceled = fmt.Errorf("playbook canceled")
@@ -59,7 +50,7 @@ var errPlaybookCanceled = fmt.Errorf("playbook canceled")
 // instead of waiting for the whole playbook to finish.
 func (r *runner) emitStep(payload map[string]any) {
 	payload["kind"] = r.kind
-	emitEvent(r.ctx, "playbook:step", payload)
+	emitOp(r.op.Ctx, r.op, "playbook:step", payload)
 }
 
 func (r *runner) do(name, detail string, fn func() error) error {
@@ -69,7 +60,7 @@ func (r *runner) do(name, detail string, fn func() error) error {
 // stop reports whether a cancel was requested; once true, remaining steps are
 // skipped without being reported.
 func (r *runner) stop() bool {
-	if r.cancelled != nil && r.cancelled() {
+	if r.op.Canceled() {
 		r.canceled = true
 	}
 	return r.canceled
@@ -133,8 +124,13 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.cancel.Store(false)
-	r := &runner{ctx: p.s.Ctx(), kind: "onboard", ok: true, cancelled: p.cancel.Load}
+	op, err := p.s.Ops.Start(p.s.Ctx(), ops.KindPlaybook)
+	if err != nil {
+		return nil, err
+	}
+	defer p.s.Ops.Finish(op)
+	emitOp(p.s.Ctx(), op, "op:start", map[string]any{"target": req.Upn})
+	r := &runner{op: op, kind: "onboard", ok: true}
 
 	// Step 1: create user (blocks the rest if it fails).
 	body := map[string]any{
@@ -148,7 +144,7 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 		body["usageLocation"] = req.UsageLocation
 	}
 	createErr := r.do("Create user", req.Upn, func() error {
-		return c.Post(p.s.Ctx(), "/users", body, nil)
+		return c.Post(op.Ctx, "/users", body, nil)
 	})
 	if createErr != nil {
 		p.s.Record("playbook.onboard", req.Upn, "create failed", createErr)
@@ -159,7 +155,7 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 	var created struct {
 		ID string `json:"id"`
 	}
-	_ = c.Get(p.s.Ctx(), "/users/"+url.PathEscape(req.Upn), url.Values{"$select": {"id"}}, &created)
+	_ = c.Get(op.Ctx, "/users/"+url.PathEscape(req.Upn), url.Values{"$select": {"id"}}, &created)
 
 	if len(req.SkuIDs) > 0 {
 		add := make([]map[string]any, 0, len(req.SkuIDs))
@@ -167,7 +163,7 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 			add = append(add, map[string]any{"skuId": id})
 		}
 		r.do("Assign licenses", itoa(len(req.SkuIDs))+" sku(s)", func() error {
-			return c.Post(p.s.Ctx(), "/users/"+url.PathEscape(req.Upn)+"/assignLicense",
+			return c.Post(op.Ctx, "/users/"+url.PathEscape(req.Upn)+"/assignLicense",
 				map[string]any{"addLicenses": add, "removeLicenses": []string{}}, nil)
 		})
 	}
@@ -175,20 +171,20 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 	for _, gid := range req.GroupIDs {
 		r.do("Add to group", gid, func() error {
 			ref := map[string]any{"@odata.id": "https://graph.microsoft.com/v1.0/directoryObjects/" + created.ID}
-			return c.Post(p.s.Ctx(), "/groups/"+url.PathEscape(gid)+"/members/$ref", ref, nil)
+			return c.Post(op.Ctx, "/groups/"+url.PathEscape(gid)+"/members/$ref", ref, nil)
 		})
 	}
 
 	for _, tid := range req.TeamIDs {
 		r.do("Add to team", tid, func() error {
-			return c.Post(p.s.Ctx(), "/teams/"+url.PathEscape(tid)+"/members", conversationMember(req.Upn, false), nil)
+			return c.Post(op.Ctx, "/teams/"+url.PathEscape(tid)+"/members", conversationMember(req.Upn, false), nil)
 		})
 	}
 
 	for _, cr := range req.ChannelRefs {
 		cr := cr
 		r.do("Add to channel", cr.TeamID+"/"+cr.ChannelID, func() error {
-			return c.Post(p.s.Ctx(),
+			return c.Post(op.Ctx,
 				"/teams/"+url.PathEscape(cr.TeamID)+"/channels/"+url.PathEscape(cr.ChannelID)+"/members",
 				conversationMember(req.Upn, false), nil)
 		})
@@ -226,18 +222,23 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 	if err != nil {
 		return nil, err
 	}
-	p.cancel.Store(false)
-	r := &runner{ctx: p.s.Ctx(), kind: "offboard", ok: true, cancelled: p.cancel.Load}
+	op, err := p.s.Ops.Start(p.s.Ctx(), ops.KindPlaybook)
+	if err != nil {
+		return nil, err
+	}
+	defer p.s.Ops.Finish(op)
+	emitOp(p.s.Ctx(), op, "op:start", map[string]any{"target": req.Upn})
+	r := &runner{op: op, kind: "offboard", ok: true}
 	u := url.PathEscape(req.Upn)
 
 	if req.Block {
 		r.do("Block sign-in", req.Upn, func() error {
-			return c.Patch(p.s.Ctx(), "/users/"+u, map[string]any{"accountEnabled": false}, nil)
+			return c.Patch(op.Ctx, "/users/"+u, map[string]any{"accountEnabled": false}, nil)
 		})
 	}
 	if req.RevokeSessions {
 		r.do("Revoke sessions", req.Upn, func() error {
-			return c.Post(p.s.Ctx(), "/users/"+u+"/revokeSignInSessions", map[string]any{}, nil)
+			return c.Post(op.Ctx, "/users/"+u+"/revokeSignInSessions", map[string]any{}, nil)
 		})
 	}
 	if req.Oof {
@@ -246,7 +247,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			if msg == "" {
 				msg = "This employee is no longer with the organization. Your message will not be forwarded automatically."
 			}
-			return c.Patch(p.s.Ctx(), "/users/"+u+"/mailboxSettings", map[string]any{
+			return c.Patch(op.Ctx, "/users/"+u+"/mailboxSettings", map[string]any{
 				"automaticRepliesSetting": map[string]any{
 					"status":               "alwaysEnabled",
 					"internalReplyMessage": msg,
@@ -259,7 +260,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 		// Server-side inbox rule; unlike Exchange mailbox forwarding this is
 		// available through Graph (Mail.ReadWrite) and survives sign-in block.
 		r.do("Forward mail (inbox rule)", req.Upn+" → "+req.ForwardTo, func() error {
-			return c.Post(p.s.Ctx(), "/users/"+u+"/mailFolders/inbox/messageRules", map[string]any{
+			return c.Post(op.Ctx, "/users/"+u+"/mailFolders/inbox/messageRules", map[string]any{
 				"displayName": "Offboarding: forward to " + req.ForwardTo,
 				"sequence":    1,
 				"isEnabled":   true,
@@ -274,12 +275,12 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 	}
 	if req.HideFromGal {
 		r.do("Hide from address lists", req.Upn, func() error {
-			return c.Patch(p.s.Ctx(), "/users/"+u, map[string]any{"showInAddressList": false}, nil)
+			return c.Patch(op.Ctx, "/users/"+u, map[string]any{"showInAddressList": false}, nil)
 		})
 	}
 	if req.CalendarTo != "" {
 		r.do("Share calendar (read)", req.Upn+" → "+req.CalendarTo, func() error {
-			return c.Post(p.s.Ctx(), "/users/"+u+"/calendar/calendarPermissions", map[string]any{
+			return c.Post(op.Ctx, "/users/"+u+"/calendar/calendarPermissions", map[string]any{
 				"emailAddress": map[string]any{"address": req.CalendarTo},
 				"role":         "read",
 			}, nil)
@@ -287,8 +288,6 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 	}
 	if req.BackupToUser != "" {
 		drive := NewDriveService(p.s)
-		p.drive.Store(drive) // let Cancel() reach the copy in flight
-		defer p.drive.Store(nil)
 		// Scan first so the operator sees the transfer volume up front, and so
 		// the copy can report overall percent progress against a known total.
 		var prev *CopyPreview
@@ -305,7 +304,9 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			if folder == "" {
 				folder = req.Upn
 			}
-			res, e := drive.copyBetweenUsers(req.Upn, req.BackupToUser, folder, false, prev)
+			// The copy is a child operation: cancelling the playbook cancels it
+			// through context parentage.
+			res, e := drive.copyBetweenUsersCtx(op.Ctx, req.Upn, req.BackupToUser, folder, false, prev)
 			if e != nil {
 				return "", e
 			}
@@ -332,9 +333,9 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 		var idResp struct {
 			ID string `json:"id"`
 		}
-		if err := c.Get(p.s.Ctx(), "/users/"+u, url.Values{"$select": {"id"}}, &idResp); err != nil {
+		if err := c.Get(op.Ctx, "/users/"+u, url.Values{"$select": {"id"}}, &idResp); err != nil {
 			r.do("Remove from groups", req.Upn, func() error { return err })
-		} else if items, err := c.ListAll(p.s.Ctx(), "/users/"+u+"/memberOf", url.Values{"$select": {"id,displayName"}}, 0); err != nil {
+		} else if items, err := c.ListAll(op.Ctx, "/users/"+u+"/memberOf", url.Values{"$select": {"id,displayName"}}, 0); err != nil {
 			r.do("Remove from groups", req.Upn, func() error { return err })
 		} else {
 			for _, raw := range items {
@@ -352,7 +353,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 					name = gid
 				}
 				r.do("Remove from group", name, func() error {
-					return c.Delete(p.s.Ctx(), "/groups/"+url.PathEscape(gid)+"/members/"+url.PathEscape(idResp.ID)+"/$ref")
+					return c.Delete(op.Ctx, "/groups/"+url.PathEscape(gid)+"/members/"+url.PathEscape(idResp.ID)+"/$ref")
 				})
 			}
 		}
@@ -364,7 +365,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 					SkuID string `json:"skuId"`
 				} `json:"value"`
 			}
-			if e := c.Get(p.s.Ctx(), "/users/"+u+"/licenseDetails", nil, &lic); e != nil {
+			if e := c.Get(op.Ctx, "/users/"+u+"/licenseDetails", nil, &lic); e != nil {
 				return e
 			}
 			remove := make([]string, 0, len(lic.Value))
@@ -374,13 +375,13 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			if len(remove) == 0 {
 				return nil
 			}
-			return c.Post(p.s.Ctx(), "/users/"+u+"/assignLicense",
+			return c.Post(op.Ctx, "/users/"+u+"/assignLicense",
 				map[string]any{"addLicenses": []any{}, "removeLicenses": remove}, nil)
 		})
 	}
 	if req.Delete {
 		r.do("Delete user", req.Upn, func() error {
-			return c.Delete(p.s.Ctx(), "/users/"+u)
+			return c.Delete(op.Ctx, "/users/"+u)
 		})
 	}
 
