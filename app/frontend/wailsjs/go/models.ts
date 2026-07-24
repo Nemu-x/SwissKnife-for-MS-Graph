@@ -399,8 +399,11 @@ export namespace services {
 	}
 	export class Step {
 	    name: string;
+	    nameKey?: string;
 	    ok: boolean;
 	    detail?: string;
+	    detailKey?: string;
+	    params?: Record<string, any>;
 	    error?: string;
 	    errorCode?: string;
 	    hint?: string;
@@ -412,8 +415,11 @@ export namespace services {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
+	        this.nameKey = source["nameKey"];
 	        this.ok = source["ok"];
 	        this.detail = source["detail"];
+	        this.detailKey = source["detailKey"];
+	        this.params = source["params"];
 	        this.error = source["error"];
 	        this.errorCode = source["errorCode"];
 	        this.hint = source["hint"];

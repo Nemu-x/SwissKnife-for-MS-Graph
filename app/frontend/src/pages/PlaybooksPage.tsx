@@ -10,6 +10,7 @@ import { useConfirm } from '../lib/useConfirm'
 import { useStore, type PlaybookLiveStep } from '../lib/store'
 import { api, errMessage, type GraphObject } from '../lib/api'
 import { skuFriendly } from '../lib/skuNames'
+import { humanBytes } from '../lib/format'
 import type { services } from '../../wailsjs/go/models'
 
 export function PlaybooksPage() {
@@ -24,6 +25,20 @@ export function PlaybooksPage() {
   const busy = !!job?.running
   const result = (job?.result as services.PlaybookResult | null) ?? null
   const steps: PlaybookLiveStep[] = result?.steps ?? job?.steps ?? []
+
+  // Backend emits stable keys + params; the English text in name/detail is the
+  // fallback for keys this build doesn't know yet.
+  const stepName = (s: PlaybookLiveStep) => (s.nameKey ? t(s.nameKey, { defaultValue: s.name }) : s.name)
+  const stepDetail = (s: PlaybookLiveStep) => {
+    if (!s.detailKey) return s.detail
+    const p = s.params || {}
+    let out = t(s.detailKey, { ...p, size: humanBytes(p.bytes || 0), defaultValue: s.detail || '' })
+    if (s.detailKey === 'stepDetails.backup') {
+      if (p.skipped > 0) out += t('stepDetails.skippedSuffix', { n: p.skipped })
+      if (p.canceled) out += t('stepDetails.canceledSuffix')
+    }
+    return out
+  }
 
   const [on, setOn] = useState({ displayName: '', upn: '', mailNickname: '', password: '', usageLocation: '' })
   const [skuIds, setSkuIds] = useState<string[]>([])
@@ -174,7 +189,7 @@ export function PlaybooksPage() {
                     ? <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-[var(--ok)]" />
                     : <XCircle size={16} className="mt-0.5 shrink-0 text-[var(--danger)]" />}
                 <div className="min-w-0">
-                  <div className="font-medium text-[var(--text)]">{s.name}{s.detail ? <span className="ml-2 text-xs text-[var(--text-faint)]">{s.detail}</span> : null}</div>
+                  <div className="font-medium text-[var(--text)]">{stepName(s)}{stepDetail(s) ? <span className="ml-2 text-xs text-[var(--text-faint)]">{stepDetail(s)}</span> : null}</div>
                   {/* Live percentage for the step in flight (e.g. the OneDrive backup). */}
                   {s.running && job?.progress && <div className="text-xs text-[var(--accent2)]">{job.progress}</div>}
                   {s.error && <div className="text-xs text-[var(--danger)]">{s.errorCode ? `${s.errorCode}: ` : ''}{s.error}</div>}

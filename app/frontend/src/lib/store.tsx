@@ -23,14 +23,25 @@ export type JobState = {
   opId?: string // backend operation id (stamped by the op:start event)
 }
 // One playbook step as streamed from the backend ("playbook:step" events).
+// name/detail are English fallbacks; nameKey/detailKey(+params) translate.
 export type PlaybookLiveStep = {
   name: string
+  nameKey?: string
   detail?: string
+  detailKey?: string
+  params?: Record<string, any>
   running?: boolean
   ok?: boolean
   error?: string
   errorCode?: string
   hint?: string // missing Graph permission (403), when the backend derived one
+}
+
+// Backend-emitted skip/failure reasons → i18n keys (translated at display).
+const REASON_KEYS: Record<string, string> = {
+  'exists in target': 'reasons.existsInTarget',
+  'canceled': 'reasons.canceled',
+  'cancel requested — the in-flight cloud copy may still finish': 'reasons.cancelRequested',
 }
 export type TransferParams = { source: string; target: string; dest: string; overwrite: boolean; usePool: boolean; pool: string }
 export type CleanupParams = { mode: 'duplicates' | 'versions'; ownerType: 'user' | 'site'; ownerId: string }
@@ -199,7 +210,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const offF = EventsOn('transfer:file', (d: any) => {
       const icon = d.status === 'copied' ? '✓' : d.status === 'skipped' ? '↷' : '✗'
       const key = keyOf(d, 'transfer')
-      jobLog(key, `${icon} ${d.name}${d.reason ? ' — ' + d.reason : ''}`)
+      // Fixed backend reasons render in the UI language; free-form ones as-is.
+      const reason = d.reason ? i18n.t(REASON_KEYS[d.reason] ?? '', { defaultValue: d.reason }) : ''
+      jobLog(key, `${icon} ${d.name}${reason ? ' — ' + reason : ''}`)
       patchJob(key, { progress: `${d.copied} copied…` })
     })
     const offC = EventsOn('cleanup:progress', (d: any) => {
@@ -230,11 +243,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const cur = all[key] ?? emptyJob()
         const steps = [...(cur.steps || [])]
         if (d.status === 'running') {
-          steps.push({ name: d.name, detail: d.detail, running: true })
+          steps.push({ name: d.name, nameKey: d.nameKey, detail: d.detail, running: true })
         } else {
           let i = steps.length - 1
           while (i >= 0 && !steps[i].running) i--
-          const done = { name: d.name, detail: d.detail, ok: !!d.ok, error: d.error, errorCode: d.errorCode, hint: d.hint }
+          const done = {
+            name: d.name, nameKey: d.nameKey, detail: d.detail, detailKey: d.detailKey, params: d.params,
+            ok: !!d.ok, error: d.error, errorCode: d.errorCode, hint: d.hint,
+          }
           if (i >= 0) steps[i] = done
           else steps.push(done)
         }
