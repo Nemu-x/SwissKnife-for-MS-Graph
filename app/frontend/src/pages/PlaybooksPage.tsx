@@ -177,7 +177,8 @@ export function PlaybooksPage() {
                   <div className="font-medium text-[var(--text)]">{s.name}{s.detail ? <span className="ml-2 text-xs text-[var(--text-faint)]">{s.detail}</span> : null}</div>
                   {/* Live percentage for the step in flight (e.g. the OneDrive backup). */}
                   {s.running && job?.progress && <div className="text-xs text-[var(--accent2)]">{job.progress}</div>}
-                  {s.error && <div className="text-xs text-[var(--danger)]">{s.error}</div>}
+                  {s.error && <div className="text-xs text-[var(--danger)]">{s.errorCode ? `${s.errorCode}: ` : ''}{s.error}</div>}
+                  {s.hint && <div className="text-xs text-[var(--warn)]">{t('playbooks.permissionHint', { p: s.hint })}</div>}
                 </div>
               </div>
             ))}

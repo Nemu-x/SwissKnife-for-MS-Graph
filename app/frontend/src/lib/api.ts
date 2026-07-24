@@ -26,6 +26,7 @@ import * as ServiceHealth from '../../wailsjs/go/services/ServiceHealthService'
 import * as Security from '../../wailsjs/go/services/SecurityService'
 import * as Update from '../../wailsjs/go/services/UpdateService'
 import type { secrets, services } from '../../wailsjs/go/models'
+import { parseErr, type ParsedError } from './graphError'
 
 export type GraphObject = Record<string, any>
 export type Profile = secrets.Profile
@@ -221,15 +222,25 @@ export const api = {
   },
 }
 
-export function errMessage(e: unknown): string {
+export function errParsed(e: unknown): ParsedError {
   let msg = ''
   if (e == null) msg = ''
   else if (typeof e === 'string') msg = e
   else if (e instanceof Error) msg = e.message
   else msg = String(e)
-  // Enrich the common "missing permission" case so it isn't a cryptic 403.
-  if (/\b403\b/.test(msg)) {
+  return parseErr(msg)
+}
+
+export function errMessage(e: unknown): string {
+  const p = errParsed(e)
+  let msg = p.message
+  if (p.code && p.status) msg = `${p.status} ${p.code}: ${msg}`
+  if (p.hint) {
+    msg += ` — grant the ${p.hint} application permission in Entra and give admin consent.`
+  } else if (p.status === 403) {
+    // Missing-permission 403 without a known mapping: still point the way.
     msg += ' — the app registration is likely missing a Graph permission for this call. Add the required Application permission and grant admin consent.'
   }
+  if (p.requestId) msg += ` (requestId=${p.requestId})`
   return msg
 }
