@@ -264,6 +264,7 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 
 	p.s.Record("playbook.onboard", req.Upn, "steps="+itoa(len(r.steps)), nil)
 	p.recordSummary("summary.onboard", req.Upn, r)
+	go notifyPlaybookSummary(p.s, "onboard", req.Upn, r.steps, r.canceled)
 	return r.result(), nil
 }
 
@@ -468,6 +469,8 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 
 	p.s.Record("playbook.offboard", req.Upn, "steps="+itoa(len(r.steps)), nil)
 	p.recordSummary("summary.offboard", req.Upn, r)
+	// Best-effort Teams card; a goroutine so the UI gets the result instantly.
+	go notifyPlaybookSummary(p.s, "offboard", req.Upn, r.steps, r.canceled)
 	return r.result(), nil
 }
 

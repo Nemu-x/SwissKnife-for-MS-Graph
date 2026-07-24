@@ -445,6 +445,20 @@ export namespace services {
 	    }
 	}
 	
+	export class NotifyConfig {
+	    webhookUrl: string;
+	    notifyPlaybooks: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new NotifyConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.webhookUrl = source["webhookUrl"];
+	        this.notifyPlaybooks = source["notifyPlaybooks"];
+	    }
+	}
 	export class OffboardRequest {
 	    upn: string;
 	    confirm: string;
