@@ -1,12 +1,12 @@
-# Fast checks on pushes and PRs to main: Go vet + lint + tests, frontend
+# Fast checks on pushes and PRs to main/dev: Go vet + lint + tests, frontend
 # typecheck + unit tests + build + GUI smoke (Playwright over stubbed bindings).
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: read
