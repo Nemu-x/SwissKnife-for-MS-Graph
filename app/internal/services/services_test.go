@@ -26,6 +26,89 @@ func harness(t *testing.T, handler http.HandlerFunc) *session.Session {
 	return sess
 }
 
+// TestServerSideCopyCopiesTopLevelItems: the copy must run via Graph's async
+// /copy operation (bytes never transit the operator machine) — no /content
+// download or upload endpoints may be touched.
+func TestServerSideCopyCopiesTopLevelItems(t *testing.T) {
+	var calls []string
+	var srvURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/users/arch@contoso.com/drive":
+			w.Write([]byte(`{"id":"d2"}`))
+		case r.Method == "POST" && r.URL.Path == "/users/arch@contoso.com/drive/root/children":
+			w.Write([]byte(`{"id":"newf"}`))
+		case r.Method == "GET" && r.URL.Path == "/users/arch@contoso.com/drive/root:/backup":
+			w.Write([]byte(`{"id":"fld1"}`))
+		case r.Method == "GET" && r.URL.Path == "/users/alice@contoso.com/drive/root/children":
+			w.Write([]byte(`{"value":[
+				{"id":"i1","name":"Docs","size":100,"folder":{}},
+				{"id":"i2","name":"a.txt","size":50}]}`))
+		case r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/users/alice@contoso.com/drive/items/"):
+			if got := r.URL.Query().Get("@microsoft.graph.conflictBehavior"); got != "fail" {
+				t.Errorf("conflictBehavior: want fail, got %q", got)
+			}
+			w.Header().Set("Location", srvURL+"/monitor")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == "GET" && r.URL.Path == "/monitor":
+			w.Write([]byte(`{"status":"completed","percentageComplete":100}`))
+		default:
+			w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	srvURL = srv.URL
+
+	sess := session.New(auditlog.New(t.TempDir()))
+	sess.SetClient(graphapi.New(graphapi.StaticToken("t"), graphapi.WithBaseURL(srv.URL)), "test")
+	drive := NewDriveService(sess)
+
+	res, err := drive.CopyBetweenUsers("alice@contoso.com", "arch@contoso.com", "backup", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Copied) != 2 || res.Copied[0] != "Docs/" || res.Copied[1] != "a.txt" {
+		t.Fatalf("copied: %v", res.Copied)
+	}
+	if len(res.Failed) != 0 || res.Canceled {
+		t.Fatalf("unexpected failures/cancel: %+v", res)
+	}
+	for _, c := range calls {
+		if strings.Contains(c, "/content") {
+			t.Fatalf("bytes must not transit locally, saw %q in %v", c, calls)
+		}
+	}
+}
+
+func TestOffboardCancelSkipsRemainingSteps(t *testing.T) {
+	var calls []string
+	var pb *PlaybookService
+	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		// Operator hits Cancel while the very first step is executing.
+		if len(calls) == 1 {
+			pb.Cancel()
+		}
+		w.Write([]byte(`{}`))
+	})
+	pb = NewPlaybookService(sess)
+
+	res, err := pb.Offboard(fullOffboardRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Canceled {
+		t.Fatal("result must be marked canceled")
+	}
+	if len(res.Steps) != 1 {
+		t.Fatalf("only the in-flight step should be reported, got %+v", res.Steps)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("no further Graph calls after cancel, got %v", calls)
+	}
+}
+
 func TestUsersListBuildsFilter(t *testing.T) {
 	var gotQuery string
 	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {

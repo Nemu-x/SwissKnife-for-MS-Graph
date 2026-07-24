@@ -17,7 +17,7 @@ import { api, errMessage, type GraphObject } from '../lib/api'
 
 export function UsersPage() {
   const { t } = useTranslation()
-  const { readOnly, toast } = useStore()
+  const { readOnly, toast, cache, setCache } = useStore()
   const { askConfirm, confirmElement } = useConfirm()
   const res = useAsync<GraphObject[] | GraphObject>()
 
@@ -30,8 +30,13 @@ export function UsersPage() {
   const [loc, setLoc] = useState('')
   const [restoreId, setRestoreId] = useState('')
   const [patch, setPatch] = useState('{\n  "jobTitle": "",\n  "department": ""\n}')
-  const [tap, setTap] = useState<GraphObject | null>(null)
-  const [tapQr, setTapQr] = useState('')
+  // TAP is a one-time secret shown once — back it with the store cache so
+  // navigating away does not destroy it before the operator copies it.
+  const [tap, setTapLocal] = useState<GraphObject | null>(() => cache['users.tap'] ?? null)
+  const setTap = (v: GraphObject | null) => { setTapLocal(v); setCache('users.tap', v) }
+  const [tapQr, setTapQrLocal] = useState<string>(() => cache['users.tapQr'] ?? '')
+  const setTapQr = (v: string) => { setTapQrLocal(v); setCache('users.tapQr', v) }
+  const closeTap = () => { setTap(null); setTapQr('') }
   const [tapLifetime, setTapLifetime] = useState(60)
   const [tapOnce, setTapOnce] = useState(true)
   const [invite, setInvite] = useState({ email: '', name: '', sendMail: true })
@@ -181,7 +186,7 @@ export function UsersPage() {
     <>
       {confirmElement}
       {tap && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setTap(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={closeTap}>
           <div className="w-[380px] rounded-2xl border border-[var(--border)] bg-[var(--bg-elev)] p-5" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 text-sm font-medium">{t('users.tapTitle')}</div>
             <div className="rounded-lg bg-[var(--bg)] p-3 text-center font-mono text-xl tracking-wider">{String(tap.temporaryAccessPass || '')}</div>
@@ -192,7 +197,7 @@ export function UsersPage() {
                 onClick={() => { navigator.clipboard.writeText(String(tap.temporaryAccessPass || '')); toast('ok', t('users.tapCopied')) }}>
                 <Copy size={15} /> {t('users.tapCopy')}
               </Button>
-              <Button className="flex-1" onClick={() => setTap(null)}>{t('users.tapClose')}</Button>
+              <Button className="flex-1" onClick={closeTap}>{t('users.tapClose')}</Button>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Moon, Sun, Lock, RefreshCw, Download } from 'lucide-react'
+import { Moon, Sun, Lock, RefreshCw, Download, Heart, Copy } from 'lucide-react'
 import { Page } from '../components/Layout'
 import { Card, Select, Button, Badge, Spinner } from '../components/ui'
 import { useStore } from '../lib/store'
@@ -9,6 +9,14 @@ import { setLanguage } from '../i18n'
 import { api, errMessage } from '../lib/api'
 import { Version } from '../../wailsjs/go/main/App'
 import type { services } from '../../wailsjs/go/models'
+
+// Crypto donation wallets shown in the Support card (copy-to-clipboard).
+const SUPPORT_WALLETS: { asset: string; address: string }[] = [
+  { asset: 'USDT (TRC20)', address: 'TPACN1kJRm2FnFF1cSqYtBnJwAmZ3qGMni' },
+  { asset: 'USDT (Polygon)', address: '0xD9333e859Fb74D885d22E27568589de61E4433b5' },
+  { asset: 'BTC', address: 'bc1qkkcgpqym967k2x73al6f7fpvkx52q4rzkut3we' },
+  { asset: 'ETH', address: '0xD9333e859Fb74D885d22E27568589de61E4433b5' },
+]
 
 export function SettingsPage() {
   const { t, i18n } = useTranslation()
@@ -114,6 +122,26 @@ export function SettingsPage() {
               {checkingAccess ? <Spinner /> : <RefreshCw size={15} />} {t('settings.checkAccess')}
             </Button>
           )}
+        </Card>
+
+        <Card title={t('settings.support')}>
+          <p className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+            <Heart size={15} className="shrink-0 text-[var(--danger)]" /> {t('settings.supportHint')}
+          </p>
+          <div className="mt-3 flex flex-col gap-1.5">
+            {SUPPORT_WALLETS.map((w) => (
+              <div key={w.asset} className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5">
+                <span className="w-32 shrink-0 text-xs font-medium text-[var(--text-dim)]">{w.asset}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--text)]" title={w.address}>{w.address}</span>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(w.address); toast('ok', t('settings.supportCopied', { a: w.asset })) }}
+                  className="shrink-0 rounded-md p-1 text-[var(--text-faint)] hover:bg-[var(--bg-elev-2)] hover:text-[var(--text)]"
+                  title={t('common.copy')}>
+                  <Copy size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
         </Card>
 
         <Card title={t('settings.about')}>

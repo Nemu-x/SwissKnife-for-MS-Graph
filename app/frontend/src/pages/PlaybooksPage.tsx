@@ -1,24 +1,29 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { UserPlus, UserMinus, Play, CheckCircle2, XCircle } from 'lucide-react'
+import { UserPlus, UserMinus, Play, CheckCircle2, XCircle, Loader2, X } from 'lucide-react'
 import { Page } from '../components/Layout'
-import { Card, Button, Field, Input, Spinner } from '../components/ui'
+import { Card, Button, Field, Input, Spinner, ErrorNote, Badge } from '../components/ui'
 import { MultiSelect, type Option } from '../components/MultiSelect'
 import { EntityPicker } from '../components/EntityPicker'
 import { UpnInput } from '../components/UpnInput'
 import { useConfirm } from '../lib/useConfirm'
-import { useStore } from '../lib/store'
+import { useStore, type PlaybookLiveStep } from '../lib/store'
 import { api, errMessage, type GraphObject } from '../lib/api'
 import { skuFriendly } from '../lib/skuNames'
 import type { services } from '../../wailsjs/go/models'
 
 export function PlaybooksPage() {
   const { t } = useTranslation()
-  const { readOnly, connected, toast } = useStore()
+  const { readOnly, connected, toast, jobs, startPlaybook, cancelPlaybook, clearJob } = useStore()
   const { askConfirm, confirmElement } = useConfirm()
   const [tab, setTab] = useState<'onboard' | 'offboard'>('onboard')
-  const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<services.PlaybookResult | null>(null)
+
+  // The run lives in the store, so steps and the final report survive
+  // navigating away and back while a playbook is executing.
+  const job = jobs.playbook
+  const busy = !!job?.running
+  const result = (job?.result as services.PlaybookResult | null) ?? null
+  const steps: PlaybookLiveStep[] = result?.steps ?? job?.steps ?? []
 
   const [on, setOn] = useState({ displayName: '', upn: '', mailNickname: '', password: '', usageLocation: '' })
   const [skuIds, setSkuIds] = useState<string[]>([])
@@ -63,24 +68,16 @@ export function PlaybooksPage() {
       .finally(() => setChLoading(false))
   }, [chTeam])
 
-  const runOnboard = async () => {
-    setBusy(true); setResult(null)
-    try {
-      const channelRefs = chSelected.map((cid) => ({ teamId: chTeam, channelId: cid }))
-      setResult(await api.playbooks.onboard({
-        displayName: on.displayName, upn: on.upn, mailNickname: on.mailNickname, password: on.password,
-        usageLocation: on.usageLocation, skuIds, groupIds, teamIds, channelRefs,
-      }))
-      toast('ok', t('playbooks.onboard'))
-    } catch (e) { toast('err', errMessage(e)) } finally { setBusy(false) }
+  const runOnboard = () => {
+    const channelRefs = chSelected.map((cid) => ({ teamId: chTeam, channelId: cid }))
+    startPlaybook('onboard', on.upn, () => api.playbooks.onboard({
+      displayName: on.displayName, upn: on.upn, mailNickname: on.mailNickname, password: on.password,
+      usageLocation: on.usageLocation, skuIds, groupIds, teamIds, channelRefs,
+    }))
   }
 
-  const runOffboard = (confirm: string) => async () => {
-    setBusy(true); setResult(null)
-    try {
-      setResult(await api.playbooks.offboard({ ...off, confirm }))
-      toast('ok', t('playbooks.offboard'))
-    } catch (e) { toast('err', errMessage(e)) } finally { setBusy(false) }
+  const runOffboard = (confirm: string) => () => {
+    startPlaybook('offboard', off.upn, () => api.playbooks.offboard({ ...off, confirm }))
   }
 
   return (
@@ -88,7 +85,7 @@ export function PlaybooksPage() {
       {confirmElement}
       <div className="mb-4 inline-flex rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] p-1">
         {(['onboard', 'offboard'] as const).map((x) => (
-          <button key={x} onClick={() => { setTab(x); setResult(null) }}
+          <button key={x} onClick={() => { setTab(x); if (!busy) clearJob('playbook') }}
             className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium ${tab === x ? 'bg-[var(--accent)] text-[var(--accent-fg)]' : 'text-[var(--text-dim)]'}`}>
             {x === 'onboard' ? <UserPlus size={15} /> : <UserMinus size={15} />}
             {t(`playbooks.${x}`)}
@@ -124,10 +121,20 @@ export function PlaybooksPage() {
             <div className="flex flex-col gap-2">
               <Field label={t('playbooks.upn')}><UpnInput value={off.upn} onChange={(v) => setOff({ ...off, upn: v })} /></Field>
               {([['block', 'block'], ['revokeSessions', 'revoke'], ['oof', 'oof'], ['hideFromGal', 'hideFromGal'], ['removeFromGroups', 'removeFromGroups'], ['removeAllLicenses', 'removeLicenses'], ['delete', 'deleteUser']] as const).map(([k, label]) => (
-                <label key={k} className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
-                  <input type="checkbox" checked={(off as any)[k]} onChange={(e) => setOff({ ...off, [k]: e.target.checked })} />
-                  {t(`playbooks.${label}`)}
-                </label>
+                <div key={k}>
+                  <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+                    <input type="checkbox" checked={(off as any)[k]} onChange={(e) => setOff({ ...off, [k]: e.target.checked })} />
+                    {t(`playbooks.${label}`)}
+                  </label>
+                  {/* Mailbox-safety warnings: license removal and account deletion
+                      destroy mail unless the mailbox was converted to shared first. */}
+                  {k === 'removeAllLicenses' && off.removeAllLicenses && (
+                    <p className="ml-6 mt-0.5 text-xs text-[var(--warn)]">{t('playbooks.removeLicensesWarn')}</p>
+                  )}
+                  {k === 'delete' && off.delete && (
+                    <p className="ml-6 mt-0.5 text-xs text-[var(--danger)]">{t('playbooks.deleteUserWarn')}</p>
+                  )}
+                </div>
               ))}
               {off.oof && (
                 <Input placeholder={t('playbooks.oofMessage')} value={off.oofMessage} onChange={(e) => setOff({ ...off, oofMessage: e.target.value })} />
@@ -144,13 +151,32 @@ export function PlaybooksPage() {
         )}
 
         <Card title={t('playbooks.steps')}>
-          {!result && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
+          {busy && (
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <p className="flex items-center gap-2 text-sm text-[var(--accent2)]">
+                <Loader2 size={14} className="shrink-0 animate-spin" /> {t('playbooks.runningNote')}
+              </p>
+              <button onClick={cancelPlaybook} disabled={job?.canceled}
+                className="flex shrink-0 items-center gap-1 rounded-md border border-[var(--danger)]/40 px-2 py-0.5 text-xs text-[var(--danger)] hover:bg-[var(--danger)]/10 disabled:opacity-50">
+                <X size={12} /> {job?.canceled ? t('common.canceling') : t('common.cancel')}
+              </button>
+            </div>
+          )}
+          {job?.error && <ErrorNote>{job.error}</ErrorNote>}
+          {result?.canceled && <div className="mb-2"><Badge kind="warn">{t('common.canceled')}</Badge></div>}
+          {steps.length === 0 && !busy && !job?.error && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
           <div className="flex flex-col gap-2">
-            {result?.steps?.map((s, i) => (
+            {steps.map((s, i) => (
               <div key={i} className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm">
-                {s.ok ? <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-[var(--ok)]" /> : <XCircle size={16} className="mt-0.5 shrink-0 text-[var(--danger)]" />}
+                {s.running
+                  ? <Loader2 size={16} className="mt-0.5 shrink-0 animate-spin text-[var(--accent2)]" />
+                  : s.ok
+                    ? <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-[var(--ok)]" />
+                    : <XCircle size={16} className="mt-0.5 shrink-0 text-[var(--danger)]" />}
                 <div className="min-w-0">
                   <div className="font-medium text-[var(--text)]">{s.name}{s.detail ? <span className="ml-2 text-xs text-[var(--text-faint)]">{s.detail}</span> : null}</div>
+                  {/* Live percentage for the step in flight (e.g. the OneDrive backup). */}
+                  {s.running && job?.progress && <div className="text-xs text-[var(--accent2)]">{job.progress}</div>}
                   {s.error && <div className="text-xs text-[var(--danger)]">{s.error}</div>}
                 </div>
               </div>

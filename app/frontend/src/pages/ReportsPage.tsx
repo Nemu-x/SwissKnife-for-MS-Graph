@@ -63,12 +63,15 @@ function buildChart(rows: string[][]): Chart | null {
 
 export function ReportsPage() {
   const { t } = useTranslation()
-  const { toast } = useStore()
-  const [report, setReport] = useState(REPORTS[1][0])
-  const [period, setPeriod] = useState('D30')
+  const { toast, cache, setCache } = useStore()
+  // Cache-backed: restore the last fetched CSV (and the params it was fetched
+  // with) so returning to the page shows the table/chart without a re-fetch.
+  const [report, setReport] = useState<string>(() => cache['reports.params']?.report ?? REPORTS[1][0])
+  const [period, setPeriod] = useState<string>(() => cache['reports.params']?.period ?? 'D30')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [csv, setCsv] = useState('')
+  const [csv, setCsvLocal] = useState<string>(() => cache['reports.csv'] ?? '')
+  const setCsv = (v: string) => { setCsvLocal(v); setCache('reports.csv', v) }
 
   const table = useMemo(() => (csv ? parseCSV(csv) : []), [csv])
   const chart = useMemo(() => (table.length ? buildChart(table) : null), [table])
@@ -80,6 +83,7 @@ export function ReportsPage() {
     try {
       const data = await api.reports.csv(report, period)
       setCsv(data)
+      setCache('reports.params', { report, period })
       toast('ok', t('reports.fetched'))
     } catch (e) { setError(errMessage(e)) } finally { setBusy(false) }
   }

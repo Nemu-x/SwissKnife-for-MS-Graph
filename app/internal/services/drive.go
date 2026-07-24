@@ -3,6 +3,8 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,9 +13,11 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/session"
 )
 
@@ -160,7 +164,7 @@ func (d *DriveService) Search(ownerType, ownerID, query string) ([]json.RawMessa
 }
 
 func (d *DriveService) emitProgress(name string, done, total int64) {
-	wrt.EventsEmit(d.s.Ctx(), "transfer:progress", map[string]any{
+	emitEvent(d.s.Ctx(), "transfer:progress", map[string]any{
 		"name": name, "done": done, "total": total,
 	})
 }
@@ -168,8 +172,17 @@ func (d *DriveService) emitProgress(name string, done, total int64) {
 // emitFile reports one item's outcome plus running counters so the UI can keep
 // a live log even when the operator leaves and returns to the page.
 func (d *DriveService) emitFile(name, status, reason string, copied int) {
-	wrt.EventsEmit(d.s.Ctx(), "transfer:file", map[string]any{
+	emitEvent(d.s.Ctx(), "transfer:file", map[string]any{
 		"name": name, "status": status, "reason": reason, "copied": copied,
+	})
+}
+
+// emitOverall reports whole-transfer progress (bytes processed vs. the scanned
+// total), letting the UI render an overall percentage. totalBytes may be 0 when
+// no preview was available; the UI then falls back to file counters.
+func (d *DriveService) emitOverall(doneBytes, totalBytes int64, doneFiles, totalFiles int) {
+	emitEvent(d.s.Ctx(), "transfer:overall", map[string]any{
+		"doneBytes": doneBytes, "totalBytes": totalBytes, "files": doneFiles, "totalFiles": totalFiles,
 	})
 }
 
@@ -371,6 +384,15 @@ func (d *DriveService) OffboardingPreview(sourceUser string) (*CopyPreview, erro
 // directory (no hardcoded /tmp — fixes the legacy bug). destFolder is an optional
 // subfolder in the target drive (e.g. "Backups/alice"); "" copies into the root.
 func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder string, overwrite bool) (*CopyResult, error) {
+	return d.copyBetweenUsers(sourceUser, targetUser, destFolder, overwrite, nil)
+}
+
+// copyBetweenUsers is CopyBetweenUsers with an optional pre-computed preview.
+// It first attempts a cloud-side copy (Graph copies items inside the service —
+// bytes never transit the operator's machine, folders copy recursively in one
+// operation). If that cannot even start, it falls back to the legacy
+// download/upload path through the local temp directory.
+func (d *DriveService) copyBetweenUsers(sourceUser, targetUser, destFolder string, overwrite bool, prev *CopyPreview) (*CopyResult, error) {
 	if err := d.s.GuardWrite(); err != nil {
 		return nil, err
 	}
@@ -379,6 +401,22 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 	if err != nil {
 		return nil, err
 	}
+	if res, sErr := d.copyServerSide(c, sourceUser, targetUser, destFolder, overwrite); sErr == nil {
+		return res, nil
+	} else {
+		d.emitFile("(server-side copy unavailable — using local copy)", "skipped", sErr.Error(), 0)
+	}
+	if prev == nil {
+		prev, _ = d.OffboardingPreview(sourceUser) // progress totals only; copy proceeds without them
+	}
+	var totalBytes int64
+	var totalFiles int
+	if prev != nil {
+		totalBytes, totalFiles = prev.TotalBytes, prev.Files
+	}
+	var doneBytes int64
+	doneFiles := 0
+	d.emitOverall(0, totalBytes, 0, totalFiles)
 	tmp, err := os.MkdirTemp("", "swissknife-copy-*")
 	if err != nil {
 		return nil, err
@@ -414,6 +452,7 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 			var it struct {
 				ID     string          `json:"id"`
 				Name   string          `json:"name"`
+				Size   int64           `json:"size"`
 				Folder json.RawMessage `json:"folder"`
 			}
 			if json.Unmarshal(raw, &it) != nil || it.Name == "" {
@@ -430,9 +469,17 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 				}
 				continue
 			}
+			// Every processed file (copied, skipped or failed) advances the
+			// overall byte counter, so the percentage always reaches 100.
+			account := func() {
+				doneBytes += it.Size
+				doneFiles++
+				d.emitOverall(doneBytes, totalBytes, doneFiles, totalFiles)
+			}
 			if rel == "" && tgtNames[it.Name] {
 				res.Skipped[relPath] = "exists in target"
 				d.emitFile(relPath, "skipped", "exists in target", len(res.Copied))
+				account()
 				continue
 			}
 			local := filepath.Join(tmp, filepath.FromSlash(relPath))
@@ -440,6 +487,7 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 			if err := c.DownloadItem(d.s.Ctx(), src, local, nil); err != nil {
 				res.Failed[relPath] = err.Error()
 				d.emitFile(relPath, "failed", err.Error(), len(res.Copied))
+				account()
 				continue
 			}
 			remotePath := relPath
@@ -452,10 +500,12 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 			}); err != nil {
 				res.Failed[relPath] = err.Error()
 				d.emitFile(relPath, "failed", err.Error(), len(res.Copied))
+				account()
 				continue
 			}
 			res.Copied = append(res.Copied, relPath)
 			d.emitFile(relPath, "copied", "", len(res.Copied))
+			account()
 			os.Remove(local)
 		}
 	}
@@ -482,6 +532,212 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 	d.s.Record("drive.copyBetweenUsers", sourceUser+" -> "+targetUser,
 		"dest="+dest+" copied="+itoa(len(res.Copied))+" skipped="+itoa(len(res.Skipped))+" failed="+itoa(len(res.Failed)), nil)
 	return res, nil
+}
+
+// errCopyCanceled aborts the server-side polling loop on operator cancel.
+var errCopyCanceled = errors.New("canceled")
+
+// copyServerSide copies the source drive's top-level items into the target via
+// Graph's async driveItem copy — the copy runs entirely inside the cloud.
+// An error return means nothing was copied yet and the caller may fall back;
+// per-item failures after that are recorded in the result instead.
+func (d *DriveService) copyServerSide(c *graphapi.Client, sourceUser, targetUser, destFolder string, overwrite bool) (*CopyResult, error) {
+	ctx := d.s.Ctx()
+	var drv struct {
+		ID string `json:"id"`
+	}
+	if err := c.Get(ctx, "/users/"+url.PathEscape(targetUser)+"/drive", url.Values{"$select": {"id"}}, &drv); err != nil {
+		return nil, err
+	}
+	parentID, err := d.ensureFolder(c, targetUser, destFolder)
+	if err != nil {
+		return nil, err
+	}
+	rootItems, err := d.ListRoot("user", sourceUser)
+	if err != nil {
+		return nil, err
+	}
+	type srcItem struct {
+		ID     string          `json:"id"`
+		Name   string          `json:"name"`
+		Size   int64           `json:"size"` // for folders Graph reports the total content size
+		Folder json.RawMessage `json:"folder"`
+	}
+	items := make([]srcItem, 0, len(rootItems))
+	var totalBytes int64
+	for _, raw := range rootItems {
+		var it srcItem
+		if json.Unmarshal(raw, &it) != nil || it.Name == "" {
+			continue
+		}
+		items = append(items, it)
+		totalBytes += it.Size
+	}
+
+	res := &CopyResult{Skipped: map[string]string{}, Failed: map[string]string{}}
+	behavior := "fail" // backup semantics: never touch what already exists
+	if overwrite {
+		behavior = "replace"
+	}
+	var doneBytes int64
+	d.emitOverall(0, totalBytes, 0, len(items))
+	for i, it := range items {
+		if d.cancel.Load() {
+			res.Canceled = true
+			break
+		}
+		name := it.Name
+		if it.Folder != nil {
+			name += "/"
+		}
+		loc, postErr := c.PostForLocation(ctx,
+			"/users/"+url.PathEscape(sourceUser)+"/drive/items/"+url.PathEscape(it.ID)+"/copy",
+			url.Values{"@microsoft.graph.conflictBehavior": {behavior}},
+			map[string]any{"parentReference": map[string]any{"driveId": drv.ID, "id": parentID}})
+		if postErr != nil {
+			var ge *graphapi.GraphError
+			if errors.As(postErr, &ge) && ge.Code == "nameAlreadyExists" {
+				res.Skipped[name] = "exists in target"
+				d.emitFile(name, "skipped", "exists in target", len(res.Copied))
+			} else if len(res.Copied) == 0 && len(res.Failed) == 0 {
+				return nil, postErr // nothing copied yet — safe to fall back to local copy
+			} else {
+				res.Failed[name] = postErr.Error()
+				d.emitFile(name, "failed", postErr.Error(), len(res.Copied))
+			}
+		} else if waitErr := d.waitForCopy(loc, name, it.Size, doneBytes, totalBytes, len(res.Copied), len(items)); waitErr != nil {
+			if errors.Is(waitErr, errCopyCanceled) {
+				res.Canceled = true
+				res.Skipped[name] = "cancel requested — the in-flight cloud copy may still finish"
+				d.emitFile(name, "skipped", "canceled", len(res.Copied))
+				break
+			}
+			res.Failed[name] = waitErr.Error()
+			d.emitFile(name, "failed", waitErr.Error(), len(res.Copied))
+		} else {
+			res.Copied = append(res.Copied, name)
+			d.emitFile(name, "copied", "", len(res.Copied))
+		}
+		doneBytes += it.Size
+		d.emitOverall(doneBytes, totalBytes, i+1, len(items))
+	}
+
+	d.s.Record("drive.copyServerSide", sourceUser+" -> "+targetUser,
+		"dest="+strings.Trim(destFolder, "/")+" copied="+itoa(len(res.Copied))+" skipped="+itoa(len(res.Skipped))+" failed="+itoa(len(res.Failed)), nil)
+	return res, nil
+}
+
+// ensureFolder creates destFolder (segment by segment) in the user's drive and
+// returns its item id; "" resolves to the drive root.
+func (d *DriveService) ensureFolder(c *graphapi.Client, user, destFolder string) (string, error) {
+	ctx := d.s.Ctx()
+	base := "/users/" + url.PathEscape(user) + "/drive"
+	folder := strings.Trim(destFolder, "/")
+	if folder == "" {
+		var root struct {
+			ID string `json:"id"`
+		}
+		if err := c.Get(ctx, base+"/root", url.Values{"$select": {"id"}}, &root); err != nil {
+			return "", err
+		}
+		return root.ID, nil
+	}
+	built := ""
+	for _, seg := range strings.Split(folder, "/") {
+		parent := base + "/root/children"
+		if built != "" {
+			parent = base + "/root:/" + escapeDrivePath(built) + ":/children"
+		}
+		// Best-effort create; an existing folder answers nameAlreadyExists.
+		_ = c.Post(ctx, parent, map[string]any{
+			"name": seg, "folder": map[string]any{}, "@microsoft.graph.conflictBehavior": "fail",
+		}, nil)
+		if built == "" {
+			built = seg
+		} else {
+			built += "/" + seg
+		}
+	}
+	var f struct {
+		ID string `json:"id"`
+	}
+	if err := c.Get(ctx, base+"/root:/"+escapeDrivePath(built), url.Values{"$select": {"id"}}, &f); err != nil {
+		return "", err
+	}
+	return f.ID, nil
+}
+
+// monitorClient polls pre-authenticated Graph monitor URLs: no Authorization
+// header, and redirects (303 on success) must not be followed.
+var monitorClient = &http.Client{
+	Timeout:       30 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+// waitForCopy polls a Graph async-operation monitor URL until the copy ends,
+// emitting fractional overall progress along the way. Transient poll errors are
+// tolerated; a stuck operation gives up after maxCopyWait.
+func (d *DriveService) waitForCopy(monitorURL, name string, size, doneBytes, totalBytes int64, copied, totalItems int) error {
+	if monitorURL == "" {
+		return nil // some copies complete synchronously (204/201 without a monitor)
+	}
+	const maxCopyWait = 2 * time.Hour
+	const maxPollErrors = 5
+	ctx := d.s.Ctx()
+	deadline := time.Now().Add(maxCopyWait)
+	pollErrors := 0
+	for {
+		if d.cancel.Load() {
+			return errCopyCanceled
+		}
+		if time.Now().After(deadline) {
+			return errors.New("server-side copy did not finish within " + maxCopyWait.String())
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, monitorURL, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := monitorClient.Do(req)
+		if err != nil {
+			// Transient network hiccups must not fail a copy that keeps
+			// running server-side — tolerate a few before giving up.
+			pollErrors++
+			if pollErrors > maxPollErrors {
+				return err
+			}
+		} else {
+			pollErrors = 0
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusSeeOther { // redirect to the created item
+				return nil
+			}
+			var st struct {
+				Status             string  `json:"status"`
+				PercentageComplete float64 `json:"percentageComplete"`
+				StatusDescription  string  `json:"statusDescription"`
+			}
+			_ = json.Unmarshal(body, &st)
+			switch st.Status {
+			case "completed":
+				return nil
+			case "failed", "deleteFailed":
+				msg := st.StatusDescription
+				if msg == "" {
+					msg = "server-side copy " + st.Status
+				}
+				return errors.New(msg)
+			}
+			// notStarted / waiting / inProgress / updating — keep polling.
+			d.emitOverall(doneBytes+int64(float64(size)*st.PercentageComplete/100), totalBytes, copied, totalItems)
+			d.emitProgress(name, int64(st.PercentageComplete), 100)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(1500 * time.Millisecond):
+		}
+	}
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }

@@ -154,6 +154,7 @@ export const api = {
   playbooks: {
     onboard: (req: any) => Playbook.Onboard(req) as Promise<services.PlaybookResult>,
     offboard: (req: any) => Playbook.Offboard(req) as Promise<services.PlaybookResult>,
+    cancel: () => Playbook.Cancel() as Promise<void>,
   },
   access: {
     probe: () => Access.Probe() as Promise<Record<string, boolean>>,

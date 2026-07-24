@@ -69,7 +69,7 @@ func New(tokens TokenSource, opts ...Option) *Client {
 // Do performs a Graph request. path is relative ("/users") or an absolute URL
 // (e.g. @odata.nextLink). The response is decoded into out (if out != nil and a body exists).
 func (c *Client) Do(ctx context.Context, method, path string, params url.Values, body any, out any) error {
-	raw, err := c.doRaw(ctx, method, path, params, body)
+	raw, _, err := c.doRaw(ctx, method, path, params, body)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,14 @@ func (c *Client) Do(ctx context.Context, method, path string, params url.Values,
 	return nil
 }
 
-func (c *Client) doRaw(ctx context.Context, method, path string, params url.Values, body any) ([]byte, error) {
+// PostForLocation performs a POST and returns the Location header — Graph
+// replies 202 + a monitor URL for long-running operations (driveItem copy).
+func (c *Client) PostForLocation(ctx context.Context, path string, params url.Values, body any) (string, error) {
+	_, loc, err := c.doRaw(ctx, http.MethodPost, path, params, body)
+	return loc, err
+}
+
+func (c *Client) doRaw(ctx context.Context, method, path string, params url.Values, body any) ([]byte, string, error) {
 	u := path
 	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
 		u = c.baseURL + "/" + strings.TrimLeft(path, "/")
@@ -98,7 +105,7 @@ func (c *Client) doRaw(ctx context.Context, method, path string, params url.Valu
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("graph: encode request: %w", err)
+			return nil, "", fmt.Errorf("graph: encode request: %w", err)
 		}
 		payload = b
 	}
@@ -106,13 +113,13 @@ func (c *Client) doRaw(ctx context.Context, method, path string, params url.Valu
 	method = strings.ToUpper(method)
 
 	for attempt := 0; ; attempt++ {
-		raw, retryAfter, err := c.once(ctx, method, u, payload)
+		raw, loc, retryAfter, err := c.once(ctx, method, u, payload)
 		if err == nil {
-			return raw, nil
+			return raw, loc, nil
 		}
 
 		if attempt >= c.maxRetries || !retryable(method, err) {
-			return nil, err
+			return nil, "", err
 		}
 
 		delay := retryAfter
@@ -120,7 +127,7 @@ func (c *Client) doRaw(ctx context.Context, method, path string, params url.Valu
 			delay = time.Second << attempt // 1s, 2s, 4s, 8s
 		}
 		if serr := c.sleep(ctx, delay); serr != nil {
-			return nil, serr
+			return nil, "", serr
 		}
 	}
 }
@@ -141,19 +148,19 @@ func retryable(method string, err error) bool {
 	return false
 }
 
-func (c *Client) once(ctx context.Context, method, u string, payload []byte) ([]byte, time.Duration, error) {
+func (c *Client) once(ctx context.Context, method, u string, payload []byte) ([]byte, string, time.Duration, error) {
 	var bodyReader io.Reader
 	if payload != nil {
 		bodyReader = bytes.NewReader(payload)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u, bodyReader)
 	if err != nil {
-		return nil, 0, err
+		return nil, "", 0, err
 	}
 
 	token, err := c.tokens.Token(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("graph: acquire token: %w", err)
+		return nil, "", 0, fmt.Errorf("graph: acquire token: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
@@ -163,23 +170,24 @@ func (c *Client) once(ctx context.Context, method, u string, payload []byte) ([]
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, "", 0, err
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, 0, err
+		return nil, "", 0, err
 	}
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		loc := resp.Header.Get("Location")
 		if resp.StatusCode == http.StatusNoContent {
-			return nil, 0, nil
+			return nil, loc, 0, nil
 		}
-		return raw, 0, nil
+		return raw, loc, 0, nil
 	}
 
-	return nil, parseRetryAfter(resp.Header.Get("Retry-After")), parseGraphError(resp, raw)
+	return nil, "", parseRetryAfter(resp.Header.Get("Retry-After")), parseGraphError(resp, raw)
 }
 
 func parseRetryAfter(v string) time.Duration {

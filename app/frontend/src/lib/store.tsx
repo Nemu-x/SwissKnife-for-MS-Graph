@@ -3,6 +3,7 @@ import { api, errMessage, type Status } from './api'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import i18n from '../i18n'
 import { applyAccent } from './color'
+import { humanBytes } from './format'
 
 type Theme = 'dark' | 'light'
 type Toast = { id: number; kind: 'ok' | 'err' | 'info'; text: string }
@@ -18,7 +19,10 @@ export type JobState = {
   result: any // page-specific payload
   error: string | null
   startedAt: number
+  steps?: PlaybookLiveStep[] // playbook job: live per-step status
 }
+// One playbook step as streamed from the backend ("playbook:step" events).
+export type PlaybookLiveStep = { name: string; detail?: string; running?: boolean; ok?: boolean; error?: string }
 export type TransferParams = { source: string; target: string; dest: string; overwrite: boolean; usePool: boolean; pool: string }
 export type CleanupParams = { mode: 'duplicates' | 'versions'; ownerType: 'user' | 'site'; ownerId: string }
 // One row of a bulk CSV run: a human label plus the API call to make.
@@ -61,7 +65,15 @@ interface Store {
   cancelCleanupScan: () => void
   startBulkRun: (items: BulkItem[]) => Promise<void>
   cancelBulkRun: () => void
+  startPlaybook: (kind: 'onboard' | 'offboard', target: string, call: () => Promise<any>) => Promise<any>
+  cancelPlaybook: () => void
   clearJob: (key: string) => void
+
+  // Cross-navigation result cache: pages stash expensive or one-time results
+  // (usage reports, tenant scans, freshly issued secrets) so leaving the page
+  // does not destroy them. Cleared on disconnect.
+  cache: Record<string, any>
+  setCache: (key: string, value: any) => void
 
   toasts: Toast[]
   toast: (kind: Toast['kind'], text: string) => void
@@ -95,6 +107,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
   const clearJob = useCallback((key: string) => {
     setJobs((all) => ({ ...all, [key]: emptyJob() }))
+  }, [])
+
+  const [cache, setCacheState] = useState<Record<string, any>>({})
+  const setCache = useCallback((key: string, value: any) => {
+    setCacheState((c) => ({ ...c, [key]: value }))
   }, [])
 
   useEffect(() => {
@@ -134,9 +151,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Clear cached domains on disconnect; loading is opt-in (checkbox on Connect).
+  // Clear cached domains and page results on disconnect; domain loading is
+  // opt-in (checkbox on Connect).
   useEffect(() => {
-    if (!status?.connected) setDomains([])
+    if (!status?.connected) {
+      setDomains([])
+      setCacheState({})
+    }
   }, [status?.connected])
 
   // Stream backend progress into the jobs, mounted once at the app root so it
@@ -155,7 +176,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       patchJob('cleanup', { progress: d.total > 0 ? `${d.stage} ${d.done}/${d.total}` : `${d.stage} ${d.done}…` })
     })
     const offCL = EventsOn('cleanup:log', (text: string) => jobLog('cleanup', text))
-    return () => { offP(); offF(); offC(); offCL() }
+    // Whole-transfer percentage (bytes done vs. scanned total). Feeds both the
+    // OneDrive transfer console and, when a playbook backup is running, the
+    // playbook job's live progress line.
+    const offO = EventsOn('transfer:overall', (d: any) => {
+      const line = d.totalBytes > 0
+        ? `${humanBytes(d.doneBytes)} / ${humanBytes(d.totalBytes)} — ${Math.round((d.doneBytes / d.totalBytes) * 100)}% (${d.files}/${d.totalFiles})`
+        : `${d.files} file(s) processed…`
+      setJobs((all) => {
+        const next: Record<string, JobState> = { ...all, transfer: { ...(all.transfer ?? emptyJob()), progress: line } }
+        if (all.playbook?.running) next.playbook = { ...all.playbook, progress: line }
+        return next
+      })
+    })
+    // Live playbook steps: "running" appends a pending row, "done" resolves it.
+    const offPB = EventsOn('playbook:step', (d: any) => {
+      setJobs((all) => {
+        const cur = all.playbook ?? emptyJob()
+        const steps = [...(cur.steps || [])]
+        if (d.status === 'running') {
+          steps.push({ name: d.name, detail: d.detail, running: true })
+        } else {
+          let i = steps.length - 1
+          while (i >= 0 && !steps[i].running) i--
+          const done = { name: d.name, detail: d.detail, ok: !!d.ok, error: d.error }
+          if (i >= 0) steps[i] = done
+          else steps.push(done)
+        }
+        return { ...all, playbook: { ...cur, steps } }
+      })
+      if (d.status === 'done') {
+        jobLog('playbook', `${d.ok ? '✓' : '✗'} ${d.name}${d.detail ? ' — ' + d.detail : ''}${d.error ? ' — ' + d.error : ''}`)
+      }
+    })
+    return () => { offP(); offF(); offC(); offCL(); offO(); offPB() }
   }, [patchJob, jobLog])
 
   const startTransfer = useCallback(async (p: TransferParams) => {
@@ -255,6 +309,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     jobLog('bulk', '⏹ Cancel requested — stopping after the current row…')
   }, [patchJob, jobLog])
 
+  // Playbook runs live here so their step report survives navigation, and the
+  // completion toast fires even if the operator has left the page.
+  const startPlaybook = useCallback(async (kind: 'onboard' | 'offboard', target: string, call: () => Promise<any>) => {
+    patchJob('playbook', { ...emptyJob(), running: true, startedAt: Date.now(), progress: 'Starting…', steps: [] })
+    jobLog('playbook', `▶ ${i18n.t(`playbooks.${kind}`)} — ${target}`)
+    try {
+      const r = await call()
+      patchJob('playbook', { result: r, running: false, progress: '' })
+      jobLog('playbook', r?.canceled ? '⏹ Canceled' : r?.ok ? '✓ Done' : '⚠ Finished with errors')
+      toast(r?.canceled ? 'info' : r?.ok ? 'ok' : 'err',
+        i18n.t(r?.canceled ? 'common.canceled' : r?.ok ? 'playbooks.doneToast' : 'playbooks.doneWithErrors'))
+      return r
+    } catch (e) {
+      patchJob('playbook', { error: errMessage(e), running: false, progress: '' })
+      jobLog('playbook', `✗ ${errMessage(e)}`)
+      toast('err', errMessage(e))
+      return null
+    }
+  }, [patchJob, jobLog, toast])
+
+  const cancelPlaybook = useCallback(() => {
+    patchJob('playbook', { canceled: true, progress: 'Canceling…' })
+    jobLog('playbook', '⏹ Cancel requested — stopping after the current step…')
+    api.playbooks.cancel().catch(() => {})
+  }, [patchJob, jobLog])
+
   const value: Store = {
     status,
     setStatus,
@@ -296,7 +376,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     cancelCleanupScan,
     startBulkRun,
     cancelBulkRun,
+    startPlaybook,
+    cancelPlaybook,
     clearJob,
+    cache,
+    setCache,
     toasts,
     toast,
     dismiss: (id) => setToasts((t) => t.filter((x) => x.id !== id)),

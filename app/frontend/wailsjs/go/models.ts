@@ -417,6 +417,7 @@ export namespace services {
 	}
 	export class PlaybookResult {
 	    ok: boolean;
+	    canceled: boolean;
 	    steps: Step[];
 	
 	    static createFrom(source: any = {}) {
@@ -426,6 +427,7 @@ export namespace services {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.ok = source["ok"];
+	        this.canceled = source["canceled"];
 	        this.steps = this.convertValues(source["steps"], Step);
 	    }
 	

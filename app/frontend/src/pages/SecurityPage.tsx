@@ -16,17 +16,24 @@ const stateBadge: Record<string, 'ok' | 'warn' | 'neutral'> = {
 
 export function SecurityPage() {
   const { t } = useTranslation()
-  const { connected, toast } = useStore()
+  const { connected, toast, cache, setCache } = useStore()
   const [tab, setTab] = useState<Tab>('ca')
 
   const [policies, setPolicies] = useState<GraphObject[] | null>(null)
   const [selPolicy, setSelPolicy] = useState<GraphObject | null>(null)
 
-  const [search, setSearch] = useState('')
-  const [sps, setSps] = useState<GraphObject[] | null>(null)
-  const [selSp, setSelSp] = useState<GraphObject | null>(null)
-  const [grants, setGrants] = useState<GraphObject[] | null>(null)
-  const [appRoles, setAppRoles] = useState<GraphObject[] | null>(null)
+  // Cache-backed: keep the SP search results and the selected SP's consents
+  // across navigation so leaving the page does not force a re-search.
+  const [search, setSearchLocal] = useState<string>(() => cache['security.spSearch'] ?? '')
+  const setSearch = (v: string) => { setSearchLocal(v); setCache('security.spSearch', v) }
+  const [sps, setSpsLocal] = useState<GraphObject[] | null>(() => cache['security.sps'] ?? null)
+  const setSps = (v: GraphObject[] | null) => { setSpsLocal(v); setCache('security.sps', v) }
+  const [selSp, setSelSpLocal] = useState<GraphObject | null>(() => cache['security.selSp'] ?? null)
+  const setSelSp = (v: GraphObject | null) => { setSelSpLocal(v); setCache('security.selSp', v) }
+  const [grants, setGrantsLocal] = useState<GraphObject[] | null>(() => cache['security.grants'] ?? null)
+  const setGrants = (v: GraphObject[] | null) => { setGrantsLocal(v); setCache('security.grants', v) }
+  const [appRoles, setAppRolesLocal] = useState<GraphObject[] | null>(() => cache['security.appRoles'] ?? null)
+  const setAppRoles = (v: GraphObject[] | null) => { setAppRolesLocal(v); setCache('security.appRoles', v) }
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {

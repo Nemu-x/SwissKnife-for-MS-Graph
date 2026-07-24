@@ -1,8 +1,11 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
+	"sync/atomic"
 
 	"swissknife-app/internal/session"
 )
@@ -10,10 +13,21 @@ import (
 // PlaybookService runs multi-step composite operations (onboard / offboard) and
 // returns a per-step report so the operator sees exactly what happened.
 type PlaybookService struct {
-	s *session.Session
+	s      *session.Session
+	cancel atomic.Bool
+	drive  atomic.Pointer[DriveService] // the drive service of the run in flight, for cancel propagation
 }
 
 func NewPlaybookService(s *session.Session) *PlaybookService { return &PlaybookService{s: s} }
+
+// Cancel stops the running playbook after the step in flight; a running
+// OneDrive backup stops after the current item.
+func (p *PlaybookService) Cancel() {
+	p.cancel.Store(true)
+	if d := p.drive.Load(); d != nil {
+		d.CancelTransfer()
+	}
+}
 
 // Step is one action within a playbook run.
 type Step struct {
@@ -25,27 +39,70 @@ type Step struct {
 
 // PlaybookResult is the outcome of a playbook run.
 type PlaybookResult struct {
-	OK    bool   `json:"ok"`
-	Steps []Step `json:"steps"`
+	OK       bool   `json:"ok"`
+	Canceled bool   `json:"canceled"`
+	Steps    []Step `json:"steps"`
 }
 
 type runner struct {
-	steps []Step
-	ok    bool
+	ctx       context.Context
+	kind      string // "onboard" | "offboard" — lets the UI route events
+	cancelled func() bool
+	steps     []Step
+	ok        bool
+	canceled  bool
+}
+
+var errPlaybookCanceled = fmt.Errorf("playbook canceled")
+
+// emitStep streams one step lifecycle event so the UI can render live progress
+// instead of waiting for the whole playbook to finish.
+func (r *runner) emitStep(payload map[string]any) {
+	payload["kind"] = r.kind
+	emitEvent(r.ctx, "playbook:step", payload)
 }
 
 func (r *runner) do(name, detail string, fn func() error) error {
-	err := fn()
+	return r.doD(name, detail, func() (string, error) { return "", fn() })
+}
+
+// stop reports whether a cancel was requested; once true, remaining steps are
+// skipped without being reported.
+func (r *runner) stop() bool {
+	if r.cancelled != nil && r.cancelled() {
+		r.canceled = true
+	}
+	return r.canceled
+}
+
+// doD is do with a detail returned by the step itself (e.g. a scanned size),
+// which replaces the static detail when non-empty.
+func (r *runner) doD(name, detail string, fn func() (string, error)) error {
+	if r.stop() {
+		return errPlaybookCanceled
+	}
+	r.emitStep(map[string]any{"status": "running", "index": len(r.steps), "name": name, "detail": detail})
+	d, err := fn()
+	if d != "" {
+		detail = d
+	}
 	st := Step{Name: name, OK: err == nil, Detail: detail}
 	if err != nil {
 		st.Error = err.Error()
 		r.ok = false
 	}
 	r.steps = append(r.steps, st)
+	done := map[string]any{"status": "done", "index": len(r.steps) - 1, "name": name, "detail": detail, "ok": st.OK}
+	if st.Error != "" {
+		done["error"] = st.Error
+	}
+	r.emitStep(done)
 	return err
 }
 
-func (r *runner) result() *PlaybookResult { return &PlaybookResult{OK: r.ok, Steps: r.steps} }
+func (r *runner) result() *PlaybookResult {
+	return &PlaybookResult{OK: r.ok, Canceled: r.canceled, Steps: r.steps}
+}
 
 // ChannelRef targets a specific channel within a team.
 type ChannelRef struct {
@@ -76,7 +133,8 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &runner{ok: true}
+	p.cancel.Store(false)
+	r := &runner{ctx: p.s.Ctx(), kind: "onboard", ok: true, cancelled: p.cancel.Load}
 
 	// Step 1: create user (blocks the rest if it fails).
 	body := map[string]any{
@@ -168,7 +226,8 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 	if err != nil {
 		return nil, err
 	}
-	r := &runner{ok: true}
+	p.cancel.Store(false)
+	r := &runner{ctx: p.s.Ctx(), kind: "offboard", ok: true, cancelled: p.cancel.Load}
 	u := url.PathEscape(req.Upn)
 
 	if req.Block {
@@ -228,16 +287,45 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 	}
 	if req.BackupToUser != "" {
 		drive := NewDriveService(p.s)
-		r.do("Backup OneDrive", req.Upn+" → "+req.BackupToUser, func() error {
+		p.drive.Store(drive) // let Cancel() reach the copy in flight
+		defer p.drive.Store(nil)
+		// Scan first so the operator sees the transfer volume up front, and so
+		// the copy can report overall percent progress against a known total.
+		var prev *CopyPreview
+		r.doD("Scan OneDrive", req.Upn, func() (string, error) {
+			pv, e := drive.OffboardingPreview(req.Upn)
+			if e != nil {
+				return "", e
+			}
+			prev = pv
+			return itoa(pv.Files) + " files · " + humanSize(pv.TotalBytes), nil
+		})
+		r.doD("Backup OneDrive", req.Upn+" → "+req.BackupToUser, func() (string, error) {
 			folder := req.BackupFolder
 			if folder == "" {
 				folder = req.Upn
 			}
-			_, e := drive.CopyBetweenUsers(req.Upn, req.BackupToUser, folder, false)
-			return e
+			res, e := drive.copyBetweenUsers(req.Upn, req.BackupToUser, folder, false, prev)
+			if e != nil {
+				return "", e
+			}
+			detail := itoa(len(res.Copied)) + " item(s) copied"
+			if prev != nil {
+				detail += " · " + humanSize(prev.TotalBytes)
+			}
+			if len(res.Skipped) > 0 {
+				detail += " · " + itoa(len(res.Skipped)) + " skipped"
+			}
+			if res.Canceled {
+				detail += " · canceled"
+			}
+			if len(res.Failed) > 0 {
+				return detail, fmt.Errorf("%d file(s) failed — see the OneDrive transfer log", len(res.Failed))
+			}
+			return detail, nil
 		})
 	}
-	if req.RemoveFromGroups {
+	if req.RemoveFromGroups && !r.stop() {
 		// One report step per group so the operator sees exactly what happened.
 		// Dynamic-membership and Exchange-managed (distribution) groups fail
 		// individually with the Graph error; the rest still get removed.

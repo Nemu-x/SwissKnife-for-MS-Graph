@@ -133,6 +133,55 @@ func TestOffboardForwardAndOofBodies(t *testing.T) {
 	}
 }
 
+func TestOffboardBackupAddsScanAndBackupSteps(t *testing.T) {
+	var calls []string
+	sess := harness(t, offboardHarness(t, &calls, map[string]string{}))
+	pb := NewPlaybookService(sess)
+
+	req := fullOffboardRequest()
+	req.BackupToUser = "archive@contoso.com"
+	res, err := pb.Offboard(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	names := make([]string, 0, len(res.Steps))
+	for _, s := range res.Steps {
+		names = append(names, s.Name)
+	}
+	scanIdx, backupIdx := -1, -1
+	for i, n := range names {
+		switch n {
+		case "Scan OneDrive":
+			scanIdx = i
+		case "Backup OneDrive":
+			backupIdx = i
+		}
+	}
+	if scanIdx == -1 || backupIdx == -1 {
+		t.Fatalf("expected Scan OneDrive and Backup OneDrive steps, got %v", names)
+	}
+	if scanIdx > backupIdx {
+		t.Errorf("scan must run before backup: %v", names)
+	}
+	// The scan reports the transfer volume up front (empty fake drive here).
+	scan := res.Steps[scanIdx]
+	if !scan.OK || !strings.Contains(scan.Detail, "0 files") {
+		t.Errorf("scan step should be OK with a size detail, got %+v", scan)
+	}
+	backup := res.Steps[backupIdx]
+	if !backup.OK || !strings.Contains(backup.Detail, "0 item(s) copied") {
+		t.Errorf("backup step should be OK with a copy summary, got %+v", backup)
+	}
+	// Backup must run before the destructive tail (group/license removal).
+	for _, c := range calls {
+		if strings.HasSuffix(c, "/drive/root/children") {
+			return // drive was actually walked
+		}
+	}
+	t.Errorf("source drive was never listed: %v", calls)
+}
+
 func TestOffboardRequiresTypedConfirm(t *testing.T) {
 	called := false
 	sess := harness(t, func(w http.ResponseWriter, r *http.Request) { called = true })

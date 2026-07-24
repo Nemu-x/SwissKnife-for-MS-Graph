@@ -8,8 +8,6 @@ import (
 	"sort"
 	"sync/atomic"
 
-	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
-
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/session"
 )
@@ -29,13 +27,13 @@ func (cl *CleanupService) CancelScan() { cl.cancel.Store(true) }
 
 // emit sends a live progress line to the UI ("cleanup:progress" event).
 func (cl *CleanupService) emit(stage string, done, total int) {
-	wrt.EventsEmit(cl.s.Ctx(), "cleanup:progress", map[string]any{"stage": stage, "done": done, "total": total})
+	emitEvent(cl.s.Ctx(), "cleanup:progress", map[string]any{"stage": stage, "done": done, "total": total})
 }
 
 // emitLog appends a durable line to the UI console ("cleanup:log" event) so the
 // operator can see exactly what was walked, not just a spinner.
 func (cl *CleanupService) emitLog(text string) {
-	wrt.EventsEmit(cl.s.Ctx(), "cleanup:log", text)
+	emitEvent(cl.s.Ctx(), "cleanup:log", text)
 }
 
 // humanSize formats a byte count as a short human-readable string.

@@ -11,16 +11,20 @@ import type { services } from '../../wailsjs/go/models'
 
 export function AppsPage() {
   const { t } = useTranslation()
-  const { readOnly, toast } = useStore()
+  const { readOnly, toast, cache, setCache } = useStore()
   const res = useAsync<GraphObject[] | GraphObject>()
   const [search, setSearch] = useState('')
   const [days, setDays] = useState(30)
-  const [expiring, setExpiring] = useState<services.ExpiringCredential[] | null>(null)
+  // Cache-backed: the tenant-wide expiring scan is slow, and a fresh secret is a
+  // one-time value — neither should be lost by navigating away.
+  const [expiring, setExpiringLocal] = useState<services.ExpiringCredential[] | null>(() => cache['apps.expiring'] ?? null)
+  const setExpiring = (v: services.ExpiringCredential[] | null) => { setExpiringLocal(v); setCache('apps.expiring', v) }
   const [error, setError] = useState<string | null>(null)
   const [rotateId, setRotateId] = useState('')
   const [rotateName, setRotateName] = useState('')
   const [rotateMonths, setRotateMonths] = useState(6)
-  const [newSecret, setNewSecret] = useState<GraphObject | null>(null)
+  const [newSecret, setNewSecretLocal] = useState<GraphObject | null>(() => cache['apps.newSecret'] ?? null)
+  const setNewSecret = (v: GraphObject | null) => { setNewSecretLocal(v); setCache('apps.newSecret', v) }
 
   const listApps = () => { setExpiring(null); res.run(() => api.apps.list(search, 0)) }
   const loadExpiring = async () => {
