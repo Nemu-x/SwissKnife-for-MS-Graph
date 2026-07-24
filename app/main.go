@@ -3,12 +3,14 @@ package main
 import (
 	"embed"
 	"log"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 
 	"swissknife-app/internal/auditlog"
+	"swissknife-app/internal/journal"
 	"swissknife-app/internal/secrets"
 	"swissknife-app/internal/services"
 	"swissknife-app/internal/session"
@@ -24,6 +26,9 @@ func main() {
 	}
 	audit := auditlog.New(store.Dir())
 	sess := session.New(audit)
+	runs := journal.New(filepath.Join(store.Dir(), "runs"))
+	runs.Prune(200) // keep the newest 200 runs
+	sess.SetJournal(runs)
 
 	updateSvc := services.NewUpdateService(resolveVersion())
 	app := NewApp(sess, updateSvc)
@@ -62,6 +67,7 @@ func main() {
 			services.NewServiceHealthService(sess),
 			services.NewAuditService(sess),
 			services.NewRawService(sess),
+			services.NewJournalService(sess),
 			updateSvc,
 		},
 	})

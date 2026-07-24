@@ -395,7 +395,7 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 // operator's machine, folders copy recursively in one operation). If that
 // cannot even start, it falls back to the legacy download/upload path through
 // the local temp directory.
-func (d *DriveService) copyBetweenUsersCtx(parent context.Context, sourceUser, targetUser, destFolder string, overwrite bool, prev *CopyPreview) (*CopyResult, error) {
+func (d *DriveService) copyBetweenUsersCtx(parent context.Context, sourceUser, targetUser, destFolder string, overwrite bool, prev *CopyPreview) (res *CopyResult, err error) {
 	if err := d.s.GuardWrite(); err != nil {
 		return nil, err
 	}
@@ -409,6 +409,13 @@ func (d *DriveService) copyBetweenUsersCtx(parent context.Context, sourceUser, t
 	}
 	defer d.s.Ops.Finish(op)
 	emitOp(d.s.Ctx(), op, "op:start", map[string]any{"target": sourceUser + " → " + targetUser})
+	if j := d.s.Journal; j != nil {
+		j.Begin(op.ID, map[string]any{
+			"kind": "transfer", "target": sourceUser + " → " + targetUser,
+			"source": sourceUser, "dest": targetUser, "folder": destFolder, "overwrite": overwrite,
+		})
+		defer func() { j.End(op.ID, copySummary(res, err)) }()
+	}
 
 	if res, sErr := d.copyServerSide(op, c, sourceUser, targetUser, destFolder, overwrite); sErr == nil {
 		return res, nil
@@ -436,7 +443,7 @@ func (d *DriveService) copyBetweenUsersCtx(parent context.Context, sourceUser, t
 	defer os.RemoveAll(tmp)
 
 	dest := strings.Trim(destFolder, "/")
-	res := &CopyResult{Skipped: map[string]string{}, Failed: map[string]string{}}
+	res = &CopyResult{Skipped: map[string]string{}, Failed: map[string]string{}}
 
 	// names in the target root, for the overwrite check (top level only)
 	tgtNames := map[string]bool{}
@@ -549,6 +556,28 @@ func (d *DriveService) copyBetweenUsersCtx(parent context.Context, sourceUser, t
 // errCopyCanceled aborts the server-side polling loop on operator cancel.
 var errCopyCanceled = errors.New("canceled")
 
+// copySummary is the journal terminal record for a copy run.
+func copySummary(res *CopyResult, err error) map[string]any {
+	out := map[string]any{}
+	if err != nil {
+		out["error"] = err.Error()
+	}
+	if res != nil {
+		out["copied"] = len(res.Copied)
+		out["skipped"] = len(res.Skipped)
+		out["failed"] = len(res.Failed)
+		out["canceled"] = res.Canceled
+	}
+	return out
+}
+
+// journalItem records one server-side copy item's lifecycle for resume.
+func (d *DriveService) journalItem(opID string, data map[string]any) {
+	if j := d.s.Journal; j != nil {
+		j.Event(opID, "item", data)
+	}
+}
+
 // copyServerSide copies the source drive's top-level items into the target via
 // Graph's async driveItem copy — the copy runs entirely inside the cloud.
 // An error return means nothing was copied yet and the caller may fall back;
@@ -591,6 +620,15 @@ func (d *DriveService) copyServerSide(op *ops.Operation, c *graphapi.Client, sou
 	if overwrite {
 		behavior = "replace"
 	}
+	// Journal the copy plan so an interrupted run can be resumed after a
+	// restart: remaining items are re-issued, in-flight monitors re-polled.
+	if j := d.s.Journal; j != nil {
+		plan := make([]map[string]any, 0, len(items))
+		for _, it := range items {
+			plan = append(plan, map[string]any{"id": it.ID, "name": it.Name, "size": it.Size, "folder": it.Folder != nil})
+		}
+		j.Event(op.ID, "plan", map[string]any{"items": plan, "driveId": drv.ID, "parentId": parentID, "behavior": behavior, "sourceUser": sourceUser})
+	}
 	var doneBytes int64
 	d.emitOverall(op, 0, totalBytes, 0, len(items))
 	for i, it := range items {
@@ -611,24 +649,31 @@ func (d *DriveService) copyServerSide(op *ops.Operation, c *graphapi.Client, sou
 			if errors.As(postErr, &ge) && ge.Code == "nameAlreadyExists" {
 				res.Skipped[name] = "exists in target"
 				d.emitFile(op, name, "skipped", "exists in target", len(res.Copied))
+				d.journalItem(op.ID, map[string]any{"id": it.ID, "status": "skipped"})
 			} else if len(res.Copied) == 0 && len(res.Failed) == 0 {
 				return nil, postErr // nothing copied yet — safe to fall back to local copy
 			} else {
 				res.Failed[name] = postErr.Error()
 				d.emitFile(op, name, "failed", postErr.Error(), len(res.Copied))
+				d.journalItem(op.ID, map[string]any{"id": it.ID, "status": "failed", "error": postErr.Error()})
 			}
-		} else if waitErr := d.waitForCopy(op, loc, name, it.Size, doneBytes, totalBytes, len(res.Copied), len(items)); waitErr != nil {
-			if errors.Is(waitErr, errCopyCanceled) {
-				res.Canceled = true
-				res.Skipped[name] = "cancel requested — the in-flight cloud copy may still finish"
-				d.emitFile(op, name, "skipped", "canceled", len(res.Copied))
-				break
-			}
-			res.Failed[name] = waitErr.Error()
-			d.emitFile(op, name, "failed", waitErr.Error(), len(res.Copied))
 		} else {
-			res.Copied = append(res.Copied, name)
-			d.emitFile(op, name, "copied", "", len(res.Copied))
+			d.journalItem(op.ID, map[string]any{"id": it.ID, "status": "inflight", "monitor": loc})
+			if waitErr := d.waitForCopy(op, loc, name, it.Size, doneBytes, totalBytes, len(res.Copied), len(items)); waitErr != nil {
+				if errors.Is(waitErr, errCopyCanceled) {
+					res.Canceled = true
+					res.Skipped[name] = "cancel requested — the in-flight cloud copy may still finish"
+					d.emitFile(op, name, "skipped", "canceled", len(res.Copied))
+					break
+				}
+				res.Failed[name] = waitErr.Error()
+				d.emitFile(op, name, "failed", waitErr.Error(), len(res.Copied))
+				d.journalItem(op.ID, map[string]any{"id": it.ID, "status": "failed", "error": waitErr.Error()})
+			} else {
+				res.Copied = append(res.Copied, name)
+				d.emitFile(op, name, "copied", "", len(res.Copied))
+				d.journalItem(op.ID, map[string]any{"id": it.ID, "status": "copied"})
+			}
 		}
 		doneBytes += it.Size
 		d.emitOverall(op, doneBytes, totalBytes, i+1, len(items))
@@ -636,6 +681,168 @@ func (d *DriveService) copyServerSide(op *ops.Operation, c *graphapi.Client, sou
 
 	d.s.Record("drive.copyServerSide", sourceUser+" -> "+targetUser,
 		"dest="+strings.Trim(destFolder, "/")+" copied="+itoa(len(res.Copied))+" skipped="+itoa(len(res.Skipped))+" failed="+itoa(len(res.Failed)), nil)
+	return res, nil
+}
+
+// ResumeCopy continues an interrupted server-side copy from its journal:
+// already-completed items are counted, journaled in-flight monitors re-polled,
+// pending/failed items re-issued (conflictBehavior=fail turns anything that
+// actually finished earlier into a "exists in target" skip). The continuation
+// appends to the same journal file, which finally gets its terminal record.
+func (d *DriveService) ResumeCopy(runID string) (res *CopyResult, err error) {
+	if err := d.s.GuardWrite(); err != nil {
+		return nil, err
+	}
+	c, err := d.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	j := d.s.Journal
+	if j == nil {
+		return nil, errors.New("run journal unavailable")
+	}
+	run, err := j.Get(runID)
+	if err != nil {
+		return nil, err
+	}
+	if run.Kind != "transfer" || run.EndedAt != nil {
+		return nil, errors.New("this run is not an interrupted transfer")
+	}
+
+	// Reconstruct the plan and each item's last journaled status.
+	type planItem struct {
+		id, name, monitor, status string
+		size                      int64
+	}
+	var driveID, parentID, behavior, sourceUser string
+	items := map[string]*planItem{}
+	order := []string{}
+	for _, ev := range run.Events {
+		switch ev.Type {
+		case "plan":
+			driveID, _ = ev.Data["driveId"].(string)
+			parentID, _ = ev.Data["parentId"].(string)
+			behavior, _ = ev.Data["behavior"].(string)
+			sourceUser, _ = ev.Data["sourceUser"].(string)
+			raw, _ := ev.Data["items"].([]any)
+			for _, ri := range raw {
+				m, _ := ri.(map[string]any)
+				id, _ := m["id"].(string)
+				if id == "" {
+					continue
+				}
+				name, _ := m["name"].(string)
+				size, _ := m["size"].(float64)
+				items[id] = &planItem{id: id, name: name, size: int64(size), status: "pending"}
+				order = append(order, id)
+			}
+		case "item":
+			id, _ := ev.Data["id"].(string)
+			it := items[id]
+			if it == nil {
+				continue
+			}
+			it.status, _ = ev.Data["status"].(string)
+			if m, ok := ev.Data["monitor"].(string); ok {
+				it.monitor = m
+			}
+		}
+	}
+	if len(order) == 0 || driveID == "" || sourceUser == "" {
+		return nil, errors.New("this run has no resumable copy plan")
+	}
+	if behavior == "" {
+		behavior = "fail"
+	}
+
+	op, err := d.s.Ops.Start(d.s.Ctx(), ops.KindTransfer)
+	if err != nil {
+		return nil, err
+	}
+	defer d.s.Ops.Finish(op)
+	emitOp(d.s.Ctx(), op, "op:start", map[string]any{"target": run.Target})
+	j.Event(runID, "log", map[string]any{"text": "resumed"})
+
+	res = &CopyResult{Skipped: map[string]string{}, Failed: map[string]string{}}
+	defer func() { j.End(runID, copySummary(res, err)) }()
+
+	var totalBytes, doneBytes int64
+	for _, id := range order {
+		totalBytes += items[id].size
+	}
+	total := len(order)
+	d.emitOverall(op, 0, totalBytes, 0, total)
+
+	// issue re-posts one item's copy and waits for it.
+	issue := func(it *planItem) {
+		loc, postErr := c.PostForLocation(op.Ctx,
+			"/users/"+url.PathEscape(sourceUser)+"/drive/items/"+url.PathEscape(it.id)+"/copy",
+			url.Values{"@microsoft.graph.conflictBehavior": {behavior}},
+			map[string]any{"parentReference": map[string]any{"driveId": driveID, "id": parentID}})
+		if postErr != nil {
+			var ge *graphapi.GraphError
+			if errors.As(postErr, &ge) && ge.Code == "nameAlreadyExists" {
+				res.Skipped[it.name] = "exists in target"
+				d.emitFile(op, it.name, "skipped", "exists in target", len(res.Copied))
+				d.journalItem(runID, map[string]any{"id": it.id, "status": "skipped"})
+			} else {
+				res.Failed[it.name] = postErr.Error()
+				d.emitFile(op, it.name, "failed", postErr.Error(), len(res.Copied))
+				d.journalItem(runID, map[string]any{"id": it.id, "status": "failed", "error": postErr.Error()})
+			}
+			return
+		}
+		d.journalItem(runID, map[string]any{"id": it.id, "status": "inflight", "monitor": loc})
+		if waitErr := d.waitForCopy(op, loc, it.name, it.size, doneBytes, totalBytes, len(res.Copied), total); waitErr != nil {
+			res.Failed[it.name] = waitErr.Error()
+			d.emitFile(op, it.name, "failed", waitErr.Error(), len(res.Copied))
+			d.journalItem(runID, map[string]any{"id": it.id, "status": "failed", "error": waitErr.Error()})
+			return
+		}
+		res.Copied = append(res.Copied, it.name)
+		d.emitFile(op, it.name, "copied", "", len(res.Copied))
+		d.journalItem(runID, map[string]any{"id": it.id, "status": "copied"})
+	}
+
+	for _, id := range order {
+		it := items[id]
+		if op.Canceled() {
+			res.Canceled = true
+			break
+		}
+		switch it.status {
+		case "copied":
+			res.Copied = append(res.Copied, it.name) // finished in the previous run
+		case "skipped":
+			res.Skipped[it.name] = "exists in target"
+		case "inflight":
+			// The cloud kept copying while we were gone — re-poll its monitor;
+			// if the monitor died with the old session, fall back to re-issue.
+			if it.monitor != "" {
+				if waitErr := d.waitForCopy(op, it.monitor, it.name, it.size, doneBytes, totalBytes, len(res.Copied), total); waitErr == nil {
+					res.Copied = append(res.Copied, it.name)
+					d.emitFile(op, it.name, "copied", "", len(res.Copied))
+					d.journalItem(runID, map[string]any{"id": it.id, "status": "copied"})
+				} else if errors.Is(waitErr, errCopyCanceled) {
+					res.Canceled = true
+				} else {
+					issue(it)
+				}
+			} else {
+				issue(it)
+			}
+		default: // pending / failed / interrupted
+			issue(it)
+		}
+		if res.Canceled {
+			break
+		}
+		doneBytes += it.size
+		d.emitOverall(op, doneBytes, totalBytes, len(res.Copied), total)
+	}
+
+	d.s.Record("drive.resumeCopy", run.Target,
+		"run="+runID+" copied="+itoa(len(res.Copied))+" skipped="+itoa(len(res.Skipped))+" failed="+itoa(len(res.Failed)), nil)
 	return res, nil
 }
 

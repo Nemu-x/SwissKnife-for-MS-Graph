@@ -9,6 +9,7 @@ import (
 
 	"swissknife-app/internal/auditlog"
 	"swissknife-app/internal/graphapi"
+	"swissknife-app/internal/journal"
 	"swissknife-app/internal/ops"
 )
 
@@ -22,13 +23,17 @@ type Session struct {
 	profileName string
 	readOnly    bool
 
-	Audit *auditlog.Log
-	Ops   *ops.Registry
+	Audit   *auditlog.Log
+	Ops     *ops.Registry
+	Journal *journal.Log
 }
 
 func New(audit *auditlog.Log) *Session {
 	return &Session{ctx: context.Background(), Audit: audit, Ops: ops.NewRegistry()}
 }
+
+// SetJournal attaches the persistent run journal (nil-safe: services check).
+func (s *Session) SetJournal(j *journal.Log) { s.Journal = j }
 
 // SetAppContext stores the Wails context (cancellation on app shutdown).
 func (s *Session) SetAppContext(ctx context.Context) {
