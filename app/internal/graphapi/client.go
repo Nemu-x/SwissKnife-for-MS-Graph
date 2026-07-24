@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,8 +45,14 @@ func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h
 func WithMaxRetries(n int) Option { return func(c *Client) { c.maxRetries = n } }
 
 func New(tokens TokenSource, opts ...Option) *Client {
+	// No whole-request timeout: it would kill slow-but-progressing streams
+	// (large downloads/uploads). Stalls are caught by ResponseHeaderTimeout
+	// here plus the idle watchdog on streaming reads (files.go); operations
+	// are cancellable via context.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 30 * time.Second
 	c := &Client{
-		http:       &http.Client{Timeout: 60 * time.Second},
+		http:       &http.Client{Transport: transport},
 		baseURL:    DefaultBaseURL,
 		tokens:     tokens,
 		maxRetries: 4,
@@ -112,38 +119,60 @@ func (c *Client) doRaw(ctx context.Context, method, path string, params url.Valu
 
 	method = strings.ToUpper(method)
 
-	for attempt := 0; ; attempt++ {
-		raw, loc, retryAfter, err := c.once(ctx, method, u, payload)
+	var raw []byte
+	var loc string
+	err := c.withRetry(ctx, method, func() (time.Duration, error) {
+		var retryAfter time.Duration
+		var err error
+		raw, loc, retryAfter, err = c.once(ctx, method, u, payload)
+		return retryAfter, err
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return raw, loc, nil
+}
+
+// withRetry runs attempt until it succeeds or retries are exhausted, honoring
+// Retry-After (returned by attempt) with exponential backoff otherwise. It is
+// shared by the JSON paths (doRaw) and the streaming transfer paths (files.go)
+// so throttling is handled uniformly.
+func (c *Client) withRetry(ctx context.Context, method string, attempt func() (time.Duration, error)) error {
+	for try := 0; ; try++ {
+		retryAfter, err := attempt()
 		if err == nil {
-			return raw, loc, nil
+			return nil
 		}
-
-		if attempt >= c.maxRetries || !retryable(method, err) {
-			return nil, "", err
+		if try >= c.maxRetries || !retryable(method, err) {
+			return err
 		}
-
 		delay := retryAfter
 		if delay <= 0 {
-			delay = time.Second << attempt // 1s, 2s, 4s, 8s
+			delay = time.Second << try // 1s, 2s, 4s, 8s
 		}
 		if serr := c.sleep(ctx, delay); serr != nil {
-			return nil, "", serr
+			return serr
 		}
 	}
 }
 
-// retryable: 429 (throttling) is retried for any method — Graph did not process the request;
-// 503/504 — idempotent methods only.
+// retryable: 429 (throttling) is retried for any method — Graph did not process
+// the request; 503/504 and transport-level failures (connection reset, EOF) —
+// idempotent methods only. Context cancellation is never retried.
 func retryable(method string, err error) bool {
-	ge, ok := err.(*GraphError)
-	if !ok {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
+	}
+	idempotent := method == http.MethodGet || method == http.MethodPut || method == http.MethodDelete
+	var ge *GraphError
+	if !errors.As(err, &ge) {
+		return idempotent // transport error: the request may or may not have been processed
 	}
 	switch ge.StatusCode {
 	case 429:
 		return true
 	case 503, 504:
-		return method == http.MethodGet || method == http.MethodPut || method == http.MethodDelete
+		return idempotent
 	}
 	return false
 }
