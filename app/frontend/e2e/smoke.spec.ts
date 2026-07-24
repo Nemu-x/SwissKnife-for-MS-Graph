@@ -13,6 +13,7 @@ async function stubWails(page: Page) {
       Version: '0.0.0-e2e',
       Probe: {},
       Check: { currentVersion: '0.0.0-e2e', latestVersion: '', updateAvailable: false, notes: '', url: '' },
+      List: [],                 // JournalService.List — empty run history
     }
     const method = (name: string) => () => Promise.resolve(results[name] ?? null)
     const service = new Proxy({}, { get: (_t, m: string) => method(m) })
@@ -45,6 +46,17 @@ test('sidebar navigation works and data tabs are locked while disconnected', asy
   // Data pages must be disabled until a tenant connection exists.
   await expect(page.getByRole('button', { name: 'Raw Graph' })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Users & Admin' })).toBeDisabled()
+})
+
+test('grouped sidebar renders and run history opens without a connection', async ({ page }) => {
+  await stubWails(page)
+  await page.goto('/')
+
+  // Section headers of the grouped navigation are visible.
+  await expect(page.getByRole('button', { name: 'Insights' })).toBeVisible()
+  // History is a local page: reachable while disconnected.
+  await page.getByRole('button', { name: 'Run history' }).click()
+  await expect(page.getByText('No runs recorded yet.')).toBeVisible()
 })
 
 test('language switch to Russian localizes the UI', async ({ page }) => {

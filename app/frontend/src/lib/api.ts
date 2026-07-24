@@ -25,7 +25,8 @@ import * as Cleanup from '../../wailsjs/go/services/CleanupService'
 import * as ServiceHealth from '../../wailsjs/go/services/ServiceHealthService'
 import * as Security from '../../wailsjs/go/services/SecurityService'
 import * as Update from '../../wailsjs/go/services/UpdateService'
-import type { secrets, services } from '../../wailsjs/go/models'
+import * as Journal from '../../wailsjs/go/services/JournalService'
+import type { journal, secrets, services } from '../../wailsjs/go/models'
 import { parseErr, type ParsedError } from './graphError'
 
 export type GraphObject = Record<string, any>
@@ -151,6 +152,7 @@ export const api = {
     offboardingPreview: (src: string) => Drive.OffboardingPreview(src) as Promise<services.CopyPreview>,
     quota: (user: string) => Drive.Quota(user) as Promise<services.DriveQuota>,
     pickTarget: (targets: string[], needed: number) => Drive.PickTarget(targets, needed) as Promise<string>,
+    resumeCopy: (runId: string) => Drive.ResumeCopy(runId) as Promise<services.CopyResult>,
   },
   playbooks: {
     onboard: (req: any) => Playbook.Onboard(req) as Promise<services.PlaybookResult>,
@@ -219,6 +221,12 @@ export const api = {
   update: {
     check: () => Update.Check() as Promise<services.UpdateInfo>,
     openReleases: (url: string) => Update.OpenReleasesPage(url),
+    download: (assetUrl: string, name: string, size: number) => Update.Download(assetUrl, name, size) as Promise<string>,
+    apply: (installerPath: string) => Update.Apply(installerPath) as Promise<void>,
+  },
+  journal: {
+    list: (limit = 100) => Journal.List(limit) as Promise<journal.RunSummary[]>,
+    get: (opId: string) => Journal.Get(opId) as Promise<journal.Run>,
   },
 }
 

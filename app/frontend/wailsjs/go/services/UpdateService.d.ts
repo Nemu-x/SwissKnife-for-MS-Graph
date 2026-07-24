@@ -3,7 +3,11 @@
 import {services} from '../models';
 import {context} from '../models';
 
+export function Apply(arg1:string):Promise<void>;
+
 export function Check():Promise<services.UpdateInfo>;
+
+export function Download(arg1:string,arg2:string,arg3:number):Promise<string>;
 
 export function OpenReleasesPage(arg1:string):Promise<void>;
 

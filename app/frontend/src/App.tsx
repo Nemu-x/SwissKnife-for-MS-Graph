@@ -16,7 +16,7 @@ function Shell() {
   }, [connected])
 
   // if disconnected while the page requires a connection, go back to connect
-  const requiresConn = page !== 'connect' && page !== 'settings'
+  const requiresConn = page !== 'connect' && page !== 'settings' && page !== 'history'
   const effective: PageId = requiresConn && !connected ? 'connect' : page
   const Current = pages[effective]
 

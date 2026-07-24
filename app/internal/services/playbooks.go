@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"swissknife-app/internal/graphapi"
+	"swissknife-app/internal/journal"
 	"swissknife-app/internal/ops"
 	"swissknife-app/internal/session"
 )
@@ -70,6 +71,7 @@ type PlaybookResult struct {
 type runner struct {
 	op       *ops.Operation
 	kind     string // "onboard" | "offboard" — lets the UI route events
+	journal  *journal.Log
 	steps    []Step
 	ok       bool
 	canceled bool
@@ -87,10 +89,14 @@ func (r *runner) setDetail(key string, params map[string]any) {
 var errPlaybookCanceled = fmt.Errorf("playbook canceled")
 
 // emitStep streams one step lifecycle event so the UI can render live progress
-// instead of waiting for the whole playbook to finish.
+// instead of waiting for the whole playbook to finish, and journals completed
+// steps so the run survives an app restart.
 func (r *runner) emitStep(payload map[string]any) {
 	payload["kind"] = r.kind
 	emitOp(r.op.Ctx, r.op, "playbook:step", payload)
+	if r.journal != nil && payload["status"] == "done" {
+		r.journal.Event(r.op.ID, "step", payload)
+	}
 }
 
 func (r *runner) do(name, detail string, fn func() error) error {
@@ -192,7 +198,11 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 	}
 	defer p.s.Ops.Finish(op)
 	emitOp(p.s.Ctx(), op, "op:start", map[string]any{"target": req.Upn})
-	r := &runner{op: op, kind: "onboard", ok: true}
+	r := &runner{op: op, kind: "onboard", ok: true, journal: p.s.Journal}
+	if r.journal != nil {
+		r.journal.Begin(op.ID, map[string]any{"kind": "playbook", "playbook": "onboard", "target": req.Upn})
+		defer func() { r.journal.End(op.ID, map[string]any{"ok": r.ok, "canceled": r.canceled, "steps": len(r.steps)}) }()
+	}
 
 	// Step 1: create user (blocks the rest if it fails).
 	body := map[string]any{
@@ -253,6 +263,7 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 	}
 
 	p.s.Record("playbook.onboard", req.Upn, "steps="+itoa(len(r.steps)), nil)
+	p.recordSummary("summary.onboard", req.Upn, r)
 	return r.result(), nil
 }
 
@@ -290,7 +301,11 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 	}
 	defer p.s.Ops.Finish(op)
 	emitOp(p.s.Ctx(), op, "op:start", map[string]any{"target": req.Upn})
-	r := &runner{op: op, kind: "offboard", ok: true}
+	r := &runner{op: op, kind: "offboard", ok: true, journal: p.s.Journal}
+	if r.journal != nil {
+		r.journal.Begin(op.ID, map[string]any{"kind": "playbook", "playbook": "offboard", "target": req.Upn})
+		defer func() { r.journal.End(op.ID, map[string]any{"ok": r.ok, "canceled": r.canceled, "steps": len(r.steps)}) }()
+	}
 	u := url.PathEscape(req.Upn)
 
 	if req.Block {
@@ -452,7 +467,27 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 	}
 
 	p.s.Record("playbook.offboard", req.Upn, "steps="+itoa(len(r.steps)), nil)
+	p.recordSummary("summary.offboard", req.Upn, r)
 	return r.result(), nil
+}
+
+// recordSummary writes one human-readable (translatable key+params) audit
+// entry per playbook run, so Activity reads "offboarded X: N steps, M failed".
+func (p *PlaybookService) recordSummary(key, upn string, r *runner) {
+	failed := 0
+	for _, s := range r.steps {
+		if !s.OK {
+			failed++
+		}
+	}
+	detail, err := json.Marshal(map[string]any{
+		"key":    key,
+		"params": map[string]any{"upn": upn, "steps": len(r.steps), "failed": failed, "canceled": r.canceled},
+	})
+	if err != nil {
+		return
+	}
+	p.s.Record("playbook.summary", upn, string(detail), nil)
 }
 
 var _ = json.Marshal

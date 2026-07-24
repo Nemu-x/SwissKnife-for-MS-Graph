@@ -8,6 +8,8 @@ import { ACCENT_PRESETS, isHex } from '../lib/color'
 import { setLanguage } from '../i18n'
 import { api, errMessage } from '../lib/api'
 import { Version } from '../../wailsjs/go/main/App'
+import { EventsOn } from '../../wailsjs/runtime/runtime'
+import { humanBytes } from '../lib/format'
 import type { services } from '../../wailsjs/go/models'
 
 // Crypto donation wallets shown in the Support card (copy-to-clipboard).
@@ -25,8 +27,31 @@ export function SettingsPage() {
   const [version, setVersion] = useState('')
   const [update, setUpdate] = useState<services.UpdateInfo | null>(null)
   const [checking, setChecking] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const [updateProgress, setUpdateProgress] = useState('')
 
   useEffect(() => { Version().then(setVersion).catch(() => {}) }, [])
+
+  // In-app update: download the installer with progress, then run it silently
+  // (the app exits; the installer replaces files and relaunches).
+  useEffect(() => EventsOn('update:progress', (d: any) => {
+    const pct = d.total > 0 ? Math.round((d.done / d.total) * 100) : 0
+    setUpdateProgress(`${humanBytes(d.done)} / ${humanBytes(d.total)} — ${pct}%`)
+  }), [])
+
+  const updateNow = async () => {
+    if (!update?.assetUrl) return
+    setUpdating(true); setUpdateProgress('')
+    try {
+      const path = await api.update.download(update.assetUrl, update.assetName || 'installer.exe', update.assetSize || 0)
+      setUpdateProgress(t('settings.updateInstalling'))
+      await api.update.apply(path)
+      // the app quits moments later; nothing else to do
+    } catch (e) {
+      toast('err', errMessage(e))
+      setUpdating(false)
+    }
+  }
 
   const toggleReadOnly = async () => setStatus(await api.connect.setReadOnly(!readOnly))
 
@@ -159,10 +184,15 @@ export function SettingsPage() {
                 : <span className="text-sm text-[var(--ok)]">{t('settings.upToDate')}</span>
             )}
             {update && update.updateAvailable && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge kind="warn">{t('settings.updateAvailable', { v: update.latestVersion })}</Badge>
-                <Button variant="primary" onClick={() => api.update.openReleases(update.url)}>
-                  <Download size={15} /> {t('settings.download')}
+                {update.assetUrl && (
+                  <Button variant="primary" disabled={updating} onClick={updateNow}>
+                    {updating ? <Spinner /> : <Download size={15} />} {updating ? (updateProgress || t('common.working')) : t('settings.updateNow')}
+                  </Button>
+                )}
+                <Button variant="subtle" disabled={updating} onClick={() => api.update.openReleases(update.url)}>
+                  {t('settings.download')}
                 </Button>
               </div>
             )}

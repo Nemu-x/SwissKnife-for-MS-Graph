@@ -12,6 +12,18 @@ export function ActivityPage() {
   const load = () => api.audit.activity(200).then((e) => setEntries((e || []).reverse())).catch(() => {})
   useEffect(() => { load() }, [])
 
+  // Playbook summaries are stored as {key, params} JSON so they render in the
+  // UI language; any other detail stays as-is.
+  const detailText = (d: string) => {
+    if (d && d.startsWith('{')) {
+      try {
+        const o = JSON.parse(d)
+        if (o.key) return String(t(o.key, { ...o.params, defaultValue: d }))
+      } catch { /* plain detail */ }
+    }
+    return d
+  }
+
   return (
     <Page title={t('nav.activity')} subtitle="Local action log (destructive & write operations)">
       <Card title={t('nav.activity')} actions={<Button variant="ghost" onClick={load} className="!px-2 !py-1"><RefreshCw size={14} /></Button>}>
@@ -22,7 +34,7 @@ export function ActivityPage() {
               {e.ok ? <CheckCircle2 size={15} className="text-[var(--ok)]" /> : <XCircle size={15} className="text-[var(--danger)]" />}
               <span className="font-mono text-xs text-[var(--accent)]">{e.action}</span>
               <span className="truncate text-[var(--text-dim)]">{e.target}</span>
-              {e.detail && <span className="truncate text-xs text-[var(--text-faint)]">{e.detail}</span>}
+              {e.detail && <span className="truncate text-xs text-[var(--text-faint)]">{detailText(e.detail)}</span>}
               <span className="ml-auto shrink-0 text-xs text-[var(--text-faint)]">
                 {new Date(e.time).toLocaleString()}
               </span>
