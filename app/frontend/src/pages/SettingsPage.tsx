@@ -165,7 +165,14 @@ export function SettingsPage() {
         </Card>
 
         <Card title={t('settings.teams')}>
-          <p className="text-xs text-[var(--text-faint)]">{t('settings.teamsHint')}</p>
+          <p className="text-xs text-[var(--text-faint)]">
+            {t('settings.teamsHint')}{' '}
+            <button
+              onClick={() => api.update.openReleases('https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki/Teams-Notifications')}
+              className="text-[var(--accent)] underline-offset-2 hover:underline">
+              {t('settings.teamsGuide')}
+            </button>
+          </p>
           <div className="mt-3 flex flex-col gap-2">
             <input
               value={notify.webhookUrl}

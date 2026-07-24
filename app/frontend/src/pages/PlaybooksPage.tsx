@@ -274,6 +274,10 @@ export function PlaybooksPage() {
                   {s.running && job?.progress && <div className="text-xs text-[var(--accent2)]">{job.progress}</div>}
                   {s.error && <div className="text-xs text-[var(--danger)]">{s.errorCode ? `${s.errorCode}: ` : ''}{s.error}</div>}
                   {s.hint && <div className="text-xs text-[var(--warn)]">{t('playbooks.permissionHint', { p: s.hint })}</div>}
+                  {/* Known Graph limitation: Exchange-managed groups are not editable via Graph. */}
+                  {s.error && /mail-enabled security|distribution list/i.test(s.error) && (
+                    <div className="text-xs text-[var(--warn)]">{t('playbooks.exchangeGroupHint')}</div>
+                  )}
                 </div>
               </div>
             ))}

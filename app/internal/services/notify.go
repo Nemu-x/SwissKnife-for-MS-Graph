@@ -80,7 +80,7 @@ func (n *NotifyService) Test() error {
 	if cfg.WebhookURL == "" {
 		return errors.New("no webhook URL configured")
 	}
-	return postAdaptiveCard(context.Background(), cfg.WebhookURL, "SwissKnife test notification",
+	return postAdaptiveCard(context.Background(), cfg.WebhookURL, "SwissKnife test notification", "good",
 		[][2]string{{"Status", "Webhook is working"}}, nil)
 }
 
@@ -108,25 +108,41 @@ func notifyPlaybookSummary(s *session.Session, kind, upn string, steps []Step, c
 		label = strings.ToUpper(label[:1]) + label[1:]
 	}
 	title := fmt.Sprintf("%s completed — %s", label, upn)
-	status := "OK"
+	status, result := "good", "OK"
 	if canceled {
-		status = "Canceled"
+		status, result = "warning", "Canceled"
 	} else if failed > 0 {
-		status = fmt.Sprintf("%d step(s) failed", failed)
+		status, result = "attention", fmt.Sprintf("%d of %d step(s) failed", failed, len(steps))
 	}
 	facts := [][2]string{
 		{"User", upn},
 		{"Steps", itoa(len(steps))},
-		{"Result", status},
+		{"Result", result},
 	}
-	err := postAdaptiveCard(context.Background(), cfg.WebhookURL, title, facts, failedLines)
+	err := postAdaptiveCard(context.Background(), cfg.WebhookURL, title, status, facts, failedLines)
 	s.Record("notify.teams", upn, "kind="+kind, err)
 }
 
-// postAdaptiveCard sends a Teams message payload with one Adaptive Card.
-func postAdaptiveCard(ctx context.Context, webhookURL, title string, facts [][2]string, extraLines []string) error {
+// cardAccent maps a status to the Adaptive Card emoji + text color.
+func cardAccent(status string) (emoji, color string) {
+	switch status {
+	case "good":
+		return "✅", "Good"
+	case "warning":
+		return "⏹", "Warning"
+	default:
+		return "❌", "Attention"
+	}
+}
+
+// postAdaptiveCard sends a Teams message payload with one Adaptive Card:
+// a colored title with a status emoji, a fact set, failure lines in red, and
+// a subtle footer. Full-width so long UPNs don't wrap awkwardly.
+func postAdaptiveCard(ctx context.Context, webhookURL, title, status string, facts [][2]string, extraLines []string) error {
+	emoji, color := cardAccent(status)
 	body := []map[string]any{
-		{"type": "TextBlock", "size": "Medium", "weight": "Bolder", "text": title, "wrap": true},
+		{"type": "TextBlock", "size": "Large", "weight": "Bolder", "color": color,
+			"text": emoji + " " + title, "wrap": true},
 	}
 	if len(facts) > 0 {
 		fs := make([]map[string]string, 0, len(facts))
@@ -136,8 +152,12 @@ func postAdaptiveCard(ctx context.Context, webhookURL, title string, facts [][2]
 		body = append(body, map[string]any{"type": "FactSet", "facts": fs})
 	}
 	for _, line := range extraLines {
-		body = append(body, map[string]any{"type": "TextBlock", "text": line, "wrap": true, "spacing": "None"})
+		body = append(body, map[string]any{"type": "TextBlock", "text": line, "wrap": true,
+			"spacing": "None", "color": "Attention"})
 	}
+	body = append(body, map[string]any{"type": "TextBlock", "isSubtle": true, "size": "Small",
+		"separator": true, "spacing": "Medium",
+		"text": "SwissKnife for MS Graph · " + time.Now().Format("2006-01-02 15:04")})
 	payload := map[string]any{
 		"type": "message",
 		"attachments": []any{map[string]any{
@@ -146,6 +166,7 @@ func postAdaptiveCard(ctx context.Context, webhookURL, title string, facts [][2]
 				"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
 				"type":    "AdaptiveCard",
 				"version": "1.4",
+				"msteams": map[string]any{"width": "Full"},
 				"body":    body,
 			},
 		}},

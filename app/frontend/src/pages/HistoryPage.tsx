@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RefreshCw, ChevronDown, ChevronRight, CheckCircle2, XCircle, PlayCircle, Loader2 } from 'lucide-react'
+import { RefreshCw, ChevronDown, ChevronRight, CheckCircle2, XCircle, PlayCircle, Loader2, Clock } from 'lucide-react'
 import { Page } from '../components/Layout'
 import { Button, Badge, Spinner, ErrorNote } from '../components/ui'
 import { useStore } from '../lib/store'
@@ -90,45 +90,58 @@ export function HistoryPage() {
                       </div>
                     )}
                     {(() => {
-                      // Transfer journals carry item names only in the plan
-                      // event; build an id→{name,size} map for the item rows.
+                      // Transfer journals log several events per item (inflight,
+                      // then the outcome) and names live only in the plan event —
+                      // aggregate to one row per item with its LAST status.
                       const plan: Record<string, any> = {}
+                      const itemOrder: string[] = []
+                      const itemLast: Record<string, any> = {}
                       for (const ev of detail.events) {
                         if (ev.t === 'plan') {
                           for (const it of ((ev.data as any)?.items ?? [])) plan[it.id] = it
+                        } else if (ev.t === 'item') {
+                          const d: any = ev.data || {}
+                          if (!(d.id in itemLast)) itemOrder.push(d.id)
+                          itemLast[d.id] = d
                         }
                       }
-                      return detail.events.map((ev, i) => {
-                        if (ev.t === 'item') {
+                      const rows = detail.events.map((ev, i) => {
+                        if (ev.t === 'step') {
                           const d: any = ev.data || {}
-                          const name = plan[d.id]?.name ?? d.id
-                          const ok = d.status === 'copied' || d.status === 'skipped'
+                          const name = d.nameKey ? t(d.nameKey, { defaultValue: d.name }) : d.name
                           return (
-                            <div key={i} className="flex items-start gap-2 text-sm">
-                              {ok ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[var(--ok)]" /> : <XCircle size={14} className="mt-0.5 shrink-0 text-[var(--danger)]" />}
-                              <span className="truncate text-[var(--text)]">{name}</span>
-                              <span className="shrink-0 text-xs text-[var(--text-faint)]">{d.status}</span>
-                              {d.error && <span className="truncate text-xs text-[var(--danger)]">{d.error}</span>}
+                            <div key={`s${i}`} className="flex items-start gap-2 text-sm">
+                              {d.ok ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[var(--ok)]" /> : <XCircle size={14} className="mt-0.5 shrink-0 text-[var(--danger)]" />}
+                              <span className="text-[var(--text)]">{name}</span>
+                              {d.detail && <span className="text-xs text-[var(--text-faint)]">{d.detail}</span>}
+                              {d.error && <span className="text-xs text-[var(--danger)]">{d.error}</span>}
                             </div>
                           )
                         }
-                        if (ev.t === 'step') {
-                        const d: any = ev.data || {}
-                        const name = d.nameKey ? t(d.nameKey, { defaultValue: d.name }) : d.name
-                        return (
-                          <div key={i} className="flex items-start gap-2 text-sm">
-                            {d.ok ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[var(--ok)]" /> : <XCircle size={14} className="mt-0.5 shrink-0 text-[var(--danger)]" />}
-                            <span className="text-[var(--text)]">{name}</span>
-                            {d.detail && <span className="text-xs text-[var(--text-faint)]">{d.detail}</span>}
-                            {d.error && <span className="text-xs text-[var(--danger)]">{d.error}</span>}
-                          </div>
-                        )
-                      }
                         if (ev.t === 'log') {
-                          return <div key={i} className="font-mono text-xs text-[var(--text-dim)]">{String((ev.data as any)?.text ?? '')}</div>
+                          return <div key={`l${i}`} className="font-mono text-xs text-[var(--text-dim)]">{String((ev.data as any)?.text ?? '')}</div>
                         }
                         return null
                       })
+                      const itemRows = itemOrder.map((id) => {
+                        const d = itemLast[id]
+                        const name = plan[id]?.name ?? id
+                        // inflight/pending are transient, not failures: amber clock.
+                        const icon = d.status === 'copied' || d.status === 'skipped'
+                          ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[var(--ok)]" />
+                          : d.status === 'failed'
+                            ? <XCircle size={14} className="mt-0.5 shrink-0 text-[var(--danger)]" />
+                            : <Clock size={14} className="mt-0.5 shrink-0 text-[var(--warn)]" />
+                        return (
+                          <div key={`i${id}`} className="flex items-start gap-2 text-sm">
+                            {icon}
+                            <span className="truncate text-[var(--text)]">{name}</span>
+                            <span className="shrink-0 text-xs text-[var(--text-faint)]">{d.status}</span>
+                            {d.error && <span className="truncate text-xs text-[var(--danger)]">{d.error}</span>}
+                          </div>
+                        )
+                      })
+                      return [...rows, ...itemRows]
                     })()}
                     {detail.summary && (
                       <p className="mt-1 text-xs text-[var(--text-faint)]">
