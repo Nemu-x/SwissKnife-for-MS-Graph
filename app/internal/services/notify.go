@@ -80,13 +80,14 @@ func (n *NotifyService) Test() error {
 	if cfg.WebhookURL == "" {
 		return errors.New("no webhook URL configured")
 	}
-	return postAdaptiveCard(context.Background(), cfg.WebhookURL, "SwissKnife test notification", "good",
+	return postAdaptiveCard(n.s.Ctx(), cfg.WebhookURL, "SwissKnife test notification",
 		[][2]string{{"Status", "Webhook is working"}}, nil)
 }
 
 // notifyPlaybookSummary posts a run summary card, best-effort: failures are
-// audited, never surfaced to the operator's run result.
-func notifyPlaybookSummary(s *session.Session, kind, upn string, steps []Step, canceled bool) {
+// audited, never surfaced to the operator's run result. displayName and extras
+// enrich the card (who the person is, where the backup went, counters).
+func notifyPlaybookSummary(s *session.Session, kind, upn, displayName string, steps []Step, canceled bool, extras [][2]string) {
 	cfg := loadNotifyConfig(s.ConfigDir())
 	if !cfg.NotifyPlaybooks || cfg.WebhookURL == "" {
 		return
@@ -107,42 +108,39 @@ func notifyPlaybookSummary(s *session.Session, kind, upn string, steps []Step, c
 	if label != "" {
 		label = strings.ToUpper(label[:1]) + label[1:]
 	}
-	title := fmt.Sprintf("%s completed — %s", label, upn)
-	status, result := "good", "OK"
+	// The title must not claim success when steps failed.
+	var title string
+	switch {
+	case canceled:
+		title = fmt.Sprintf("%s canceled — %s", label, upn)
+	case failed > 0:
+		title = fmt.Sprintf("%s finished with %d issue(s) — %s", label, failed, upn)
+	default:
+		title = fmt.Sprintf("%s completed — %s", label, upn)
+	}
+	userVal := upn
+	if displayName != "" {
+		userVal = displayName + " (" + upn + ")"
+	}
+	stepsVal := fmt.Sprintf("%d OK", len(steps)-failed)
+	if failed > 0 {
+		stepsVal += fmt.Sprintf(" · %d failed", failed)
+	}
 	if canceled {
-		status, result = "warning", "Canceled"
-	} else if failed > 0 {
-		status, result = "attention", fmt.Sprintf("%d of %d step(s) failed", failed, len(steps))
+		stepsVal += " · canceled"
 	}
-	facts := [][2]string{
-		{"User", upn},
-		{"Steps", itoa(len(steps))},
-		{"Result", result},
-	}
-	err := postAdaptiveCard(context.Background(), cfg.WebhookURL, title, status, facts, failedLines)
+	facts := append([][2]string{{"User", userVal}, {"Steps", stepsVal}}, extras...)
+	// Session context (not an op context): the op finishes before this fires,
+	// but app shutdown must still cancel a hanging webhook POST.
+	err := postAdaptiveCard(s.Ctx(), cfg.WebhookURL, title, facts, failedLines)
 	s.Record("notify.teams", upn, "kind="+kind, err)
 }
 
-// cardAccent maps a status to the Adaptive Card emoji + text color.
-func cardAccent(status string) (emoji, color string) {
-	switch status {
-	case "good":
-		return "✅", "Good"
-	case "warning":
-		return "⏹", "Warning"
-	default:
-		return "❌", "Attention"
-	}
-}
-
-// postAdaptiveCard sends a Teams message payload with one Adaptive Card:
-// a colored title with a status emoji, a fact set, failure lines in red, and
-// a subtle footer. Full-width so long UPNs don't wrap awkwardly.
-func postAdaptiveCard(ctx context.Context, webhookURL, title, status string, facts [][2]string, extraLines []string) error {
-	emoji, color := cardAccent(status)
+// postAdaptiveCard sends a Teams message payload with one Adaptive Card: a
+// modest bold title, a fact set, failure lines in red, and a subtle footer.
+func postAdaptiveCard(ctx context.Context, webhookURL, title string, facts [][2]string, extraLines []string) error {
 	body := []map[string]any{
-		{"type": "TextBlock", "size": "Large", "weight": "Bolder", "color": color,
-			"text": emoji + " " + title, "wrap": true},
+		{"type": "TextBlock", "size": "Medium", "weight": "Bolder", "text": title, "wrap": true},
 	}
 	if len(facts) > 0 {
 		fs := make([]map[string]string, 0, len(facts))
@@ -166,7 +164,6 @@ func postAdaptiveCard(ctx context.Context, webhookURL, title, status string, fac
 				"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
 				"type":    "AdaptiveCard",
 				"version": "1.4",
-				"msteams": map[string]any{"width": "Full"},
 				"body":    body,
 			},
 		}},
@@ -182,7 +179,12 @@ func postAdaptiveCard(ctx context.Context, webhookURL, title, status string, fac
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	// Never follow redirects: a 3xx would re-send the card body to a host we
+	// did not validate. Treat it as a failure instead.
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

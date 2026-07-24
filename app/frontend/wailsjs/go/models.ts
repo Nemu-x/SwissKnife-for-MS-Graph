@@ -221,6 +221,22 @@ export namespace services {
 	        this.channelId = source["channelId"];
 	    }
 	}
+	export class ChatBackupResult {
+	    chats: number;
+	    messages: number;
+	    file: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatBackupResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.chats = source["chats"];
+	        this.messages = source["messages"];
+	        this.file = source["file"];
+	    }
+	}
 	export class ChatPickItem {
 	    id: string;
 	    label: string;
@@ -473,6 +489,7 @@ export namespace services {
 	    removeAllLicenses: boolean;
 	    backupToUser: string;
 	    backupFolder: string;
+	    backupChats: boolean;
 	    delete: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -494,6 +511,7 @@ export namespace services {
 	        this.removeAllLicenses = source["removeAllLicenses"];
 	        this.backupToUser = source["backupToUser"];
 	        this.backupFolder = source["backupFolder"];
+	        this.backupChats = source["backupChats"];
 	        this.delete = source["delete"];
 	    }
 	}

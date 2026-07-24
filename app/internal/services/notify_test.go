@@ -69,8 +69,13 @@ func TestOffboardPostsTeamsSummary(t *testing.T) {
 
 // TestNotifyDisabledPostsNothing: without the toggle no request is sent.
 func TestNotifyDisabledPostsNothing(t *testing.T) {
-	posted := false
-	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { posted = true }))
+	posted := make(chan struct{}, 1)
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case posted <- struct{}{}:
+		default:
+		}
+	}))
 	t.Cleanup(hook.Close)
 
 	var calls []string
@@ -86,8 +91,9 @@ func TestNotifyDisabledPostsNothing(t *testing.T) {
 	if _, err := pb.Offboard(fullOffboardRequest()); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond) // give a wrong-behaving goroutine a chance to fire
-	if posted {
+	select {
+	case <-posted:
 		t.Fatal("disabled notifications must not post")
+	case <-time.After(300 * time.Millisecond): // grace window for a wrong-behaving goroutine
 	}
 }

@@ -50,7 +50,8 @@ export function PlaybooksPage() {
     upn: '', block: true, revokeSessions: true,
     oof: false, oofMessage: '', forwardTo: remembered('forwardTo'), hideFromGal: false,
     calendarTo: remembered('calendarTo'), removeFromGroups: false,
-    removeAllLicenses: true, backupToUser: remembered('backupToUser'), backupFolder: remembered('backupFolder'), delete: false,
+    removeAllLicenses: true, backupToUser: remembered('backupToUser'), backupFolder: remembered('backupFolder'),
+    backupChats: false, delete: false,
   })
 
   // Named option presets; two built-ins encode the blessed two-phase flow
@@ -152,7 +153,8 @@ export function PlaybooksPage() {
     startPlaybook('offboard', off.upn, () => api.playbooks.offboard({ ...off, confirm })).then((r) => {
       if (!r || r.canceled) return // failed or canceled run: keep the previous defaults
       for (const k of ['forwardTo', 'calendarTo', 'backupToUser', 'backupFolder'] as const) {
-        localStorage.setItem('defaults.offboard.' + k, off[k])
+        // A run that skipped a field must not erase the remembered value.
+        if (off[k]) localStorage.setItem('defaults.offboard.' + k, off[k])
       }
     })
   }
@@ -238,6 +240,11 @@ export function PlaybooksPage() {
               <Field label={t('playbooks.calendarTo')}><UpnInput value={off.calendarTo} onChange={(v) => setOff({ ...off, calendarTo: v })} placeholder="manager@contoso.com" /></Field>
               <Field label={t('playbooks.backupTo')}><UpnInput value={off.backupToUser} onChange={(v) => setOff({ ...off, backupToUser: v })} placeholder="backup@contoso.com" /></Field>
               <Input placeholder={t('playbooks.backupFolder')} value={off.backupFolder} onChange={(e) => setOff({ ...off, backupFolder: e.target.value })} />
+              <label className={`flex items-center gap-2 text-sm ${off.backupToUser ? 'text-[var(--text-dim)]' : 'text-[var(--text-faint)] opacity-60'}`}>
+                <input type="checkbox" disabled={!off.backupToUser} checked={off.backupChats}
+                  onChange={(e) => setOff({ ...off, backupChats: e.target.checked })} />
+                {t('playbooks.backupChats')}{!off.backupToUser ? ` — ${t('playbooks.backupChatsNeedsTarget')}` : ''}
+              </label>
               <Button variant="danger" disabled={readOnly || busy || !off.upn} onClick={() => askConfirm(off.upn, (c) => runOffboard(c)())}>
                 {busy ? <Spinner /> : <Play size={15} />} {t('playbooks.run')}
               </Button>

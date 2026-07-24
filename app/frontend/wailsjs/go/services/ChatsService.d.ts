@@ -5,6 +5,8 @@ import {services} from '../models';
 
 export function AddMember(arg1:string,arg2:string,arg3:boolean):Promise<json.RawMessage>;
 
+export function BackupUserChats(arg1:string,arg2:string,arg3:string):Promise<services.ChatBackupResult>;
+
 export function CreateGroupChat(arg1:string,arg2:Array<string>):Promise<json.RawMessage>;
 
 export function List(arg1:string,arg2:number):Promise<Array<json.RawMessage>>;

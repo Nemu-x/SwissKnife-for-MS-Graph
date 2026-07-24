@@ -177,6 +177,7 @@ export function SettingsPage() {
             <input
               value={notify.webhookUrl}
               onChange={(e) => setNotify({ ...notify, webhookUrl: e.target.value })}
+              aria-label={t('settings.teams')}
               placeholder="https://…logic.azure.com/workflows/…"
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 font-mono text-xs outline-none focus:border-[var(--accent)]"
             />
