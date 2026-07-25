@@ -9,6 +9,8 @@ import (
 
 	"swissknife-app/internal/auditlog"
 	"swissknife-app/internal/graphapi"
+	"swissknife-app/internal/journal"
+	"swissknife-app/internal/ops"
 )
 
 var ErrNotConnected = errors.New("not connected — connect to a tenant first")
@@ -20,12 +22,32 @@ type Session struct {
 	client      *graphapi.Client
 	profileName string
 	readOnly    bool
+	configDir   string
 
-	Audit *auditlog.Log
+	Audit   *auditlog.Log
+	Ops     *ops.Registry
+	Journal *journal.Log
 }
 
 func New(audit *auditlog.Log) *Session {
-	return &Session{ctx: context.Background(), Audit: audit}
+	return &Session{ctx: context.Background(), Audit: audit, Ops: ops.NewRegistry()}
+}
+
+// SetJournal attaches the persistent run journal (nil-safe: services check).
+func (s *Session) SetJournal(j *journal.Log) { s.Journal = j }
+
+// SetConfigDir stores the per-user config directory (%APPDATA%\SwissKnifeGraph)
+// for services that persist small settings files (e.g. notifications).
+func (s *Session) SetConfigDir(dir string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.configDir = dir
+}
+
+func (s *Session) ConfigDir() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.configDir
 }
 
 // SetAppContext stores the Wails context (cancellation on app shutdown).

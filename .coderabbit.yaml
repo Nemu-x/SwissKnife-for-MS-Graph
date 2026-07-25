@@ -1,0 +1,35 @@
+# CodeRabbit configuration — https://docs.coderabbit.ai/reference/yaml-template
+# Review PRs into dev/main only, keep the output focused (no poems, no status
+# spam), don't auto-reply to every comment thread.
+language: en-US
+
+reviews:
+  profile: assertive
+  high_level_summary: true
+  poem: false
+  review_status: false
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    base_branches:
+      - dev
+      - main
+  path_filters:
+    - "!app/frontend/wailsjs/**"   # generated Wails bindings — not hand-written
+    - "!app/build/**"              # build assets / installer artifacts
+  path_instructions:
+    - path: "app/internal/**"
+      instructions: >-
+        Go backend of a Wails desktop app for Microsoft Graph. Pay attention to
+        context propagation and cancellation (internal/ops), Graph throttling
+        (429/Retry-After), and that services never see raw tokens (ADR-002).
+        Events must be emitted via emitOp/emitEvent only, never wrt.EventsEmit
+        directly (headless tests would crash).
+    - path: "app/frontend/src/**"
+      instructions: >-
+        React 18 + TS. Long-running state belongs in lib/store.tsx jobs (not
+        page-local useState); expensive/one-time results go to the store cache.
+        EN and RU locale files must stay key-identical (vitest parity test).
+
+chat:
+  auto_reply: false

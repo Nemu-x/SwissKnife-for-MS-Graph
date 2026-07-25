@@ -1,10 +1,14 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"swissknife-app/internal/session"
 )
@@ -130,6 +134,145 @@ func (ch *ChatsService) RemoveMember(chatID, upn string) error {
 	err = c.Delete(ch.s.Ctx(), "/chats/"+url.PathEscape(chatID)+"/members/"+url.PathEscape(mid))
 	ch.s.Record("chats.removeMember", chatID, "user="+upn, err)
 	return err
+}
+
+// ChatBackupResult summarizes an exported chat archive.
+type ChatBackupResult struct {
+	Chats    int    `json:"chats"`
+	Messages int    `json:"messages"`
+	File     string `json:"file"` // path uploaded into the target drive
+}
+
+// BackupUserChats exports a user's Teams chats (1:1 and group) into a single
+// JSON archive and uploads it to the target user's OneDrive folder.
+//
+// NOTE: reading another user's chat messages app-only goes through Microsoft's
+// PROTECTED APIs — Chat.Read.All (Application) must be approved by Microsoft
+// for this app id (aka.ms/teamsgraph/requestaccess) before Graph stops
+// answering 403. The permission hint in the UI points this out.
+func (ch *ChatsService) BackupUserChats(sourceUser, targetUser, destFolder string) (*ChatBackupResult, error) {
+	res, err := ch.backupUserChatsCtx(ch.s.Ctx(), sourceUser, targetUser, destFolder)
+	return res, wrapOpErr(err)
+}
+
+func (ch *ChatsService) backupUserChatsCtx(parent context.Context, sourceUser, targetUser, destFolder string) (*ChatBackupResult, error) {
+	if err := ch.s.GuardWrite(); err != nil {
+		return nil, err
+	}
+	c, err := ch.s.Client()
+	if err != nil {
+		return nil, err
+	}
+
+	// One paged walk over every chat the user participates in. Hard-capped so a
+	// decade of chat history cannot balloon memory; the cap is recorded in the
+	// archive (truncated flag) instead of failing silently. One sentinel item
+	// past the cap distinguishes "exactly at the cap" from "actually more".
+	const maxExportMessages = 50000
+	raws, err := c.ListAll(parent, "/users/"+url.PathEscape(sourceUser)+"/chats/getAllMessages", topParams(50), maxExportMessages+1)
+	if err != nil {
+		return nil, err
+	}
+	truncated := len(raws) > maxExportMessages
+	if truncated {
+		raws = raws[:maxExportMessages]
+	}
+
+	// Chat labels (topic / other participants) — best-effort; ids otherwise.
+	labels := map[string]string{}
+	if picks, lerr := ch.ListForPicker(sourceUser); lerr == nil {
+		for _, p := range picks {
+			labels[p.ID] = p.Label
+		}
+	}
+
+	type chatMsg struct {
+		From string `json:"from,omitempty"`
+		At   string `json:"at,omitempty"`
+		Type string `json:"contentType,omitempty"`
+		Body string `json:"body,omitempty"`
+	}
+	grouped := map[string][]chatMsg{}
+	order := []string{}
+	for _, raw := range raws {
+		var m struct {
+			ChatID string `json:"chatId"`
+			At     string `json:"createdDateTime"`
+			From   struct {
+				User struct {
+					DisplayName string `json:"displayName"`
+				} `json:"user"`
+			} `json:"from"`
+			Body struct {
+				ContentType string `json:"contentType"`
+				Content     string `json:"content"`
+			} `json:"body"`
+			MessageType string `json:"messageType"`
+		}
+		if json.Unmarshal(raw, &m) != nil || m.ChatID == "" {
+			continue
+		}
+		if m.MessageType != "" && m.MessageType != "message" {
+			continue // skip system events (member added, …)
+		}
+		if _, seen := grouped[m.ChatID]; !seen {
+			order = append(order, m.ChatID)
+		}
+		grouped[m.ChatID] = append(grouped[m.ChatID], chatMsg{
+			From: m.From.User.DisplayName, At: m.At, Type: m.Body.ContentType, Body: m.Body.Content,
+		})
+	}
+
+	type chatOut struct {
+		ID       string    `json:"id"`
+		Label    string    `json:"label,omitempty"`
+		Messages []chatMsg `json:"messages"`
+	}
+	res := &ChatBackupResult{Chats: len(order)}
+	archive := struct {
+		User       string    `json:"user"`
+		ExportedAt string    `json:"exportedAt"`
+		Truncated  bool      `json:"truncated,omitempty"` // hit the export cap
+		Chats      []chatOut `json:"chats"`
+	}{User: sourceUser, ExportedAt: time.Now().Format(time.RFC3339), Truncated: truncated}
+	for _, id := range order {
+		archive.Chats = append(archive.Chats, chatOut{ID: id, Label: labels[id], Messages: grouped[id]})
+		res.Messages += len(grouped[id])
+	}
+
+	blob, err := json.MarshalIndent(archive, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	tmp, err := os.CreateTemp("", "swissknife-chats-*.json")
+	if err != nil {
+		return nil, err
+	}
+	local := tmp.Name()
+	defer os.Remove(local)
+	if _, err := tmp.Write(blob); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	// A failed flush would upload a truncated archive — surface it instead.
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+
+	remote := strings.Trim(destFolder, "/")
+	name := fmt.Sprintf("teams-chats-%s.json", time.Now().Format("2006-01-02-1504"))
+	if remote != "" {
+		remote += "/"
+	}
+	dst := "/users/" + url.PathEscape(targetUser) + "/drive/root:/" + escapeDrivePath(remote+name)
+	if _, err := c.UploadFile(parent, dst, local, nil); err != nil {
+		return nil, err
+	}
+	res.File = remote + name
+
+	ch.s.Record("chats.backup", sourceUser+" -> "+targetUser,
+		"chats="+itoa(res.Chats)+" messages="+itoa(res.Messages)+" file="+res.File, nil)
+	return res, nil
 }
 
 // CreateGroupChat creates a group chat with a topic and members (at least 2 UPNs).

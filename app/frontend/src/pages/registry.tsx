@@ -22,12 +22,13 @@ import { HealthPage } from './HealthPage'
 import { AuditPage } from './AuditPage'
 import { RawPage } from './RawPage'
 import { ActivityPage } from './ActivityPage'
+import { HistoryPage } from './HistoryPage'
 import { SettingsPage } from './SettingsPage'
 
 export type PageId =
   | 'connect' | 'dashboard' | 'playbooks' | 'bulk' | 'users' | 'licensing' | 'roles' | 'groups' | 'teams' | 'chats'
   | 'mail' | 'files' | 'offboarding' | 'intune' | 'devices' | 'apps' | 'security' | 'reports' | 'cleanup' | 'health'
-  | 'audit' | 'raw' | 'activity' | 'settings'
+  | 'audit' | 'raw' | 'activity' | 'history' | 'settings'
 
 export const pages: Record<PageId, ComponentType> = {
   connect: ConnectPage,
@@ -53,5 +54,6 @@ export const pages: Record<PageId, ComponentType> = {
   audit: AuditPage,
   raw: RawPage,
   activity: ActivityPage,
+  history: HistoryPage,
   settings: SettingsPage,
 }

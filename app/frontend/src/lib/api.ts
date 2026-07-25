@@ -25,7 +25,10 @@ import * as Cleanup from '../../wailsjs/go/services/CleanupService'
 import * as ServiceHealth from '../../wailsjs/go/services/ServiceHealthService'
 import * as Security from '../../wailsjs/go/services/SecurityService'
 import * as Update from '../../wailsjs/go/services/UpdateService'
-import type { secrets, services } from '../../wailsjs/go/models'
+import * as Journal from '../../wailsjs/go/services/JournalService'
+import * as Notify from '../../wailsjs/go/services/NotifyService'
+import type { journal, secrets, services } from '../../wailsjs/go/models'
+import { parseErr, type ParsedError } from './graphError'
 
 export type GraphObject = Record<string, any>
 export type Profile = secrets.Profile
@@ -150,6 +153,7 @@ export const api = {
     offboardingPreview: (src: string) => Drive.OffboardingPreview(src) as Promise<services.CopyPreview>,
     quota: (user: string) => Drive.Quota(user) as Promise<services.DriveQuota>,
     pickTarget: (targets: string[], needed: number) => Drive.PickTarget(targets, needed) as Promise<string>,
+    resumeCopy: (runId: string) => Drive.ResumeCopy(runId) as Promise<services.CopyResult>,
   },
   playbooks: {
     onboard: (req: any) => Playbook.Onboard(req) as Promise<services.PlaybookResult>,
@@ -218,18 +222,39 @@ export const api = {
   update: {
     check: () => Update.Check() as Promise<services.UpdateInfo>,
     openReleases: (url: string) => Update.OpenReleasesPage(url),
+    download: (assetUrl: string, name: string, size: number) => Update.Download(assetUrl, name, size) as Promise<string>,
+    apply: (installerPath: string) => Update.Apply(installerPath) as Promise<void>,
+  },
+  journal: {
+    list: (limit = 100) => Journal.List(limit) as Promise<journal.RunSummary[]>,
+    get: (opId: string) => Journal.Get(opId) as Promise<journal.Run>,
+  },
+  notify: {
+    get: () => Notify.Get() as Promise<services.NotifyConfig>,
+    set: (cfg: services.NotifyConfig) => Notify.Set(cfg) as Promise<void>,
+    test: () => Notify.Test() as Promise<void>,
   },
 }
 
-export function errMessage(e: unknown): string {
+export function errParsed(e: unknown): ParsedError {
   let msg = ''
   if (e == null) msg = ''
   else if (typeof e === 'string') msg = e
   else if (e instanceof Error) msg = e.message
   else msg = String(e)
-  // Enrich the common "missing permission" case so it isn't a cryptic 403.
-  if (/\b403\b/.test(msg)) {
+  return parseErr(msg)
+}
+
+export function errMessage(e: unknown): string {
+  const p = errParsed(e)
+  let msg = p.message
+  if (p.code && p.status) msg = `${p.status} ${p.code}: ${msg}`
+  if (p.hint) {
+    msg += ` — grant the ${p.hint} application permission in Entra and give admin consent.`
+  } else if (p.status === 403) {
+    // Missing-permission 403 without a known mapping: still point the way.
     msg += ' — the app registration is likely missing a Graph permission for this call. Add the required Application permission and grant admin consent.'
   }
+  if (p.requestId) msg += ` (requestId=${p.requestId})`
   return msg
 }

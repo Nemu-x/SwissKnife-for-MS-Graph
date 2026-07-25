@@ -12,6 +12,7 @@ type GraphError struct {
 	Code       string
 	Message    string
 	RequestID  string
+	Path       string // request URL path — lets callers derive permission hints
 }
 
 func (e *GraphError) Error() string {

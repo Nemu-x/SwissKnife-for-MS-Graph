@@ -46,6 +46,138 @@ export namespace auditlog {
 
 }
 
+export namespace journal {
+	
+	export class Entry {
+	    t: string;
+	    // Go type: time
+	    at: any;
+	    data?: Record<string, any>;
+	
+	    static createFrom(source: any = {}) {
+	        return new Entry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.t = source["t"];
+	        this.at = this.convertValues(source["at"], null);
+	        this.data = source["data"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Run {
+	    opId: string;
+	    kind: string;
+	    target: string;
+	    // Go type: time
+	    startedAt: any;
+	    // Go type: time
+	    endedAt?: any;
+	    summary?: Record<string, any>;
+	    interrupted: boolean;
+	    begin: Record<string, any>;
+	    events: Entry[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Run(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.opId = source["opId"];
+	        this.kind = source["kind"];
+	        this.target = source["target"];
+	        this.startedAt = this.convertValues(source["startedAt"], null);
+	        this.endedAt = this.convertValues(source["endedAt"], null);
+	        this.summary = source["summary"];
+	        this.interrupted = source["interrupted"];
+	        this.begin = source["begin"];
+	        this.events = this.convertValues(source["events"], Entry);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RunSummary {
+	    opId: string;
+	    kind: string;
+	    target: string;
+	    // Go type: time
+	    startedAt: any;
+	    // Go type: time
+	    endedAt?: any;
+	    summary?: Record<string, any>;
+	    interrupted: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.opId = source["opId"];
+	        this.kind = source["kind"];
+	        this.target = source["target"];
+	        this.startedAt = this.convertValues(source["startedAt"], null);
+	        this.endedAt = this.convertValues(source["endedAt"], null);
+	        this.summary = source["summary"];
+	        this.interrupted = source["interrupted"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace secrets {
 	
 	export class Profile {
@@ -87,6 +219,22 @@ export namespace services {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.teamId = source["teamId"];
 	        this.channelId = source["channelId"];
+	    }
+	}
+	export class ChatBackupResult {
+	    chats: number;
+	    messages: number;
+	    file: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatBackupResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.chats = source["chats"];
+	        this.messages = source["messages"];
+	        this.file = source["file"];
 	    }
 	}
 	export class ChatPickItem {
@@ -313,6 +461,20 @@ export namespace services {
 	    }
 	}
 	
+	export class NotifyConfig {
+	    webhookUrl: string;
+	    notifyPlaybooks: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new NotifyConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.webhookUrl = source["webhookUrl"];
+	        this.notifyPlaybooks = source["notifyPlaybooks"];
+	    }
+	}
 	export class OffboardRequest {
 	    upn: string;
 	    confirm: string;
@@ -327,6 +489,10 @@ export namespace services {
 	    removeAllLicenses: boolean;
 	    backupToUser: string;
 	    backupFolder: string;
+	    backupChats: boolean;
+	    intuneAction: string;
+	    removeMfaMethods: boolean;
+	    deleteRegisteredDevices: boolean;
 	    delete: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -348,6 +514,10 @@ export namespace services {
 	        this.removeAllLicenses = source["removeAllLicenses"];
 	        this.backupToUser = source["backupToUser"];
 	        this.backupFolder = source["backupFolder"];
+	        this.backupChats = source["backupChats"];
+	        this.intuneAction = source["intuneAction"];
+	        this.removeMfaMethods = source["removeMfaMethods"];
+	        this.deleteRegisteredDevices = source["deleteRegisteredDevices"];
 	        this.delete = source["delete"];
 	    }
 	}
@@ -399,9 +569,14 @@ export namespace services {
 	}
 	export class Step {
 	    name: string;
+	    nameKey?: string;
 	    ok: boolean;
 	    detail?: string;
+	    detailKey?: string;
+	    params?: Record<string, any>;
 	    error?: string;
+	    errorCode?: string;
+	    hint?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Step(source);
@@ -410,9 +585,14 @@ export namespace services {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
+	        this.nameKey = source["nameKey"];
 	        this.ok = source["ok"];
 	        this.detail = source["detail"];
+	        this.detailKey = source["detailKey"];
+	        this.params = source["params"];
 	        this.error = source["error"];
+	        this.errorCode = source["errorCode"];
+	        this.hint = source["hint"];
 	    }
 	}
 	export class PlaybookResult {
@@ -508,6 +688,9 @@ export namespace services {
 	    updateAvailable: boolean;
 	    notes: string;
 	    url: string;
+	    assetUrl?: string;
+	    assetName?: string;
+	    assetSize?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateInfo(source);
@@ -520,6 +703,9 @@ export namespace services {
 	        this.updateAvailable = source["updateAvailable"];
 	        this.notes = source["notes"];
 	        this.url = source["url"];
+	        this.assetUrl = source["assetUrl"];
+	        this.assetName = source["assetName"];
+	        this.assetSize = source["assetSize"];
 	    }
 	}
 	export class VersionBloat {

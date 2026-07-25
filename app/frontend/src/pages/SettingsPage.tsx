@@ -8,6 +8,8 @@ import { ACCENT_PRESETS, isHex } from '../lib/color'
 import { setLanguage } from '../i18n'
 import { api, errMessage } from '../lib/api'
 import { Version } from '../../wailsjs/go/main/App'
+import { EventsOn } from '../../wailsjs/runtime/runtime'
+import { humanBytes } from '../lib/format'
 import type { services } from '../../wailsjs/go/models'
 
 // Crypto donation wallets shown in the Support card (copy-to-clipboard).
@@ -25,8 +27,46 @@ export function SettingsPage() {
   const [version, setVersion] = useState('')
   const [update, setUpdate] = useState<services.UpdateInfo | null>(null)
   const [checking, setChecking] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const [updateProgress, setUpdateProgress] = useState('')
 
   useEffect(() => { Version().then(setVersion).catch(() => {}) }, [])
+
+  // In-app update: download the installer with progress, then run it silently
+  // (the app exits; the installer replaces files and relaunches).
+  useEffect(() => EventsOn('update:progress', (d: any) => {
+    const pct = d.total > 0 ? Math.round((d.done / d.total) * 100) : 0
+    setUpdateProgress(`${humanBytes(d.done)} / ${humanBytes(d.total)} — ${pct}%`)
+  }), [])
+
+  // Teams webhook notifications (playbook summaries → channel card).
+  const [notify, setNotify] = useState({ webhookUrl: '', notifyPlaybooks: false })
+  const [notifyBusy, setNotifyBusy] = useState(false)
+  useEffect(() => { api.notify.get().then((c) => setNotify({ webhookUrl: c.webhookUrl || '', notifyPlaybooks: !!c.notifyPlaybooks })).catch(() => {}) }, [])
+  const saveNotify = async () => {
+    setNotifyBusy(true)
+    try { await api.notify.set(notify as any); toast('ok', t('settings.teamsSaved')) }
+    catch (e) { toast('err', errMessage(e)) } finally { setNotifyBusy(false) }
+  }
+  const testNotify = async () => {
+    setNotifyBusy(true)
+    try { await api.notify.set(notify as any); await api.notify.test(); toast('ok', t('settings.teamsTestOk')) }
+    catch (e) { toast('err', errMessage(e)) } finally { setNotifyBusy(false) }
+  }
+
+  const updateNow = async () => {
+    if (!update?.assetUrl) return
+    setUpdating(true); setUpdateProgress('')
+    try {
+      const path = await api.update.download(update.assetUrl, update.assetName || 'installer.exe', update.assetSize || 0)
+      setUpdateProgress(t('settings.updateInstalling'))
+      await api.update.apply(path)
+      // the app quits moments later; nothing else to do
+    } catch (e) {
+      toast('err', errMessage(e))
+      setUpdating(false)
+    }
+  }
 
   const toggleReadOnly = async () => setStatus(await api.connect.setReadOnly(!readOnly))
 
@@ -124,6 +164,39 @@ export function SettingsPage() {
           )}
         </Card>
 
+        <Card title={t('settings.teams')}>
+          <p className="text-xs text-[var(--text-faint)]">
+            {t('settings.teamsHint')}{' '}
+            <button
+              onClick={() => api.update.openReleases('https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki/Teams-Notifications')}
+              className="text-[var(--accent)] underline-offset-2 hover:underline">
+              {t('settings.teamsGuide')}
+            </button>
+          </p>
+          <div className="mt-3 flex flex-col gap-2">
+            <input
+              value={notify.webhookUrl}
+              onChange={(e) => setNotify({ ...notify, webhookUrl: e.target.value })}
+              aria-label={t('settings.teams')}
+              placeholder="https://…logic.azure.com/workflows/…"
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 font-mono text-xs outline-none focus:border-[var(--accent)]"
+            />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={notify.notifyPlaybooks}
+                onChange={(e) => setNotify({ ...notify, notifyPlaybooks: e.target.checked })} />
+              {t('settings.teamsPlaybooks')}
+            </label>
+            <div className="flex gap-2">
+              <Button variant="subtle" disabled={notifyBusy} onClick={saveNotify}>
+                {notifyBusy ? <Spinner /> : null} {t('common.save')}
+              </Button>
+              <Button variant="subtle" disabled={notifyBusy || !notify.webhookUrl} onClick={testNotify}>
+                {t('settings.teamsTest')}
+              </Button>
+            </div>
+          </div>
+        </Card>
+
         <Card title={t('settings.support')}>
           <p className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
             <Heart size={15} className="shrink-0 text-[var(--danger)]" /> {t('settings.supportHint')}
@@ -159,10 +232,15 @@ export function SettingsPage() {
                 : <span className="text-sm text-[var(--ok)]">{t('settings.upToDate')}</span>
             )}
             {update && update.updateAvailable && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge kind="warn">{t('settings.updateAvailable', { v: update.latestVersion })}</Badge>
-                <Button variant="primary" onClick={() => api.update.openReleases(update.url)}>
-                  <Download size={15} /> {t('settings.download')}
+                {update.assetUrl && (
+                  <Button variant="primary" disabled={updating} onClick={updateNow}>
+                    {updating ? <Spinner /> : <Download size={15} />} {updating ? (updateProgress || t('common.working')) : t('settings.updateNow')}
+                  </Button>
+                )}
+                <Button variant="subtle" disabled={updating} onClick={() => api.update.openReleases(update.url)}>
+                  {t('settings.download')}
                 </Button>
               </div>
             )}

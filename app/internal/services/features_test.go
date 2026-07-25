@@ -61,6 +61,7 @@ func TestOffboardRunsStepsInOrderAndNeverDeletesUnlessAsked(t *testing.T) {
 	}
 
 	want := []string{
+		"GET /users/dep@contoso.com",                                 // identity for the notification card
 		"PATCH /users/dep@contoso.com",                               // block sign-in
 		"POST /users/dep@contoso.com/revokeSignInSessions",           // revoke
 		"PATCH /users/dep@contoso.com/mailboxSettings",               // OOF
@@ -70,6 +71,7 @@ func TestOffboardRunsStepsInOrderAndNeverDeletesUnlessAsked(t *testing.T) {
 		"GET /users/dep@contoso.com",                                 // resolve id
 		"GET /users/dep@contoso.com/memberOf",                        // list groups
 		"DELETE /groups/g1/members/uid1/$ref",                        // remove from group
+		"GET /users/dep@contoso.com/mailboxSettings",                 // shared-mailbox pre-flight
 		"GET /users/dep@contoso.com/licenseDetails",                  // list licenses
 		"POST /users/dep@contoso.com/assignLicense",                  // remove licenses
 	}
@@ -169,6 +171,16 @@ func TestOffboardBackupAddsScanAndBackupSteps(t *testing.T) {
 	if !scan.OK || !strings.Contains(scan.Detail, "0 files") {
 		t.Errorf("scan step should be OK with a size detail, got %+v", scan)
 	}
+	// Steps carry stable i18n keys so the UI can translate the report.
+	if scan.NameKey != "steps.scanOneDrive" || scan.DetailKey != "stepDetails.scanned" {
+		t.Errorf("scan step keys wrong: %+v", scan)
+	}
+	if scan.Params["files"] != 0 {
+		t.Errorf("scan params must carry the file count, got %v", scan.Params)
+	}
+	if res.Steps[backupIdx].NameKey != "steps.backupOneDrive" || res.Steps[backupIdx].DetailKey != "stepDetails.backup" {
+		t.Errorf("backup step keys wrong: %+v", res.Steps[backupIdx])
+	}
 	backup := res.Steps[backupIdx]
 	if !backup.OK || !strings.Contains(backup.Detail, "0 item(s) copied") {
 		t.Errorf("backup step should be OK with a copy summary, got %+v", backup)
@@ -180,6 +192,68 @@ func TestOffboardBackupAddsScanAndBackupSteps(t *testing.T) {
 		}
 	}
 	t.Errorf("source drive was never listed: %v", calls)
+}
+
+// A 403 on the forwarding step must surface the missing-permission hint so the
+// operator knows exactly what to grant (the real-world zlata.i case).
+func TestOffboardForwardHintOn403(t *testing.T) {
+	var calls []string
+	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		if strings.Contains(r.URL.Path, "/messageRules") {
+			w.WriteHeader(403)
+			w.Write([]byte(`{"error":{"code":"ErrorAccessDenied","message":"Access is denied."}}`))
+			return
+		}
+		w.Write([]byte(`{}`))
+	})
+	pb := NewPlaybookService(sess)
+
+	res, err := pb.Offboard(fullOffboardRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fwd *Step
+	for i := range res.Steps {
+		if res.Steps[i].Name == "Forward mail (inbox rule)" {
+			fwd = &res.Steps[i]
+		}
+	}
+	if fwd == nil || fwd.OK {
+		t.Fatalf("forward step must be present and failed, got %+v", res.Steps)
+	}
+	if fwd.ErrorCode != "ErrorAccessDenied" {
+		t.Errorf("errorCode: want ErrorAccessDenied, got %q", fwd.ErrorCode)
+	}
+	if fwd.Hint != "Mail.ReadWrite" {
+		t.Errorf("hint: want Mail.ReadWrite, got %q", fwd.Hint)
+	}
+	if res.OK {
+		t.Error("result must not be OK with a failed step")
+	}
+}
+
+func TestPermissionHintMapping(t *testing.T) {
+	cases := map[string]string{
+		"/users/u@x.com/mailFolders/inbox/messageRules": "Mail.ReadWrite",
+		"/users/u@x.com/mailboxSettings":                "MailboxSettings.ReadWrite",
+		"/users/u@x.com/calendar/calendarPermissions":   "Calendars.ReadWrite",
+		"/users/u@x.com/assignLicense":                  "User.ReadWrite.All",
+		"/users/u@x.com/revokeSignInSessions":           "User.ReadWrite.All",
+		"/users/u@x.com/drive/items/abc/copy":           "Files.ReadWrite.All",
+		"/groups/g1/members/uid/$ref":                   "GroupMember.ReadWrite.All",
+		"/users/u@x.com":                                "User.ReadWrite.All",
+		"/deviceManagement/managedDevices/d1/retire":    "DeviceManagementManagedDevices.PrivilegedOperations.All",
+		"/deviceManagement/managedDevices/d1/wipe":      "DeviceManagementManagedDevices.PrivilegedOperations.All",
+		"/users/u@x.com/registeredDevices":              "Device.Read.All",
+		"/devices/dev1":                                 "Device.ReadWrite.All",
+		"/unknown/endpoint":                             "",
+	}
+	for path, want := range cases {
+		if got := permissionHint(path); got != want {
+			t.Errorf("permissionHint(%q) = %q, want %q", path, got, want)
+		}
+	}
 }
 
 func TestOffboardRequiresTypedConfirm(t *testing.T) {
