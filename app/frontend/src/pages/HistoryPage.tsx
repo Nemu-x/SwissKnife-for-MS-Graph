@@ -33,6 +33,7 @@ export function HistoryPage() {
 
   const fetchDetail = (id: string) => {
     const request = ++detailRequest.current
+    setDetail(null) // a failed refresh must show the error, never stale content
     setDetailErr('')
     api.journal.get(id)
       .then((r) => { if (detailRequest.current === request) setDetail(r) })
@@ -42,10 +43,12 @@ export function HistoryPage() {
   const open = (id: string) => {
     if (openId === id) {
       ++detailRequest.current // invalidate any in-flight fetch for this panel
+      openIdRef.current = '' // sync: async callbacks must see the change NOW
       setOpenId(''); setDetail(null); setDetailErr('')
       return
     }
-    setOpenId(id); setDetail(null)
+    openIdRef.current = id
+    setOpenId(id)
     fetchDetail(id)
   }
 
