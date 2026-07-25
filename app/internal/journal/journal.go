@@ -85,7 +85,13 @@ func (l *Log) write(opID string, rec Entry) {
 		return
 	}
 	_, _ = f.Write(append(b, '\n'))
-	_ = f.Sync()
+	// fsync only lifecycle records: per-item events on hot copy loops would
+	// pay a blocking flush per file. A crash may lose recent item lines — the
+	// resume path re-issues them safely (conflictBehavior=fail skips done).
+	switch rec.Type {
+	case "begin", "end", "step":
+		_ = f.Sync()
+	}
 }
 
 // Begin starts a run's journal. data should carry kind/target plus anything

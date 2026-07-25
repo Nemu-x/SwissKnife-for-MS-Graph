@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RefreshCw, ChevronDown, ChevronRight, CheckCircle2, XCircle, PlayCircle, Loader2, Clock } from 'lucide-react'
 import { Page } from '../components/Layout'
@@ -16,6 +16,7 @@ export function HistoryPage() {
   const [error, setError] = useState<string | null>(null)
   const [openId, setOpenId] = useState('')
   const [detail, setDetail] = useState<journal.Run | null>(null)
+  const [detailErr, setDetailErr] = useState('')
   const [resuming, setResuming] = useState('')
 
   const load = () => {
@@ -23,10 +24,32 @@ export function HistoryPage() {
   }
   useEffect(load, [])
 
+  // Stale-response protection: async callbacks must consult CURRENT state
+  // (refs), never their closure — any open/close/resume bumps the request
+  // generation and only the matching response may land.
+  const detailRequest = useRef(0)
+  const openIdRef = useRef('')
+  useEffect(() => { openIdRef.current = openId }, [openId])
+
+  const fetchDetail = (id: string) => {
+    const request = ++detailRequest.current
+    setDetail(null) // a failed refresh must show the error, never stale content
+    setDetailErr('')
+    api.journal.get(id)
+      .then((r) => { if (detailRequest.current === request) setDetail(r) })
+      .catch((e) => { if (detailRequest.current === request) setDetailErr(errMessage(e)) })
+  }
+
   const open = (id: string) => {
-    if (openId === id) { setOpenId(''); setDetail(null); return }
-    setOpenId(id); setDetail(null)
-    api.journal.get(id).then(setDetail).catch((e) => toast('err', errMessage(e)))
+    if (openId === id) {
+      ++detailRequest.current // invalidate any in-flight fetch for this panel
+      openIdRef.current = '' // sync: async callbacks must see the change NOW
+      setOpenId(''); setDetail(null); setDetailErr('')
+      return
+    }
+    openIdRef.current = id
+    setOpenId(id)
+    fetchDetail(id)
   }
 
   const resume = (id: string) => {
@@ -35,8 +58,9 @@ export function HistoryPage() {
       .then((r) => {
         toast('ok', t('history.resumed', { n: r.copied?.length || 0 }))
         load()
-        // Refresh the expanded detail too, so the events reflect the resume.
-        if (openId === id) api.journal.get(id).then(setDetail).catch(() => {})
+        // Refresh the detail only if THIS run is still the open one (current
+        // state via ref, not the closure) — failures surface like in open().
+        if (openIdRef.current === id) fetchDetail(id)
       })
       .catch((e) => toast('err', errMessage(e)))
       .finally(() => setResuming(''))
@@ -75,7 +99,8 @@ export function HistoryPage() {
             </button>
             {openId === r.opId && (
               <div className="border-t border-[var(--border)] px-4 py-3">
-                {!detail && <Spinner />}
+                {!detail && detailErr && <ErrorNote>{detailErr}</ErrorNote>}
+                {!detail && !detailErr && <Spinner />}
                 {detail && (
                   <div className="flex flex-col gap-1.5">
                     {r.kind === 'transfer' && r.interrupted && (

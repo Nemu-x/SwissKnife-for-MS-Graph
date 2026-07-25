@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Layout } from './components/Layout'
+import { Layout, LOCAL_PAGES } from './components/Layout'
 import { Toasts } from './components/Toasts'
 import { StoreProvider, useStore } from './lib/store'
 import { pages, type PageId } from './pages/registry'
@@ -16,7 +16,7 @@ function Shell() {
   }, [connected])
 
   // if disconnected while the page requires a connection, go back to connect
-  const requiresConn = page !== 'connect' && page !== 'settings' && page !== 'history'
+  const requiresConn = !LOCAL_PAGES.includes(page)
   const effective: PageId = requiresConn && !connected ? 'connect' : page
   const Current = pages[effective]
 

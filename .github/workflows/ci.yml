@@ -8,6 +8,11 @@ on:
   pull_request:
     branches: [main, dev]
 
+# Rapid pushes/PR updates supersede older runs — don't burn runners on them.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

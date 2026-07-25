@@ -142,7 +142,9 @@ func (r *runner) doD(name, detail string, fn func() (string, error)) error {
 		// ("grant Mail.ReadWrite in Entra") instead of a bare 403 string.
 		var ge *graphapi.GraphError
 		if errors.As(err, &ge) {
-			st.Error = ge.Message
+			if ge.Message != "" { // some Graph bodies carry no message — keep err.Error()
+				st.Error = ge.Message
+			}
 			st.ErrorCode = ge.Code
 			if ge.StatusCode == 403 {
 				st.Hint = permissionHint(ge.Path)

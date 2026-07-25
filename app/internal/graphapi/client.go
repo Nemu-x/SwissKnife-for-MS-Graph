@@ -150,6 +150,12 @@ func (c *Client) withRetry(ctx context.Context, method string, attempt func() (t
 		if delay <= 0 {
 			delay = time.Second << try // 1s, 2s, 4s, 8s
 		}
+		// Graph occasionally answers with multi-minute Retry-After values;
+		// honor the signal but keep a single operation from stalling forever.
+		const maxRetryAfter = 60 * time.Second
+		if delay > maxRetryAfter {
+			delay = maxRetryAfter
+		}
 		if serr := c.sleep(ctx, delay); serr != nil {
 			return serr
 		}

@@ -116,6 +116,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [accent, setAccentState] = useState<string>(localStorage.getItem('accent') ?? '')
 
   const [jobs, setJobs] = useState<Record<string, JobState>>({})
+  // Latest jobs snapshot for event handlers (they run outside React's render
+  // cycle and must not put side effects inside state updaters).
+  const jobsRef = useRef(jobs)
+  useEffect(() => { jobsRef.current = jobs }, [jobs])
   const patchJob = useCallback((key: string, patch: Partial<JobState>) => {
     setJobs((all) => ({ ...all, [key]: { ...(all[key] ?? emptyJob()), ...patch } }))
   }, [])
@@ -189,19 +193,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const opKeys = new Map<string, string>()
     const keyOf = (d: any, kind: string) => (d?.opId && opKeys.get(d.opId)) || kind
     const offOS = EventsOn('op:start', (d: any) => {
-      if (!d?.opId || !d?.opKind) return
-      setJobs((all) => {
-        const primary = all[d.opKind]
-        const taken = primary?.running && primary.opId && primary.opId !== d.opId
-        const key = taken ? `${d.opKind}:${d.opId}` : d.opKind
-        opKeys.set(d.opId, key)
-        // Stamp the opId onto the job the operator just started; a child op
-        // (e.g. a playbook's backup copy) only claims routing, not job state.
-        if (!taken && primary?.running && !primary.opId) {
-          return { ...all, [key]: { ...primary, opId: d.opId } }
-        }
-        return all
-      })
+      if (!d?.opId || !d?.opKind || opKeys.has(d.opId)) return
+      // Routing decision happens HERE (plain event handler, jobs snapshot via
+      // ref) — the setJobs updater below stays pure, so React replays can
+      // neither double-reserve nor desync opKeys from job state.
+      const primary = jobsRef.current[d.opKind]
+      const taken = primary?.running && primary.opId && primary.opId !== d.opId
+      const key = taken ? `${d.opKind}:${d.opId}` : d.opKind
+      opKeys.set(d.opId, key)
+      // Stamp the opId onto the job the operator just started; a child op
+      // (e.g. a playbook's backup copy) only claims routing, not job state.
+      if (!taken && primary?.running && !primary.opId) {
+        patchJob(key, { opId: d.opId })
+      }
     })
     const offP = EventsOn('transfer:progress', (d: any) => {
       const pct = d.total > 0 ? Math.round((d.done / d.total) * 100) : 0

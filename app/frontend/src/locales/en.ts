@@ -447,7 +447,11 @@ const en = {
     trimmed: 'Trimmed — {{n}} removed',
     trimFailures: '{{n}} file(s) failed — see the log',
   },
-  errors: { generic: 'Error' },
+  errors: {
+    generic: 'Error',
+    grantPermission: 'grant the {{p}} application permission in Entra and give admin consent.',
+    missingPermission: 'the app registration is likely missing a Graph permission for this call. Add the required Application permission and grant admin consent.',
+  },
 } as const
 
 export default en

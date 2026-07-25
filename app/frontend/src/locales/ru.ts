@@ -447,7 +447,11 @@ const ru: Dict<typeof en> = {
     trimmed: 'Обрезано — удалено {{n}}',
     trimFailures: 'Не получилось у файлов: {{n}} — см. лог',
   },
-  errors: { generic: 'Ошибка' },
+  errors: {
+    generic: 'Ошибка',
+    grantPermission: 'выдайте приложению право {{p}} (Application) в Entra и нажмите Grant admin consent.',
+    missingPermission: 'скорее всего, у app registration нет нужного права Graph для этого вызова. Добавьте Application-право и выдайте admin consent.',
+  },
 }
 
 export default ru
