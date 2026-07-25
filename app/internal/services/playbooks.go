@@ -364,6 +364,11 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 		} else {
 			removedAny := false
 			for _, raw := range methods {
+				// doD re-checks stop() too, but an explicit break keeps the
+				// cancellation guarantee visible right at the loop.
+				if r.stop() {
+					break
+				}
 				var m struct {
 					ID   string `json:"id"`
 					Type string `json:"@odata.type"`
@@ -578,6 +583,11 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				stepName = "Wipe device"
 			}
 			for _, raw := range devices {
+				// Explicit stop before each device: nothing may be wiped or
+				// retired after the operator cancels.
+				if r.stop() {
+					break
+				}
 				var dev struct {
 					ID   string `json:"id"`
 					Name string `json:"deviceName"`
@@ -606,8 +616,11 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 		if derr != nil {
 			r.do("Registered devices", req.Upn, func() error { return derr })
 		} else {
-			deleted := false
+			found := false
 			for _, raw := range devices {
+				if r.stop() {
+					break
+				}
 				var dev struct {
 					Type string `json:"@odata.type"`
 					ID   string `json:"id"`
@@ -619,7 +632,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				if dev.Type != "" && dev.Type != "#microsoft.graph.device" {
 					continue
 				}
-				deleted = true
+				found = true
 				name := dev.Name
 				if name == "" {
 					name = dev.ID
@@ -629,7 +642,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 					return c.Delete(op.Ctx, "/devices/"+url.PathEscape(devID))
 				})
 			}
-			if !deleted {
+			if !found {
 				r.do("Registered devices", "none found", func() error { return nil })
 			}
 		}
