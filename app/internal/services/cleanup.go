@@ -395,6 +395,11 @@ func (cl *CleanupService) trimOne(ctx context.Context, c *graphapi.Client, itemR
 	}
 	failures = map[string]string{}
 	for i, v := range vr.Value {
+		// A cancelled operation must stop deleting versions immediately, not
+		// record each aborted call as a per-version failure.
+		if cerr := ctx.Err(); cerr != nil {
+			return removed, failures, cerr
+		}
 		if i < keep || v.ID == "current" {
 			continue
 		}

@@ -24,10 +24,15 @@ export function HistoryPage() {
   }
   useEffect(load, [])
 
-  // Guards against a slow response for run A landing in run B's panel.
+  // Guards against a slow response for run A landing in run B's panel. Any
+  // open/close/resume bumps the generation; only the matching response lands.
   const detailRequest = useRef(0)
   const open = (id: string) => {
-    if (openId === id) { setOpenId(''); setDetail(null); setDetailErr(''); return }
+    if (openId === id) {
+      ++detailRequest.current // invalidate any in-flight fetch for this panel
+      setOpenId(''); setDetail(null); setDetailErr('')
+      return
+    }
     const request = ++detailRequest.current
     setOpenId(id); setDetail(null); setDetailErr('')
     api.journal.get(id)
@@ -41,8 +46,13 @@ export function HistoryPage() {
       .then((r) => {
         toast('ok', t('history.resumed', { n: r.copied?.length || 0 }))
         load()
-        // Refresh the expanded detail too, so the events reflect the resume.
-        if (openId === id) api.journal.get(id).then(setDetail).catch(() => {})
+        // Refresh the expanded detail too — generation-guarded like open().
+        if (openId === id) {
+          const request = ++detailRequest.current
+          api.journal.get(id)
+            .then((run) => { if (detailRequest.current === request) setDetail(run) })
+            .catch(() => {})
+        }
       })
       .catch((e) => toast('err', errMessage(e)))
       .finally(() => setResuming(''))
