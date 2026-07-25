@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RefreshCw, ChevronDown, ChevronRight, CheckCircle2, XCircle, PlayCircle, Loader2, Clock } from 'lucide-react'
 import { Page } from '../components/Layout'
@@ -24,10 +24,15 @@ export function HistoryPage() {
   }
   useEffect(load, [])
 
+  // Guards against a slow response for run A landing in run B's panel.
+  const detailRequest = useRef(0)
   const open = (id: string) => {
     if (openId === id) { setOpenId(''); setDetail(null); setDetailErr(''); return }
+    const request = ++detailRequest.current
     setOpenId(id); setDetail(null); setDetailErr('')
-    api.journal.get(id).then(setDetail).catch((e) => setDetailErr(errMessage(e)))
+    api.journal.get(id)
+      .then((r) => { if (detailRequest.current === request) setDetail(r) })
+      .catch((e) => { if (detailRequest.current === request) setDetailErr(errMessage(e)) })
   }
 
   const resume = (id: string) => {

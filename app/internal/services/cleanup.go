@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,7 +78,7 @@ func humanSize(b int64) string {
 
 // driveBases returns the API base path(s) for the owner's drive(s).
 // A user has one drive; a site can have several document libraries.
-func (cl *CleanupService) driveBases(ownerType, ownerID string) ([]string, error) {
+func (cl *CleanupService) driveBases(ctx context.Context, ownerType, ownerID string) ([]string, error) {
 	c, err := cl.s.Client()
 	if err != nil {
 		return nil, err
@@ -91,7 +92,7 @@ func (cl *CleanupService) driveBases(ownerType, ownerID string) ([]string, error
 				ID string `json:"id"`
 			} `json:"value"`
 		}
-		if err := c.Get(cl.s.Ctx(), "/sites/"+url.PathEscape(ownerID)+"/drives", url.Values{"$select": {"id"}}, &resp); err == nil && len(resp.Value) > 0 {
+		if err := c.Get(ctx, "/sites/"+url.PathEscape(ownerID)+"/drives", url.Values{"$select": {"id"}}, &resp); err == nil && len(resp.Value) > 0 {
 			out := make([]string, 0, len(resp.Value))
 			for _, d := range resp.Value {
 				out = append(out, "/drives/"+url.PathEscape(d.ID))
@@ -110,12 +111,12 @@ type fileRec struct {
 }
 
 // walkFiles collects every file across all of the owner's drives.
-func (cl *CleanupService) walkFiles(ownerType, ownerID string) ([]fileRec, error) {
+func (cl *CleanupService) walkFiles(ctx context.Context, ownerType, ownerID string) ([]fileRec, error) {
 	c, err := cl.s.Client()
 	if err != nil {
 		return nil, err
 	}
-	bases, err := cl.driveBases(ownerType, ownerID)
+	bases, err := cl.driveBases(ctx, ownerType, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +129,7 @@ func (cl *CleanupService) walkFiles(ownerType, ownerID string) ([]fileRec, error
 		if cl.stopped() {
 			return nil
 		}
-		items, err := c.ListAll(cl.s.Ctx(), itemsPath, nil, 0)
+		items, err := c.ListAll(ctx, itemsPath, nil, 0)
 		if err != nil {
 			return err
 		}
@@ -216,7 +217,7 @@ func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup,
 		return nil, err
 	}
 	defer cl.endScan(op)
-	files, err := cl.walkFiles(ownerType, ownerID)
+	files, err := cl.walkFiles(op.Ctx, ownerType, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +307,7 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 		return nil, err
 	}
 	defer cl.endScan(op)
-	files, err := cl.walkFiles(ownerType, ownerID)
+	files, err := cl.walkFiles(op.Ctx, ownerType, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +353,7 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 			} `json:"value"`
 		}
 		ref := f.base + "/items/" + url.PathEscape(f.id)
-		if err := c.Get(cl.s.Ctx(), ref+"/versions", url.Values{"$select": {"id,size"}}, &vr); err != nil {
+		if err := c.Get(op.Ctx, ref+"/versions", url.Values{"$select": {"id,size"}}, &vr); err != nil {
 			probeErrors++
 			continue
 		}
@@ -383,13 +384,13 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 
 // trimOne deletes old versions of a single item, keeping the newest `keep`.
 // Versions come newest-first; keep the first `keep`, delete the rest.
-func (cl *CleanupService) trimOne(c *graphapi.Client, itemRef string, keep int) (removed int, failures map[string]string, err error) {
+func (cl *CleanupService) trimOne(ctx context.Context, c *graphapi.Client, itemRef string, keep int) (removed int, failures map[string]string, err error) {
 	var vr struct {
 		Value []struct {
 			ID string `json:"id"`
 		} `json:"value"`
 	}
-	if err := c.Get(cl.s.Ctx(), itemRef+"/versions", url.Values{"$select": {"id"}}, &vr); err != nil {
+	if err := c.Get(ctx, itemRef+"/versions", url.Values{"$select": {"id"}}, &vr); err != nil {
 		return 0, nil, err
 	}
 	failures = map[string]string{}
@@ -397,7 +398,7 @@ func (cl *CleanupService) trimOne(c *graphapi.Client, itemRef string, keep int) 
 		if i < keep || v.ID == "current" {
 			continue
 		}
-		if e := c.Delete(cl.s.Ctx(), itemRef+"/versions/"+url.PathEscape(v.ID)); e != nil {
+		if e := c.Delete(ctx, itemRef+"/versions/"+url.PathEscape(v.ID)); e != nil {
 			failures[v.ID] = e.Error()
 			continue
 		}
@@ -422,7 +423,7 @@ func (cl *CleanupService) TrimVersions(itemRef string, keep int, confirm string)
 	if err != nil {
 		return nil, err
 	}
-	removed, failures, err := cl.trimOne(c, itemRef, keep)
+	removed, failures, err := cl.trimOne(cl.s.Ctx(), c, itemRef, keep)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +470,7 @@ func (cl *CleanupService) TrimVersionsMany(itemRefs []string, keep int, confirm 
 			break
 		}
 		cl.emit("Trimming versions", i, len(itemRefs))
-		removed, failures, err := cl.trimOne(c, ref, keep)
+		removed, failures, err := cl.trimOne(op.Ctx, c, ref, keep)
 		r := TrimResult{Ref: ref, Removed: removed}
 		if err != nil {
 			r.Error = err.Error()
