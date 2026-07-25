@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/journal"
@@ -58,7 +59,14 @@ var stepKeys = map[string]string{
 	"Backup Teams chats":        "steps.backupChats",
 	"Remove from groups":        "steps.removeFromGroups",
 	"Remove from group":         "steps.removeFromGroup",
+	"Remove MFA method":         "steps.removeMfaMethod",
+	"Check mailbox type":        "steps.checkMailboxType",
 	"Remove licenses":           "steps.removeLicenses",
+	"Intune devices":            "steps.intuneDevices",
+	"Retire device":             "steps.retireDevice",
+	"Wipe device":               "steps.wipeDevice",
+	"Registered devices":        "steps.registeredDevices",
+	"Delete registered device":  "steps.deleteRegisteredDevice",
 	"Delete user":               "steps.deleteUser",
 }
 
@@ -298,7 +306,12 @@ type OffboardRequest struct {
 	BackupToUser      string `json:"backupToUser"`
 	BackupFolder      string `json:"backupFolder"`
 	BackupChats       bool   `json:"backupChats"`
-	Delete            bool   `json:"delete"`
+	// IntuneAction: "" (skip) | "retire" (remove company data, keep personal)
+	// | "wipe" (factory reset).
+	IntuneAction            string `json:"intuneAction"`
+	RemoveMfaMethods        bool   `json:"removeMfaMethods"`
+	DeleteRegisteredDevices bool   `json:"deleteRegisteredDevices"`
+	Delete                  bool   `json:"delete"`
 }
 
 // Offboard runs the offboarding sequence. Destructive: requires typed confirm
@@ -341,6 +354,42 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 		r.do("Revoke sessions", req.Upn, func() error {
 			return c.Post(op.Ctx, "/users/"+u+"/revokeSignInSessions", map[string]any{}, nil)
 		})
+	}
+	if req.RemoveMfaMethods && !r.stop() {
+		// One step per method so the operator sees exactly what disappeared.
+		// Password methods are not deletable and are skipped silently.
+		methods, merr := c.ListAll(op.Ctx, "/users/"+u+"/authentication/methods", nil, 0)
+		if merr != nil {
+			r.do("Remove MFA method", req.Upn, func() error { return merr })
+		} else {
+			removedAny := false
+			for _, raw := range methods {
+				// doD re-checks stop() too, but an explicit break keeps the
+				// cancellation guarantee visible right at the loop.
+				if r.stop() {
+					break
+				}
+				var m struct {
+					ID   string `json:"id"`
+					Type string `json:"@odata.type"`
+				}
+				if json.Unmarshal(raw, &m) != nil {
+					continue
+				}
+				seg, deletable := methodTypeToSegment[m.Type]
+				if !deletable {
+					continue
+				}
+				removedAny = true
+				label := strings.TrimSuffix(seg, "Methods")
+				r.do("Remove MFA method", label, func() error {
+					return c.Delete(op.Ctx, "/users/"+u+"/authentication/"+seg+"/"+url.PathEscape(m.ID))
+				})
+			}
+			if !removedAny {
+				r.do("Remove MFA method", "none registered", func() error { return nil })
+			}
+		}
 	}
 	if req.Oof {
 		r.do("Set auto-reply (OOF)", req.Upn, func() error {
@@ -478,6 +527,26 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			}
 		}
 	}
+	if req.RemoveAllLicenses && !r.stop() {
+		// Pre-flight: without a license a USER mailbox is deleted ~30 days
+		// later. A shared mailbox survives — verify before pulling licenses.
+		r.doD("Check mailbox type", req.Upn, func() (string, error) {
+			var mbx struct {
+				UserPurpose string `json:"userPurpose"`
+			}
+			if e := c.Get(op.Ctx, "/users/"+u+"/mailboxSettings", url.Values{"$select": {"userPurpose"}}, &mbx); e != nil {
+				return "could not verify (mailbox settings unreadable)", nil // best-effort: never block the run
+			}
+			switch mbx.UserPurpose {
+			case "shared":
+				return "shared mailbox — mail survives license removal", nil
+			case "", "unknown":
+				return "mailbox type unknown", nil
+			default:
+				return "", fmt.Errorf("mailbox is still %q — convert to a shared mailbox in the Exchange admin center BEFORE removing licenses, or mail is deleted in ~30 days", mbx.UserPurpose)
+			}
+		})
+	}
 	if req.RemoveAllLicenses {
 		r.do("Remove licenses", req.Upn, func() error {
 			var lic struct {
@@ -498,6 +567,85 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			return c.Post(op.Ctx, "/users/"+u+"/assignLicense",
 				map[string]any{"addLicenses": []any{}, "removeLicenses": remove}, nil)
 		})
+	}
+	if (req.IntuneAction == "retire" || req.IntuneAction == "wipe") && !r.stop() {
+		// Intune-managed devices: retire keeps personal data, wipe factory-
+		// resets. Both are covered by the run's typed confirm.
+		devices, derr := c.ListAll(op.Ctx, "/users/"+u+"/managedDevices",
+			url.Values{"$select": {"id,deviceName,operatingSystem"}}, 0)
+		if derr != nil {
+			r.do("Intune devices", req.Upn, func() error { return derr })
+		} else if len(devices) == 0 {
+			r.do("Intune devices", "none enrolled", func() error { return nil })
+		} else {
+			stepName := "Retire device"
+			if req.IntuneAction == "wipe" {
+				stepName = "Wipe device"
+			}
+			for _, raw := range devices {
+				// Explicit stop before each device: nothing may be wiped or
+				// retired after the operator cancels.
+				if r.stop() {
+					break
+				}
+				var dev struct {
+					ID   string `json:"id"`
+					Name string `json:"deviceName"`
+					OS   string `json:"operatingSystem"`
+				}
+				if json.Unmarshal(raw, &dev) != nil || dev.ID == "" {
+					continue
+				}
+				label := dev.Name
+				if dev.OS != "" {
+					label += " (" + dev.OS + ")"
+				}
+				action := req.IntuneAction
+				devID := dev.ID
+				r.do(stepName, label, func() error {
+					return c.Post(op.Ctx, "/deviceManagement/managedDevices/"+url.PathEscape(devID)+"/"+action, map[string]any{}, nil)
+				})
+			}
+		}
+	}
+	if req.DeleteRegisteredDevices && !r.stop() {
+		// Entra device objects registered to the user (dead weight after the
+		// person leaves; Intune enrollment above is a separate lifecycle).
+		devices, derr := c.ListAll(op.Ctx, "/users/"+u+"/registeredDevices",
+			url.Values{"$select": {"id,displayName"}}, 0)
+		if derr != nil {
+			r.do("Registered devices", req.Upn, func() error { return derr })
+		} else {
+			found := false
+			for _, raw := range devices {
+				if r.stop() {
+					break
+				}
+				var dev struct {
+					Type string `json:"@odata.type"`
+					ID   string `json:"id"`
+					Name string `json:"displayName"`
+				}
+				if json.Unmarshal(raw, &dev) != nil || dev.ID == "" {
+					continue
+				}
+				if dev.Type != "" && dev.Type != "#microsoft.graph.device" {
+					continue
+				}
+				found = true
+				name := dev.Name
+				if name == "" {
+					name = dev.ID
+				}
+				devID := dev.ID
+				r.do("Delete registered device", name, func() error {
+					return c.Delete(op.Ctx, "/devices/"+url.PathEscape(devID))
+				})
+			}
+			if !found {
+				r.do("Registered devices", "none found", func() error { return nil })
+			}
+		}
 	}
 	if req.Delete {
 		r.do("Delete user", req.Upn, func() error {
@@ -544,6 +692,33 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			}
 		}
 		extras = append(extras, [2]string{"Groups removed", itoa(removed)})
+	}
+	if req.RemoveMfaMethods {
+		n := 0
+		for _, st := range r.steps {
+			if st.Name == "Remove MFA method" && st.OK && st.Detail != "none registered" {
+				n++
+			}
+		}
+		extras = append(extras, [2]string{"MFA methods removed", itoa(n)})
+	}
+	if req.IntuneAction == "retire" || req.IntuneAction == "wipe" {
+		n := 0
+		for _, st := range r.steps {
+			if (st.Name == "Retire device" || st.Name == "Wipe device") && st.OK {
+				n++
+			}
+		}
+		extras = append(extras, [2]string{"Intune devices (" + req.IntuneAction + ")", itoa(n)})
+	}
+	if req.DeleteRegisteredDevices {
+		n := 0
+		for _, st := range r.steps {
+			if st.Name == "Delete registered device" && st.OK {
+				n++
+			}
+		}
+		extras = append(extras, [2]string{"Entra devices deleted", itoa(n)})
 	}
 	// Best-effort Teams card; a goroutine so the UI gets the result instantly.
 	go notifyPlaybookSummary(p.s, "offboard", req.Upn, who.DisplayName, r.steps, r.canceled, extras)

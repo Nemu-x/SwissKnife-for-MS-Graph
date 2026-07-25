@@ -71,6 +71,7 @@ func TestOffboardRunsStepsInOrderAndNeverDeletesUnlessAsked(t *testing.T) {
 		"GET /users/dep@contoso.com",                                 // resolve id
 		"GET /users/dep@contoso.com/memberOf",                        // list groups
 		"DELETE /groups/g1/members/uid1/$ref",                        // remove from group
+		"GET /users/dep@contoso.com/mailboxSettings",                 // shared-mailbox pre-flight
 		"GET /users/dep@contoso.com/licenseDetails",                  // list licenses
 		"POST /users/dep@contoso.com/assignLicense",                  // remove licenses
 	}
@@ -242,7 +243,10 @@ func TestPermissionHintMapping(t *testing.T) {
 		"/users/u@x.com/drive/items/abc/copy":           "Files.ReadWrite.All",
 		"/groups/g1/members/uid/$ref":                   "GroupMember.ReadWrite.All",
 		"/users/u@x.com":                                "User.ReadWrite.All",
-		"/deviceManagement/managedDevices/d1/retire":    "DeviceManagementManagedDevices.ReadWrite.All",
+		"/deviceManagement/managedDevices/d1/retire":    "DeviceManagementManagedDevices.PrivilegedOperations.All",
+		"/deviceManagement/managedDevices/d1/wipe":      "DeviceManagementManagedDevices.PrivilegedOperations.All",
+		"/users/u@x.com/registeredDevices":              "Device.Read.All",
+		"/devices/dev1":                                 "Device.ReadWrite.All",
 		"/unknown/endpoint":                             "",
 	}
 	for path, want := range cases {

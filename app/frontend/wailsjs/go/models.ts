@@ -490,6 +490,9 @@ export namespace services {
 	    backupToUser: string;
 	    backupFolder: string;
 	    backupChats: boolean;
+	    intuneAction: string;
+	    removeMfaMethods: boolean;
+	    deleteRegisteredDevices: boolean;
 	    delete: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -512,6 +515,9 @@ export namespace services {
 	        this.backupToUser = source["backupToUser"];
 	        this.backupFolder = source["backupFolder"];
 	        this.backupChats = source["backupChats"];
+	        this.intuneAction = source["intuneAction"];
+	        this.removeMfaMethods = source["removeMfaMethods"];
+	        this.deleteRegisteredDevices = source["deleteRegisteredDevices"];
 	        this.delete = source["delete"];
 	    }
 	}

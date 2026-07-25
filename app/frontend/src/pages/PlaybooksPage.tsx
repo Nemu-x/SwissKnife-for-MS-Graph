@@ -51,7 +51,7 @@ export function PlaybooksPage() {
     oof: false, oofMessage: '', forwardTo: remembered('forwardTo'), hideFromGal: false,
     calendarTo: remembered('calendarTo'), removeFromGroups: false,
     removeAllLicenses: true, backupToUser: remembered('backupToUser'), backupFolder: remembered('backupFolder'),
-    backupChats: false, delete: false,
+    backupChats: false, intuneAction: '', removeMfaMethods: false, deleteRegisteredDevices: false, delete: false,
   })
 
   // Named option presets; two built-ins encode the blessed two-phase flow
@@ -217,7 +217,7 @@ export function PlaybooksPage() {
                 </div>
               </Field>
               <Field label={t('playbooks.upn')}><UpnInput value={off.upn} onChange={(v) => setOff({ ...off, upn: v })} /></Field>
-              {([['block', 'block'], ['revokeSessions', 'revoke'], ['oof', 'oof'], ['hideFromGal', 'hideFromGal'], ['removeFromGroups', 'removeFromGroups'], ['removeAllLicenses', 'removeLicenses'], ['delete', 'deleteUser']] as const).map(([k, label]) => (
+              {([['block', 'block'], ['revokeSessions', 'revoke'], ['removeMfaMethods', 'removeMfa'], ['oof', 'oof'], ['hideFromGal', 'hideFromGal'], ['removeFromGroups', 'removeFromGroups'], ['deleteRegisteredDevices', 'deleteRegisteredDevices'], ['removeAllLicenses', 'removeLicenses'], ['delete', 'deleteUser']] as const).map(([k, label]) => (
                 <div key={k}>
                   <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
                     <input type="checkbox" checked={(off as any)[k]} onChange={(e) => setOff({ ...off, [k]: e.target.checked })} />
@@ -235,6 +235,17 @@ export function PlaybooksPage() {
               ))}
               {off.oof && (
                 <Input placeholder={t('playbooks.oofMessage')} value={off.oofMessage} onChange={(e) => setOff({ ...off, oofMessage: e.target.value })} />
+              )}
+              <Field label={t('playbooks.intuneAction')}>
+                <select value={off.intuneAction} onChange={(e) => setOff({ ...off, intuneAction: e.target.value })}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-sm outline-none focus:border-[var(--accent)]">
+                  <option value="">{t('playbooks.intuneNone')}</option>
+                  <option value="retire">{t('playbooks.intuneRetire')}</option>
+                  <option value="wipe">{t('playbooks.intuneWipe')}</option>
+                </select>
+              </Field>
+              {off.intuneAction === 'wipe' && (
+                <p className="text-xs text-[var(--danger)]">{t('playbooks.intuneWipeWarn')}</p>
               )}
               <Field label={t('playbooks.forwardTo')}><UpnInput value={off.forwardTo} onChange={(v) => setOff({ ...off, forwardTo: v })} placeholder="manager@contoso.com" /></Field>
               <Field label={t('playbooks.calendarTo')}><UpnInput value={off.calendarTo} onChange={(v) => setOff({ ...off, calendarTo: v })} placeholder="manager@contoso.com" /></Field>
