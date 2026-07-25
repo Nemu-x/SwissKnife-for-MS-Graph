@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
-	"sync/atomic"
 
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/ops"
@@ -16,9 +15,8 @@ import (
 // CleanupService reclaims OneDrive/SharePoint storage: duplicate files and
 // version-history bloat. For SharePoint sites it scans every document library.
 type CleanupService struct {
-	s      *session.Session
-	cancel atomic.Bool    // fast-path abort flag, bridged from the op context
-	op     *ops.Operation // the run in flight (single-flight makes this safe)
+	s  *session.Session
+	op *ops.Operation // the run in flight (single-flight makes this safe)
 }
 
 func NewCleanupService(s *session.Session) *CleanupService { return &CleanupService{s: s} }
@@ -27,16 +25,21 @@ func NewCleanupService(s *session.Session) *CleanupService { return &CleanupServ
 // items and return whatever they found so far rather than an error.
 func (cl *CleanupService) CancelScan() { cl.s.Ops.CancelKind(ops.KindCleanup) }
 
-// beginScan registers the cleanup operation and bridges its context
-// cancellation into the legacy fast-path flag the walkers poll.
+// stopped reports whether the scan in flight was cancelled. Reading the op
+// context directly (instead of a bridged flag) cannot leak a stale cancel
+// into the next scan.
+func (cl *CleanupService) stopped() bool {
+	op := cl.op
+	return op != nil && op.Canceled()
+}
+
+// beginScan registers the cleanup operation for cancellation and progress.
 func (cl *CleanupService) beginScan() (*ops.Operation, error) {
 	op, err := cl.s.Ops.Start(cl.s.Ctx(), ops.KindCleanup)
 	if err != nil {
 		return nil, err
 	}
-	cl.cancel.Store(false)
 	cl.op = op
-	go func() { <-op.Ctx.Done(); cl.cancel.Store(true) }()
 	emitOp(cl.s.Ctx(), op, "op:start", nil)
 	return op, nil
 }
@@ -122,7 +125,7 @@ func (cl *CleanupService) walkFiles(ownerType, ownerID string) ([]fileRec, error
 	var files []fileRec
 	var walk func(base, itemsPath, rel string) error
 	walk = func(base, itemsPath, rel string) error {
-		if cl.cancel.Load() {
+		if cl.stopped() {
 			return nil
 		}
 		items, err := c.ListAll(cl.s.Ctx(), itemsPath, nil, 0)
@@ -130,7 +133,7 @@ func (cl *CleanupService) walkFiles(ownerType, ownerID string) ([]fileRec, error
 			return err
 		}
 		for _, raw := range items {
-			if cl.cancel.Load() {
+			if cl.stopped() {
 				return nil
 			}
 			var it struct {
@@ -336,7 +339,7 @@ func (cl *CleanupService) FindVersionBloat(ownerType, ownerID string, minVersion
 	out := make([]VersionBloat, 0)
 	probeErrors := 0
 	for idx, f := range files {
-		if cl.cancel.Load() {
+		if cl.stopped() {
 			cl.emit("Canceled", idx, len(files))
 			break
 		}
@@ -460,7 +463,7 @@ func (cl *CleanupService) TrimVersionsMany(itemRefs []string, keep int, confirm 
 	out := make([]TrimResult, 0, len(itemRefs))
 	totalRemoved, failed := 0, 0
 	for i, ref := range itemRefs {
-		if cl.cancel.Load() {
+		if cl.stopped() {
 			cl.emit("Canceled", i, len(itemRefs))
 			cl.emitLog(fmt.Sprintf("Canceled after %d of %d file(s).", i, len(itemRefs)))
 			break

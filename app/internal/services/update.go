@@ -97,8 +97,8 @@ func (u *UpdateService) Check() (*UpdateInfo, error) {
 // allowedAssetHosts are the only origins Download will fetch from: GitHub
 // release pages and the CDN GitHub redirects release assets to.
 var allowedAssetHosts = map[string]bool{
-	"github.com":                    true,
-	"objects.githubusercontent.com": true,
+	"github.com":                           true,
+	"objects.githubusercontent.com":        true,
 	"release-assets.githubusercontent.com": true,
 }
 

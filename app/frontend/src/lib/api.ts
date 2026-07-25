@@ -29,6 +29,7 @@ import * as Journal from '../../wailsjs/go/services/JournalService'
 import * as Notify from '../../wailsjs/go/services/NotifyService'
 import type { journal, secrets, services } from '../../wailsjs/go/models'
 import { parseErr, type ParsedError } from './graphError'
+import i18n from '../i18n'
 
 export type GraphObject = Record<string, any>
 export type Profile = secrets.Profile
@@ -250,10 +251,10 @@ export function errMessage(e: unknown): string {
   let msg = p.message
   if (p.code && p.status) msg = `${p.status} ${p.code}: ${msg}`
   if (p.hint) {
-    msg += ` — grant the ${p.hint} application permission in Entra and give admin consent.`
+    msg += ' — ' + i18n.t('errors.grantPermission', { p: p.hint })
   } else if (p.status === 403) {
     // Missing-permission 403 without a known mapping: still point the way.
-    msg += ' — the app registration is likely missing a Graph permission for this call. Add the required Application permission and grant admin consent.'
+    msg += ' — ' + i18n.t('errors.missingPermission')
   }
   if (p.requestId) msg += ` (requestId=${p.requestId})`
   return msg

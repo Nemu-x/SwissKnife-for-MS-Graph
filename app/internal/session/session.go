@@ -34,7 +34,11 @@ func New(audit *auditlog.Log) *Session {
 }
 
 // SetJournal attaches the persistent run journal (nil-safe: services check).
-func (s *Session) SetJournal(j *journal.Log) { s.Journal = j }
+func (s *Session) SetJournal(j *journal.Log) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Journal = j
+}
 
 // SetConfigDir stores the per-user config directory (%APPDATA%\SwissKnifeGraph)
 // for services that persist small settings files (e.g. notifications).

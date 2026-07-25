@@ -11,8 +11,9 @@ import type { PageId } from '../pages/registry'
 
 type NavItem = { id: PageId; icon: ReactNode; key: string }
 
-// Pages usable without a tenant connection.
-const LOCAL_PAGES: PageId[] = ['connect', 'settings', 'history']
+// Pages usable without a tenant connection — the single source of truth for
+// both the nav enablement here and the redirect guard in App.tsx.
+export const LOCAL_PAGES: PageId[] = ['connect', 'settings', 'history']
 
 // Pinned entries above the groups.
 const pinned: NavItem[] = [
@@ -139,6 +140,7 @@ export function Layout({
               <div key={g.key} className="mt-2">
                 <button
                   onClick={() => toggleGroup(g.key)}
+                  aria-expanded={isOpen}
                   className="flex w-full items-center justify-between px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-faint)] hover:text-[var(--text-dim)]"
                 >
                   <span className="truncate">{t(g.key)}</span>

@@ -191,6 +191,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const offOS = EventsOn('op:start', (d: any) => {
       if (!d?.opId || !d?.opKind) return
       setJobs((all) => {
+        // Updater side effect on the ref map: kept idempotent — the first
+        // routing decision for an opId wins, so React's re-invocations
+        // (StrictMode/concurrent rebase) cannot split one op across keys.
+        if (opKeys.has(d.opId)) return all
         const primary = all[d.opKind]
         const taken = primary?.running && primary.opId && primary.opId !== d.opId
         const key = taken ? `${d.opKind}:${d.opId}` : d.opKind

@@ -84,6 +84,12 @@ func (n *NotifyService) Test() error {
 		[][2]string{{"Status", "Webhook is working"}}, nil)
 }
 
+// webhookClient posts cards. Never follow redirects: a 3xx would re-send the
+// card body to a host we did not validate — treat it as a failure instead.
+var webhookClient = &http.Client{
+	CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
+}
+
 // notifyTestHook, when set, fires after a notification attempt fully completes
 // (including the audit record). Tests use it to wait deterministically for the
 // async goroutine instead of sleeping — production leaves it nil.
@@ -187,13 +193,14 @@ func postAdaptiveCard(ctx context.Context, webhookURL, title string, facts [][2]
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// Never follow redirects: a 3xx would re-send the card body to a host we
-	// did not validate. Treat it as a failure instead.
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
-	}
-	resp, err := client.Do(req)
+	resp, err := webhookClient.Do(req)
 	if err != nil {
+		// url.Error embeds the full request URL; the webhook URL is a secret
+		// and must never reach logs/audit — keep only the transport cause.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			return fmt.Errorf("webhook POST failed: %w", ue.Err)
+		}
 		return err
 	}
 	defer resp.Body.Close()

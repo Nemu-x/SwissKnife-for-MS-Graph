@@ -16,6 +16,7 @@ export function HistoryPage() {
   const [error, setError] = useState<string | null>(null)
   const [openId, setOpenId] = useState('')
   const [detail, setDetail] = useState<journal.Run | null>(null)
+  const [detailErr, setDetailErr] = useState('')
   const [resuming, setResuming] = useState('')
 
   const load = () => {
@@ -24,9 +25,9 @@ export function HistoryPage() {
   useEffect(load, [])
 
   const open = (id: string) => {
-    if (openId === id) { setOpenId(''); setDetail(null); return }
-    setOpenId(id); setDetail(null)
-    api.journal.get(id).then(setDetail).catch((e) => toast('err', errMessage(e)))
+    if (openId === id) { setOpenId(''); setDetail(null); setDetailErr(''); return }
+    setOpenId(id); setDetail(null); setDetailErr('')
+    api.journal.get(id).then(setDetail).catch((e) => setDetailErr(errMessage(e)))
   }
 
   const resume = (id: string) => {
@@ -75,7 +76,8 @@ export function HistoryPage() {
             </button>
             {openId === r.opId && (
               <div className="border-t border-[var(--border)] px-4 py-3">
-                {!detail && <Spinner />}
+                {!detail && detailErr && <ErrorNote>{detailErr}</ErrorNote>}
+                {!detail && !detailErr && <Spinner />}
                 {detail && (
                   <div className="flex flex-col gap-1.5">
                     {r.kind === 'transfer' && r.interrupted && (
