@@ -9,7 +9,7 @@ import (
 
 // baseVersion is the current release line. Bump it together with tagging a
 // release — the Release workflow fails if the tag and this constant disagree.
-const baseVersion = "0.9.0"
+const baseVersion = "1.0.0"
 
 // version is injected at build time via -ldflags "-X main.version=...".
 // Local builds (no ldflags) fall back to baseVersion with a -dev suffix
