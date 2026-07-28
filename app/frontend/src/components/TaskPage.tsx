@@ -78,8 +78,10 @@ export function TaskPage({
   useEffect(() => {
     if (!pendingAction) return
     const a = actionsRef.current.find((x) => x.id === pendingAction)
-    if (!a) return
+    // Clear the request either way: a request this page cannot honour must not
+    // survive to fire on the next page that happens to use the same id.
     requestAction(null)
+    if (!a) return
     if (a.panel) setOpenId(a.id)
     a.onClick?.()
   }, [pendingAction, requestAction])

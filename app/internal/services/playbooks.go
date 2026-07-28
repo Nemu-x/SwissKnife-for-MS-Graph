@@ -463,10 +463,14 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 		// Only meetings the leaver organises are cancelled; ones they merely
 		// attend are left alone — those belong to somebody else.
 		r.doD("Cancel future meetings", req.Upn, func() (string, error) {
+			// A recurring series that started in the past still has future
+			// occurrences, and its master carries the past start date — filter
+			// on the series master as well, or weekly stand-ups survive the
+			// offboarding.
 			from := time.Now().UTC().Format("2006-01-02T15:04:05")
 			events, e := c.ListAll(op.Ctx, "/users/"+u+"/events", url.Values{
-				"$filter": {"start/dateTime ge '" + from + "'"},
-				"$select": {"id,subject,isOrganizer,isCancelled,attendees"},
+				"$filter": {"start/dateTime ge '" + from + "' or type eq 'seriesMaster'"},
+				"$select": {"id,subject,isOrganizer,isCancelled,attendees,type,recurrence"},
 				"$top":    {"50"},
 			}, 500)
 			if e != nil {
@@ -479,11 +483,25 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				}
 				var ev struct {
 					ID          string `json:"id"`
+					Type        string `json:"type"`
 					IsOrganizer bool   `json:"isOrganizer"`
 					IsCancelled bool   `json:"isCancelled"`
 					Attendees   []any  `json:"attendees"`
+					Recurrence  *struct {
+						Range struct {
+							Type    string `json:"type"`
+							EndDate string `json:"endDate"`
+						} `json:"range"`
+					} `json:"recurrence"`
 				}
 				if json.Unmarshal(raw, &ev) != nil || !ev.IsOrganizer || ev.IsCancelled || ev.ID == "" {
+					continue
+				}
+				// A series that already ran out has nothing left to cancel;
+				// cancelling it would only produce a Graph error.
+				if ev.Type == "seriesMaster" && ev.Recurrence != nil &&
+					ev.Recurrence.Range.Type == "endDate" && ev.Recurrence.Range.EndDate != "" &&
+					ev.Recurrence.Range.EndDate < time.Now().UTC().Format("2006-01-02") {
 					continue
 				}
 				path := "/users/" + u + "/events/" + url.PathEscape(ev.ID)

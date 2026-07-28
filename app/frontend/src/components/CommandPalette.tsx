@@ -28,8 +28,18 @@ export function CommandPalette({
   // selected for the keyboard.
   const pointerMoved = useRef(false)
 
+  // Focus goes back where it came from when the palette closes, and Tab stays
+  // inside it while it is open — it is a modal, so it has to behave like one.
+  const opener = useRef<HTMLElement | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
-    if (open) { setQ(''); setActive(0); pointerMoved.current = false }
+    if (open) {
+      opener.current = document.activeElement as HTMLElement | null
+      setQ(''); setActive(0); pointerMoved.current = false
+    } else {
+      opener.current?.focus?.()
+    }
   }, [open])
 
   const available = (task: Task) => {
@@ -83,7 +93,20 @@ export function CommandPalette({
     requestAction(task.action ?? null)
   }
 
+  // Tab must not reach the page behind the overlay: the palette holds the only
+  // two stops (the input and the active row), so the cycle stays inside.
+  const trapTab = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab') return
+    const focusable = panelRef.current?.querySelectorAll<HTMLElement>('input, button')
+    if (!focusable || focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+  }
+
   const onKeyDown = (e: React.KeyboardEvent) => {
+    trapTab(e)
     if (e.key === 'Escape') { e.preventDefault(); onClose(); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(i + 1, flat.length - 1)); return }
     if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); return }
@@ -95,6 +118,11 @@ export function CommandPalette({
   return (
     <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/50 p-4 pt-[12vh]" onClick={onClose}>
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('palette.open')}
+        onKeyDown={trapTab}
         className="flex max-h-[70vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-elev)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >

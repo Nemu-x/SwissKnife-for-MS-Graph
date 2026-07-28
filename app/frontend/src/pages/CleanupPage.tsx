@@ -49,7 +49,13 @@ export function CleanupPage() {
         toast('ok', `${r.deleted} deleted`)
         setStatus((s) => ({ ...s, duplicates: { ok: true, text: t('cleanup.deletedN', { n: r.deleted }), at: Date.now() } }))
         scan('duplicates')
-      } catch (e) { toast('err', errMessage(e)) }
+      } catch (e) {
+        // Leaving the previous green "deleted N" on the tile would contradict
+        // the error the operator just saw.
+        const m = errMessage(e)
+        setStatus((s) => ({ ...s, duplicates: { ok: false, text: m, at: Date.now() } }))
+        toast('err', m)
+      }
     }, t('cleanup.deleteExtras'))
   }
 
@@ -99,10 +105,17 @@ export function CleanupPage() {
         const rs = (await api.cleanup.trimVersionsMany(refs, keep, c)) || []
         const removed = rs.reduce((a, r) => a + r.removed, 0)
         const failed = rs.filter((r) => r.error).length
-        toast(failed > 0 ? 'err' : 'ok', failed > 0 ? t('cleanup.trimFailures', { n: failed }) : t('cleanup.trimmed', { n: removed }))
-        setStatus((s) => ({ ...s, versions: { ok: failed === 0, text: t('cleanup.trimmed', { n: removed }), at: Date.now() } }))
+        // Tile and toast must tell the same story: a red tile saying "N trimmed"
+        // next to a toast saying "N failures" is worse than either alone.
+        const text = failed > 0 ? t('cleanup.trimFailures', { n: failed }) : t('cleanup.trimmed', { n: removed })
+        toast(failed > 0 ? 'err' : 'ok', text)
+        setStatus((s) => ({ ...s, versions: { ok: failed === 0, text, at: Date.now() } }))
         applyTrim(rs)
-      } catch (e) { toast('err', errMessage(e)) }
+      } catch (e) {
+        const m = errMessage(e)
+        setStatus((s) => ({ ...s, versions: { ok: false, text: m, at: Date.now() } }))
+        toast('err', m)
+      }
       finally { patchJob('cleanup', { running: false, progress: '' }) }
     }, `${t('cleanup.trimSelected', { n: refs.length })} · ${humanBytes(selectedBytes)}`)
   }

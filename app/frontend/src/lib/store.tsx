@@ -96,7 +96,8 @@ interface Store {
   setCache: (key: string, value: any) => void
 
   // Task palette → page handshake: the palette navigates to a page and leaves
-  // the id of the toolbar action it wants; the ActionPage claims it on mount.
+  // the id of the tile it wants opened; TaskPage claims it on mount and clears
+  // it whether or not that page has a matching action.
   pendingAction: string | null
   requestAction: (id: string | null) => void
 

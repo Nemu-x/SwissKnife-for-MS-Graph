@@ -265,7 +265,11 @@ export function PlaybooksPage() {
           </Field>
           <Field label={t('playbooks.channels')} hint={t('playbooks.channelsHint')}>
             <div className="flex flex-col gap-2">
-              <EntityPicker value={chTeam} onChange={setChTeam} load={async () => teamOpts} placeholder={t('playbooks.pickTeamForChannels')} />
+              {/* reloadKey re-reads the options once the teams finish loading:
+                  opening the picker earlier would otherwise cache an empty list
+                  for the rest of the page's life. */}
+              <EntityPicker value={chTeam} onChange={setChTeam} load={async () => teamOpts}
+                reloadKey={`teams:${teamOpts.length}`} placeholder={t('playbooks.pickTeamForChannels')} />
               {chTeam && (
                 <MultiSelect
                   options={chOpts}

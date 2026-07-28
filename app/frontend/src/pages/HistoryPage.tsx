@@ -5,6 +5,7 @@ import { Page } from '../components/Layout'
 import { Button, Badge, Spinner, ErrorNote } from '../components/ui'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
+// The action log shares the store cache with the rest of the app.
 import type { journal } from '../../wailsjs/go/models'
 
 // History reads the persistent run journal: every playbook/transfer run
@@ -207,17 +208,23 @@ export function HistoryPage() {
 // as opposed to the tenant-side audit under Insights.
 function ActionLog() {
   const { t } = useTranslation()
-  const [entries, setEntries] = useState<any[] | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { cache, setCache } = useStore()
+  // Cached: switching back to Runs unmounts this, and re-reading 200 entries on
+  // every flip is wasted work.
+  const [entries, setEntriesLocal] = useState<any[] | null>(() => cache['activity.entries'] ?? null)
+  const setEntries = (v: any[] | null) => { setEntriesLocal(v); setCache('activity.entries', v) }
+  const [loading, setLoading] = useState(!entries)
+  const [error, setError] = useState<string | null>(null)
 
   const load = () => {
-    setLoading(true)
+    setLoading(true); setError(null)
     api.audit.activity(200)
       .then((e) => setEntries((e || []).reverse()))
-      .catch(() => setEntries([]))
+      // A failed read is not an empty log — saying "no entries" would be a lie.
+      .catch((e) => setError(errMessage(e)))
       .finally(() => setLoading(false))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (!entries) load() }, [])
 
   // Playbook summaries are stored as {key, params} JSON so they render in the
   // UI language; any other detail stays as-is.
@@ -240,7 +247,8 @@ function ActionLog() {
         <span className="text-xs text-[var(--text-faint)]">{t('activity.subtitle')}</span>
       </div>
       {loading && <Spinner />}
-      {!loading && entries?.length === 0 && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
+      {!loading && error && <ErrorNote>{error}</ErrorNote>}
+      {!loading && !error && entries?.length === 0 && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
       <div className="flex flex-col gap-1">
         {(entries || []).map((e, i) => (
           <div key={i} className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] px-3 py-2 text-sm">

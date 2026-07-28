@@ -148,12 +148,11 @@ func groupCopyable(groupTypes []string, mailEnabled, securityEnabled bool) (bool
 // and shared channels, licenses. Progress is streamed because the channel walk
 // is one Graph call per private channel and can run for a while on a person who
 // sits in twenty teams.
-func (m *MirrorService) profile(u mirrorUser, op *ops.Operation, side string) ([]AccessRow, error) {
+func (m *MirrorService) profile(ctx context.Context, op *ops.Operation, u mirrorUser, side string) ([]AccessRow, error) {
 	c, err := m.s.Client()
 	if err != nil {
 		return nil, err
 	}
-	ctx := m.s.Ctx()
 	base := "/users/" + url.PathEscape(u.id)
 	rows := []AccessRow{}
 	progress := func(what, name string, done, total int) {
@@ -224,7 +223,7 @@ func (m *MirrorService) profile(u mirrorUser, op *ops.Operation, side string) ([
 				strings.EqualFold(ch.MembershipType, "standard") {
 				continue // standard channels inherit the team's membership
 			}
-			member, err := m.inChannel(tm.ID, ch.ID, u)
+			member, err := m.inChannel(ctx, tm.ID, ch.ID, u)
 			if err != nil || !member {
 				continue
 			}
@@ -254,12 +253,12 @@ func (m *MirrorService) profile(u mirrorUser, op *ops.Operation, side string) ([
 }
 
 // inChannel reports whether the user holds a membership in this channel.
-func (m *MirrorService) inChannel(teamID, channelID string, u mirrorUser) (bool, error) {
+func (m *MirrorService) inChannel(ctx context.Context, teamID, channelID string, u mirrorUser) (bool, error) {
 	c, err := m.s.Client()
 	if err != nil {
 		return false, err
 	}
-	members, err := c.ListAll(m.s.Ctx(),
+	members, err := c.ListAll(ctx,
 		"/teams/"+url.PathEscape(teamID)+"/channels/"+url.PathEscape(channelID)+"/members", nil, 0)
 	if err != nil {
 		return false, err
@@ -299,11 +298,23 @@ func (m *MirrorService) Compare(sourceUpn, targetUpn string) ([]AccessRow, error
 	defer m.s.Ops.Finish(op)
 	emitOp(m.s.Ctx(), op, "op:start", map[string]any{"target": targetUpn})
 
-	srcRows, err := m.profile(src, op, "source")
+	out, err := m.compareWith(op.Ctx, op, src, tgt)
 	if err != nil {
 		return nil, err
 	}
-	tgtRows, err := m.profile(tgt, op, "target")
+	m.s.Record("mirror.compare", targetUpn, "source="+sourceUpn+" rows="+itoa(len(out)), nil)
+	return out, nil
+}
+
+// compareWith is the comparison itself, running inside a caller-owned operation
+// so Copy does not have to start (and audit) a second one. Every Graph call
+// takes the operation's context, so Cancel() stops the walk mid-flight.
+func (m *MirrorService) compareWith(ctx context.Context, op *ops.Operation, src, tgt mirrorUser) ([]AccessRow, error) {
+	srcRows, err := m.profile(ctx, op, src, "source")
+	if err != nil {
+		return nil, err
+	}
+	tgtRows, err := m.profile(ctx, op, tgt, "target")
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +344,6 @@ func (m *MirrorService) Compare(sourceUpn, targetUpn string) ([]AccessRow, error
 			out = append(out, r)
 		}
 	}
-	m.s.Record("mirror.compare", targetUpn, "source="+sourceUpn+" rows="+itoa(len(out)), nil)
 	return out, nil
 }
 
@@ -365,17 +375,19 @@ func (m *MirrorService) Copy(req MirrorRequest) (*PlaybookResult, error) {
 		want[k] = true
 	}
 
-	rows, err := m.Compare(req.Source, req.Target)
-	if err != nil {
-		return nil, err
-	}
-
 	op, err := m.s.Ops.Start(m.s.Ctx(), ops.KindMirror)
 	if err != nil {
 		return nil, err
 	}
 	defer m.s.Ops.Finish(op)
 	emitOp(m.s.Ctx(), op, "op:start", map[string]any{"target": req.Target})
+
+	// The diff runs inside this operation: one op, one audit entry, and Cancel
+	// stops the read phase too.
+	rows, err := m.compareWith(op.Ctx, op, src, tgt)
+	if err != nil {
+		return nil, err
+	}
 	r := &runner{op: op, kind: "mirror", ok: true, journal: m.s.Journal}
 	if r.journal != nil {
 		r.journal.Begin(op.ID, map[string]any{"kind": "mirror", "source": src.upn, "target": tgt.upn})

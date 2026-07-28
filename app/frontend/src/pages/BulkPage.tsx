@@ -20,7 +20,10 @@ async function skuResolver(): Promise<(v: string) => string> {
   const skus = await api.licensing.skus()
   const byName = new Map<string, string>()
   for (const s of skus as GraphObject[]) {
-    if (s.skuPartNumber) byName.set(String(s.skuPartNumber).toLowerCase(), s.skuId)
+    // A SKU without a part number would blow up skuFriendly and take the whole
+    // run with it; skip its name, keep it addressable by GUID.
+    if (!s.skuPartNumber) continue
+    byName.set(String(s.skuPartNumber).toLowerCase(), s.skuId)
     byName.set(skuFriendly(s.skuPartNumber).toLowerCase(), s.skuId)
   }
   return (v: string) => {

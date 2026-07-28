@@ -58,6 +58,43 @@ func TestOffboardTransfersGroupOwnershipInSafeOrder(t *testing.T) {
 	}
 }
 
+// The new owner may already own the group: Graph rejects the duplicate
+// reference, and that rejection must not abort the hand-over.
+func TestOffboardOwnershipSurvivesAnExistingOwner(t *testing.T) {
+	var calls []string
+	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/groups/g1/owners/$ref":
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error":{"code":"Request_BadRequest","message":"One or more added object references already exist for the following modified properties: 'owners'."}}`))
+		case r.URL.Path == "/users/lead@contoso.com":
+			w.Write([]byte(`{"id":"new-owner-id"}`))
+		case r.URL.Path == "/users/leaver@contoso.com":
+			w.Write([]byte(`{"id":"leaver-id"}`))
+		case r.URL.Path == "/users/leaver@contoso.com/ownedObjects":
+			w.Write([]byte(`{"value":[{"@odata.type":"#microsoft.graph.group","id":"g1","displayName":"Global Finance"}]}`))
+		default:
+			w.Write([]byte(`{"value":[]}`))
+		}
+	})
+
+	res, err := NewPlaybookService(sess).Offboard(OffboardRequest{
+		Upn: "leaver@contoso.com", Confirm: "leaver@contoso.com", TransferOwnershipTo: "lead@contoso.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(calls, "\n"), "DELETE /groups/g1/owners/leaver-id/$ref") {
+		t.Errorf("an already-owner must not block dropping the leaver:\n%s", strings.Join(calls, "\n"))
+	}
+	for _, s := range res.Steps {
+		if s.Name == "Transfer ownership" && !s.OK {
+			t.Errorf("the step must succeed, got error %q", s.Error)
+		}
+	}
+}
+
 // Meetings the leaver merely attends belong to somebody else and must survive;
 // only the ones they organise are cancelled, and only with attendees notified.
 func TestOffboardCancelsOnlyOrganisedFutureMeetings(t *testing.T) {
@@ -73,7 +110,11 @@ func TestOffboardCancelsOnlyOrganisedFutureMeetings(t *testing.T) {
 				{"id":"e1","isOrganizer":true,"isCancelled":false,"attendees":[{"type":"required"}]},
 				{"id":"e2","isOrganizer":true,"isCancelled":false,"attendees":[]},
 				{"id":"e3","isOrganizer":false,"isCancelled":false,"attendees":[{"type":"required"}]},
-				{"id":"e4","isOrganizer":true,"isCancelled":true,"attendees":[]}]}`))
+				{"id":"e4","isOrganizer":true,"isCancelled":true,"attendees":[]},
+				{"id":"e5","type":"seriesMaster","isOrganizer":true,"isCancelled":false,"attendees":[{"type":"required"}],
+				 "recurrence":{"range":{"type":"noEnd"}}},
+				{"id":"e6","type":"seriesMaster","isOrganizer":true,"isCancelled":false,"attendees":[{"type":"required"}],
+				 "recurrence":{"range":{"type":"endDate","endDate":"2020-01-01"}}}]}`))
 		default:
 			w.Write([]byte(`{"value":[]}`))
 		}
@@ -94,9 +135,14 @@ func TestOffboardCancelsOnlyOrganisedFutureMeetings(t *testing.T) {
 	if !strings.Contains(joined, "DELETE /users/leaver@contoso.com/events/e2") {
 		t.Errorf("a solo appointment should just be deleted:\n%s", joined)
 	}
-	for _, bad := range []string{"events/e3", "events/e4"} {
+	// A recurring series still running must be cancelled even though its master
+	// started in the past; one that already ended must be left alone.
+	if !strings.Contains(joined, "POST /users/leaver@contoso.com/events/e5/cancel") {
+		t.Errorf("a live recurring series must be cancelled:\n%s", joined)
+	}
+	for _, bad := range []string{"events/e3", "events/e4", "events/e6"} {
 		if strings.Contains(joined, bad) {
-			t.Errorf("must not touch %s (not organised / already cancelled):\n%s", bad, joined)
+			t.Errorf("must not touch %s (not organised / already cancelled / series ended):\n%s", bad, joined)
 		}
 	}
 }

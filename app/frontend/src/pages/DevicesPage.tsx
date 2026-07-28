@@ -1,38 +1,28 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Search, Info, Power, PowerOff, Trash2, KeyRound, Eye } from 'lucide-react'
-import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
+import { TaskPage, TaskForm, type TaskAction } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input } from '../components/ui'
 import { EntityPicker } from '../components/EntityPicker'
 import { loadDevices } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
+import { useTaskStatus } from '../lib/useTaskStatus'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
-import { api, errMessage, type GraphObject } from '../lib/api'
+import { api, type GraphObject } from '../lib/api'
 
 export function DevicesPage() {
   const { t } = useTranslation()
-  const { readOnly, toast } = useStore()
+  const { readOnly } = useStore()
   const { askConfirm, confirmElement } = useConfirm()
   const res = useAsync<GraphObject[] | GraphObject>()
   const [search, setSearch] = useState('')
   const [deviceId, setDeviceId] = useState('')
   const [keyId, setKeyId] = useState('')
-  const [status, setStatus] = useState<Record<string, ActionStatus>>({})
+  const { status, busy: writing, doWrite } = useTaskStatus()
 
   const listDevices = () => res.run(() => api.devices.list(search, 0))
-  const doWrite = async (id: string, fn: () => Promise<any>, ok: string) => {
-    try {
-      await fn()
-      setStatus((s) => ({ ...s, [id]: { ok: true, text: ok, at: Date.now() } }))
-      toast('ok', ok)
-    } catch (e) {
-      const m = errMessage(e)
-      setStatus((s) => ({ ...s, [id]: { ok: false, text: m, at: Date.now() } }))
-      toast('err', m)
-    }
-  }
 
   const deviceField = (
     <Field label={t('devices.device')}>
@@ -108,7 +98,7 @@ export function DevicesPage() {
         search={{ value: search, onChange: setSearch, onSubmit: listDevices, placeholder: t('common.search') }}
         actions={actions}
         status={status}
-        busy={res.loading}
+        busy={res.loading || writing}
         onClearResult={res.reset}
         hasResult={!!res.data || res.loading || !!res.error}
         result={<ResultView data={res.data} loading={res.loading} error={res.error}

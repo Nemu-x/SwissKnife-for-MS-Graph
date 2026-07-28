@@ -13,7 +13,7 @@ import type { services } from '../../wailsjs/go/models'
 
 export function OffboardingPage() {
   const { t } = useTranslation()
-  const { readOnly, jobs, jobLog, startTransfer, cancelTransfer, clearJob } = useStore()
+  const { readOnly, jobs, jobLog, startTransfer, cancelTransfer, clearJob, cache, setCache } = useStore()
 
   const [source, setSource] = useState('')
   const [target, setTarget] = useState('')
@@ -22,7 +22,10 @@ export function OffboardingPage() {
   const [usePool, setUsePool] = useState(false)
   const [pool, setPool] = useState(localStorage.getItem('offboard.pool') || '')
 
-  const [preview, setPreview] = useState<services.CopyPreview | null>(null)
+  // A preview walks the whole drive; keeping its result in the store means
+  // leaving the page and coming back to start the copy does not throw it away.
+  const [preview, setPreviewLocal] = useState<services.CopyPreview | null>(() => cache['offboarding.preview'] ?? null)
+  const setPreview = (v: services.CopyPreview | null) => { setPreviewLocal(v); setCache('offboarding.preview', v) }
   const [previewing, setPreviewing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<Record<string, ActionStatus>>({})

@@ -505,6 +505,7 @@ const en = {
     link: 'Share link',
     uploadFolder: 'Upload into folder (empty = root)',
     upload: 'Upload file…',
+    linkCopied: 'Share link created and copied',
     subtitle: 'OneDrive and SharePoint contents',
     tileBrowse: 'Browse a drive',
     hintBrowse: "A user's OneDrive or a SharePoint site — list or search.",

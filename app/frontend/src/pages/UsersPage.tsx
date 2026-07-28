@@ -11,6 +11,7 @@ import { UpnInput } from '../components/UpnInput'
 import { EntityPicker } from '../components/EntityPicker'
 import { loadUsers } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
+import { useTaskStatus } from '../lib/useTaskStatus'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
 import { skuFriendly } from '../lib/skuNames'
@@ -46,7 +47,7 @@ export function UsersPage() {
   const [tapLifetime, setTapLifetime] = useState(60)
   const [tapOnce, setTapOnce] = useState(true)
   const [invite, setInvite] = useState({ email: '', name: '', sendMail: true })
-  const [status, setStatus] = useState<Record<string, ActionStatus>>({})
+  const { status, busy: writing, mark, doWrite, doShow: runWrite } = useTaskStatus()
   // Mirror: "give the target the same access this source user has".
   const [mirrorSource, setMirrorSource] = useState('')
   const [mirrorKinds, setMirrorKinds] = useState<Record<string, boolean>>({
@@ -57,17 +58,11 @@ export function UsersPage() {
   const [diff, setDiff] = useState<services.AccessRow[] | null>(null)
   const [showAll, setShowAll] = useState(false)
 
-  const mark = (id: string, ok: boolean, text: string) =>
-    setStatus((s) => ({ ...s, [id]: { ok, text, at: Date.now() } }))
-
   const listUsers = () => res.run(() => api.users.list(search, 0))
-  const doWrite = async (id: string, fn: () => Promise<any>, ok: string) => {
-    try { await fn(); mark(id, true, ok); toast('ok', ok) }
-    catch (e) { const m = errMessage(e); mark(id, false, m); toast('err', m) }
-  }
+  // A write whose result is worth looking at also lands in the results pane.
   const doShow = async (id: string, fn: () => Promise<any>, ok: string) => {
-    try { res.setData(await fn()); mark(id, true, ok); toast('ok', ok) }
-    catch (e) { const m = errMessage(e); mark(id, false, m); toast('err', m) }
+    const r = await runWrite(id, fn, ok)
+    if (r !== undefined) res.setData(r)
   }
 
   // Issue a Temporary Access Pass and show it once, with a QR for phone entry.
@@ -153,8 +148,18 @@ export function UsersPage() {
     <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-xs text-[var(--accent2)]">
       <Spinner />
       <span className="min-w-0 flex-1 truncate">{mirrorJob?.progress || t('mirror.starting')}</span>
-      <button onClick={() => api.mirror.cancel()} className="shrink-0 text-[var(--danger)] hover:underline">
-        {t('common.cancel')}
+      <button
+        disabled={mirrorJob?.canceled}
+        onClick={() => {
+          // Mark the request immediately: the scan keeps running until the
+          // current Graph call returns, and a button that does nothing visible
+          // invites a second click.
+          patchJob('mirror', { canceled: true, progress: t('common.canceling') })
+          api.mirror.cancel().catch((e) => toast('err', errMessage(e)))
+        }}
+        className="shrink-0 text-[var(--danger)] hover:underline disabled:opacity-50"
+      >
+        {mirrorJob?.canceled ? t('common.canceling') : t('common.cancel')}
       </button>
     </div>
   )
@@ -454,7 +459,7 @@ export function UsersPage() {
         search={{ value: search, onChange: setSearch, onSubmit: listUsers, placeholder: t('users.searchHint') }}
         actions={actions}
         status={status}
-        busy={res.loading || mirrorBusy}
+        busy={res.loading || writing || mirrorBusy}
         busyLabel={mirrorBusy ? mirrorJob?.progress || t('mirror.starting') : undefined}
         onClearResult={() => { res.reset(); setDiff(null); setShowAll(false) }}
         hasResult={!!res.data || res.loading || !!res.error}

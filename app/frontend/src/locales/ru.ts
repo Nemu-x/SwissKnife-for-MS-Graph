@@ -505,6 +505,7 @@ const ru: Dict<typeof en> = {
     link: 'Ссылка для доступа',
     uploadFolder: 'Загрузить в папку (пусто = корень)',
     upload: 'Загрузить файл…',
+    linkCopied: 'Ссылка создана и скопирована',
     subtitle: 'Содержимое OneDrive и SharePoint',
     tileBrowse: 'Посмотреть хранилище',
     hintBrowse: 'OneDrive пользователя или сайт SharePoint — список или поиск.',

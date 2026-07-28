@@ -1,37 +1,26 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Smartphone, Info, Eraser, Trash, Lock } from 'lucide-react'
-import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
+import { TaskPage, TaskForm, type TaskAction } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field } from '../components/ui'
 import { EntityPicker } from '../components/EntityPicker'
 import { loadIntuneDevices } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
+import { useTaskStatus } from '../lib/useTaskStatus'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
-import { api, errMessage, type GraphObject } from '../lib/api'
+import { api, type GraphObject } from '../lib/api'
 
 export function IntunePage() {
   const { t } = useTranslation()
-  const { readOnly, toast } = useStore()
+  const { readOnly } = useStore()
   const { askConfirm, confirmElement } = useConfirm()
   const res = useAsync<GraphObject[] | GraphObject>()
   const [deviceId, setDeviceId] = useState('')
   const [keepEnroll, setKeepEnroll] = useState(false)
   const [keepUser, setKeepUser] = useState(false)
-  const [status, setStatus] = useState<Record<string, ActionStatus>>({})
-
-  const doWrite = async (id: string, fn: () => Promise<any>, ok: string) => {
-    try {
-      await fn()
-      setStatus((s) => ({ ...s, [id]: { ok: true, text: ok, at: Date.now() } }))
-      toast('ok', ok)
-    } catch (e) {
-      const m = errMessage(e)
-      setStatus((s) => ({ ...s, [id]: { ok: false, text: m, at: Date.now() } }))
-      toast('err', m)
-    }
-  }
+  const { status, busy: writing, doWrite } = useTaskStatus()
 
   const deviceField = (
     <Field label={t('intune.device')}>
@@ -111,7 +100,7 @@ export function IntunePage() {
         subtitle={t('intune.subtitle')}
         actions={actions}
         status={status}
-        busy={res.loading}
+        busy={res.loading || writing}
         onClearResult={res.reset}
         hasResult={!!res.data || res.loading || !!res.error}
         result={<ResultView data={res.data} loading={res.loading} error={res.error} onUseId={setDeviceId} />}

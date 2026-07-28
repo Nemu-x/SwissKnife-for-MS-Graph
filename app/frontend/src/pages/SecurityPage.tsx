@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ShieldAlert, AppWindow, Search } from 'lucide-react'
 import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
@@ -82,11 +82,22 @@ export function SecurityPage() {
       .finally(() => setLoadingSp(false))
   }
 
-  const pickSp = (sp: GraphObject) => {
-    setSelSp(sp); setGrants(null); setAppRoles(null)
+  const loadSpDetail = useCallback((sp: GraphObject) => {
     api.security.oauthGrants(sp.id).then(setGrants).catch(() => setGrants([]))
     api.security.appRoleAssignments(sp.id).then(setAppRoles).catch(() => setAppRoles([]))
+  }, [])
+
+  const pickSp = (sp: GraphObject) => {
+    setSelSp(sp); setGrants(null); setAppRoles(null)
+    loadSpDetail(sp)
   }
+
+  // The selection is restored from the cache on mount, but its grants are not —
+  // without this the detail pane spins forever after navigating back.
+  useEffect(() => {
+    if (selSp && !grants && !appRoles) loadSpDetail(selSp)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-time rehydration only
+  }, [])
 
   const actions: TaskAction[] = [
     {

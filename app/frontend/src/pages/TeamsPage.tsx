@@ -1,42 +1,35 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ListTree, Hash, UserPlus, UserMinus, Wand2, Plus, Users2, MapPin } from 'lucide-react'
-import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
+import { TaskPage, TaskForm, type TaskAction } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input, Select } from '../components/ui'
 import { UpnInput } from '../components/UpnInput'
 import { EntityPicker } from '../components/EntityPicker'
 import { loadTeams, loadChannels, loadMembershipChannels, loadGroups, loadUsers } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
+import { useTaskStatus } from '../lib/useTaskStatus'
 import { useStore } from '../lib/store'
-import { api, errMessage, type GraphObject } from '../lib/api'
+import { api, type GraphObject } from '../lib/api'
 
 export function TeamsPage() {
   const { t } = useTranslation()
-  const { readOnly, toast } = useStore()
+  const { readOnly } = useStore()
   const res = useAsync<GraphObject[] | GraphObject>()
   // One "who" and one "where" for the whole page: the person and team picked in
   // one tile stay picked in the next.
   const [user, setUser] = useState('')
   const [teamId, setTeamId] = useState('')
+  // Two channel pickers with different option sets: browsing lists every
+  // channel, membership only the ones that have their own members. Sharing one
+  // state let a standard channel leak into the add-member form, where Graph
+  // then rejects the call.
   const [channelId, setChannelId] = useState('')
+  const [memberChannelId, setMemberChannelId] = useState('')
   const [owner, setOwner] = useState(false)
   const [ch, setCh] = useState({ name: '', desc: '', type: 'standard', owner: '' })
   const [groupId, setGroupId] = useState('')
-  const [status, setStatus] = useState<Record<string, ActionStatus>>({})
-
-  // Writes report their outcome on the tile itself, so it survives the toast.
-  const doWrite = async (id: string, fn: () => Promise<any>, ok: string) => {
-    try {
-      await fn()
-      setStatus((s) => ({ ...s, [id]: { ok: true, text: ok, at: Date.now() } }))
-      toast('ok', ok)
-    } catch (e) {
-      const msg = errMessage(e)
-      setStatus((s) => ({ ...s, [id]: { ok: false, text: msg, at: Date.now() } }))
-      toast('err', msg)
-    }
-  }
+  const { status, busy: writing, doWrite } = useTaskStatus()
 
   const userField = (
     <Field label={t('common.user')}>
@@ -91,19 +84,19 @@ export function TeamsPage() {
           {userField}
           {teamField}
           <Field label={t('teams.channel')}>
-            <EntityPicker value={channelId} onChange={setChannelId} load={loadMembershipChannels(teamId)} reloadKey={teamId}
+            <EntityPicker value={memberChannelId} onChange={setMemberChannelId} load={loadMembershipChannels(teamId)} reloadKey={teamId}
               placeholder={teamId ? t('teams.pickChannel') : t('teams.pickTeamFirst')} />
           </Field>
           <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
             <input type="checkbox" checked={owner} onChange={(e) => setOwner(e.target.checked)} /> {t('common.owner')}
           </label>
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="primary" disabled={readOnly || !teamId || !channelId || !user}
-              onClick={() => doWrite('addToChannel', () => api.teams.addChannelMember(teamId, channelId, user, owner), t('teams.addToChannel'))}>
+            <Button variant="primary" disabled={readOnly || !teamId || !memberChannelId || !user}
+              onClick={() => doWrite('addToChannel', () => api.teams.addChannelMember(teamId, memberChannelId, user, owner), t('teams.addToChannel'))}>
               <UserPlus size={15} /> {t('teams.addToChannel')}
             </Button>
-            <Button variant="subtle" disabled={readOnly || !teamId || !channelId || !user}
-              onClick={() => doWrite('addToChannel', () => api.teams.removeChannelMember(teamId, channelId, user), t('teams.removeFromChannel'))}>
+            <Button variant="subtle" disabled={readOnly || !teamId || !memberChannelId || !user}
+              onClick={() => doWrite('addToChannel', () => api.teams.removeChannelMember(teamId, memberChannelId, user), t('teams.removeFromChannel'))}>
               <UserMinus size={15} /> {t('teams.removeFromChannel')}
             </Button>
           </div>
@@ -197,7 +190,7 @@ export function TeamsPage() {
       subtitle={t('teams.subtitle')}
       actions={actions}
       status={status}
-      busy={res.loading}
+      busy={res.loading || writing}
       onClearResult={res.reset}
       hasResult={!!res.data || res.loading || !!res.error}
       result={<ResultView data={res.data} loading={res.loading} error={res.error} />}

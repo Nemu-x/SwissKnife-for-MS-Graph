@@ -86,13 +86,17 @@ test('task palette finds a task by words and opens its form on the page', async 
   expect(errors).toEqual([])
 })
 
+// Tile labels are human text: escape them before they become a matcher, or the
+// first label with a bracket in it silently matches the wrong element.
+const label = (text: string) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+
 test('Teams is action-first: every action is a visible tile with a hint', async ({ page }) => {
   await stubWails(page, { connected: true })
   await page.goto('/')
   await page.getByRole('button', { name: 'Teams', exact: true }).click()
 
   // All six capabilities are on screen without opening anything.
-  for (const label of [
+  for (const tile of [
     'Add someone to a team',
     'Add someone to a private channel',
     'Where is this person?',
@@ -100,7 +104,7 @@ test('Teams is action-first: every action is a visible tile with a hint', async 
     'Create a channel',
     'Turn a group into a team',
   ]) {
-    await expect(page.getByRole('button', { name: new RegExp(label.replace(/[?']/g, '.')) })).toBeVisible()
+    await expect(page.getByRole('button', { name: label(tile) })).toBeVisible()
   }
   await expect(page.getByText('the first step before any private channel', { exact: false })).toBeVisible()
 
@@ -139,7 +143,7 @@ test('every migrated page renders its action tiles', async ({ page }) => {
   ]
   for (const [nav, tile] of pages) {
     await page.getByRole('button', { name: nav, exact: true }).click()
-    await expect(page.getByRole('button', { name: new RegExp(tile) })).toBeVisible()
+    await expect(page.getByRole('button', { name: label(tile) })).toBeVisible()
   }
   expect(errors).toEqual([])
 })

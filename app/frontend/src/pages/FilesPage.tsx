@@ -2,19 +2,20 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderTree, Search, Upload, Download, Trash2, Link2 } from 'lucide-react'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
-import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
+import { TaskPage, TaskForm, type TaskAction } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input, Select } from '../components/ui'
 import { EntityPicker } from '../components/EntityPicker'
 import { loadUsers, loadSites } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
+import { useTaskStatus } from '../lib/useTaskStatus'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
-import { api, errMessage, type GraphObject } from '../lib/api'
+import { api, type GraphObject } from '../lib/api'
 
 export function FilesPage() {
   const { t } = useTranslation()
-  const { readOnly, toast } = useStore()
+  const { readOnly } = useStore()
   const { askConfirm, confirmElement } = useConfirm()
   const res = useAsync<GraphObject[] | GraphObject>()
 
@@ -25,7 +26,7 @@ export function FilesPage() {
   const [folder, setFolder] = useState('')
   const [query, setQuery] = useState('')
   const [progress, setProgress] = useState<{ name: string; pct: number } | null>(null)
-  const [status, setStatus] = useState<Record<string, ActionStatus>>({})
+  const { status, busy: writing, mark, doWrite, doShow } = useTaskStatus()
 
   useEffect(() => {
     const off = EventsOn('transfer:progress', (d: any) => {
@@ -35,18 +36,6 @@ export function FilesPage() {
     })
     return () => off()
   }, [])
-
-  const doWrite = async (id: string, fn: () => Promise<any>, ok: string) => {
-    try {
-      await fn()
-      setStatus((s) => ({ ...s, [id]: { ok: true, text: ok, at: Date.now() } }))
-      toast('ok', ok)
-    } catch (e) {
-      const m = errMessage(e)
-      setStatus((s) => ({ ...s, [id]: { ok: false, text: m, at: Date.now() } }))
-      toast('err', m)
-    }
-  }
 
   // Every tile works against one drive: a user's OneDrive or a SharePoint site.
   const driveField = (
@@ -104,12 +93,25 @@ export function FilesPage() {
           <Field label={t('files.itemId')}><Input value={itemId} onChange={(e) => setItemId(e.target.value)} /></Field>
           <Field label={t('files.suggestedName')}><Input value={itemName} onChange={(e) => setItemName(e.target.value)} /></Field>
           <div className="grid grid-cols-2 gap-2">
+            {/* The saved path and the created link ARE the result — report them
+                once, on the tile, instead of a second anonymous toast. */}
             <Button variant="primary" disabled={!ownerId || !itemId}
-              onClick={() => doWrite('item', async () => { const p = await api.drive.download(ownerType, ownerId, itemId, itemName || 'download'); if (p) toast('ok', p) }, t('files.download'))}>
+              onClick={async () => {
+                const p = await doShow('item', () => api.drive.download(ownerType, ownerId, itemId, itemName || 'download'), t('files.download'))
+                if (p) mark('item', true, String(p))
+              }}>
               <Download size={15} /> {t('files.download')}
             </Button>
             <Button variant="subtle" disabled={readOnly || !ownerId || !itemId}
-              onClick={() => doWrite('item', () => api.drive.createLink(ownerType, ownerId, itemId, 'view', 'organization'), t('files.link'))}>
+              onClick={async () => {
+                const r = await doShow('item', () => api.drive.createLink(ownerType, ownerId, itemId, 'view', 'organization'), t('files.link'))
+                const url = (r as any)?.link?.webUrl
+                if (url) {
+                  res.setData(r as GraphObject)
+                  navigator.clipboard?.writeText(url)
+                  mark('item', true, t('files.linkCopied'))
+                }
+              }}>
               <Link2 size={15} /> {t('files.link')}
             </Button>
           </div>
@@ -131,7 +133,7 @@ export function FilesPage() {
         subtitle={t('files.subtitle')}
         actions={actions}
         status={status}
-        busy={res.loading || !!progress}
+        busy={res.loading || writing || !!progress}
         busyLabel={progress ? `${progress.name} — ${progress.pct}%` : undefined}
         onClearResult={res.reset}
         hasResult={!!res.data || res.loading || !!res.error || !!progress}

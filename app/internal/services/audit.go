@@ -103,7 +103,9 @@ func (a *AuditService) DirectoryAuditsFiltered(search string, days, top int) ([]
 	if len(filters) > 0 {
 		params.Set("$filter", strings.Join(filters, " and "))
 	}
-	return c.ListAll(a.s.Ctx(), "/auditLogs/directoryAudits", params, top)
+	out, err := c.ListAll(a.s.Ctx(), "/auditLogs/directoryAudits", params, top)
+	a.s.Record("audit.directory", search, "days="+strconv.Itoa(days), err)
+	return out, err
 }
 
 // Activity is the local app action log (ADR-002).
