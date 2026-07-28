@@ -85,8 +85,26 @@ func TestOffboardOwnershipSurvivesAnExistingOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(calls, "\n"), "DELETE /groups/g1/owners/leaver-id/$ref") {
-		t.Errorf("an already-owner must not block dropping the leaver:\n%s", strings.Join(calls, "\n"))
+	// The rejected add still has to happen, and still has to happen first: a
+	// test that only checks the DELETE would pass if the add were skipped
+	// altogether, which is the very thing that could leave a group ownerless.
+	addIdx, delIdx := -1, -1
+	for i, c := range calls {
+		switch c {
+		case "POST /groups/g1/owners/$ref":
+			addIdx = i
+		case "DELETE /groups/g1/owners/leaver-id/$ref":
+			delIdx = i
+		}
+	}
+	if addIdx < 0 {
+		t.Fatalf("the owner add must still be attempted:\n%s", strings.Join(calls, "\n"))
+	}
+	if delIdx < 0 {
+		t.Fatalf("an already-owner must not block dropping the leaver:\n%s", strings.Join(calls, "\n"))
+	}
+	if addIdx > delIdx {
+		t.Errorf("the add must precede the removal:\n%s", strings.Join(calls, "\n"))
 	}
 	// A vacuous loop would pass when no step was emitted at all.
 	transferred := false
