@@ -29,6 +29,10 @@ export function TeamsPage() {
   const [owner, setOwner] = useState(false)
   const [ch, setCh] = useState({ name: '', desc: '', type: 'standard', owner: '' })
   const [groupId, setGroupId] = useState('')
+
+  // A channel id only means anything inside its team: switching teams must drop
+  // it, or the write buttons stay enabled with a channel from the old team.
+  const pickTeam = (id: string) => { setTeamId(id); setChannelId(''); setMemberChannelId('') }
   const { status, busy: writing, doWrite } = useTaskStatus()
 
   const userField = (
@@ -38,7 +42,7 @@ export function TeamsPage() {
   )
   const teamField = (
     <Field label={t('teams.team')}>
-      <EntityPicker value={teamId} onChange={setTeamId} load={loadTeams} placeholder={t('teams.pickTeam')} />
+      <EntityPicker value={teamId} onChange={pickTeam} load={loadTeams} placeholder={t('teams.pickTeam')} />
     </Field>
   )
 

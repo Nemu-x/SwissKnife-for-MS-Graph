@@ -22,10 +22,14 @@ export function ChatsPage() {
   const [members, setMembers] = useState('')
   const { status, busy: writing, doWrite } = useTaskStatus()
 
+  // A chat belongs to the owner whose list it came from: changing the owner
+  // invalidates the selected chat.
+  const pickOwner = (v: string) => { setUser(v); setChatId('') }
+
   // Chats are listed per owner: every tile needs to know whose chats to look at.
   const ownerField = (
     <Field label={t('chats.owner')}>
-      <EntityPicker value={user} onChange={setUser} load={loadUsers} placeholder={t('chats.pickUser')} />
+      <EntityPicker value={user} onChange={pickOwner} load={loadUsers} placeholder={t('chats.pickUser')} />
     </Field>
   )
   const chatField = (

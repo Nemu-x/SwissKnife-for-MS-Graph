@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useStore } from './store'
 import { errMessage } from './api'
 import type { ActionStatus } from '../components/TaskPage'
@@ -32,17 +32,29 @@ export function useTaskStatus(): TaskStatus {
     setStatus((s) => ({ ...s, [id]: { ok, text, at: Date.now() } }))
   }, [])
 
+  // One tile can drive several calls (Add and Remove share an id), so a slow
+  // first request must not land on top of a faster second one and report the
+  // wrong operation. Only the newest call per id may write the status.
+  const seq = useRef<Record<string, number>>({})
+
   const doShow = useCallback(async <T,>(id: string, fn: () => Promise<T>, okText: string) => {
+    const ticket = (seq.current[id] ?? 0) + 1
+    seq.current[id] = ticket
+    const current = () => seq.current[id] === ticket
     setInFlight((n) => n + 1)
     try {
       const r = await fn()
-      mark(id, true, okText)
-      toast('ok', okText)
+      if (current()) {
+        mark(id, true, okText)
+        toast('ok', okText)
+      }
       return r
     } catch (e) {
       const m = errMessage(e)
-      mark(id, false, m)
-      toast('err', m)
+      if (current()) {
+        mark(id, false, m)
+        toast('err', m)
+      }
       return undefined
     } finally {
       setInFlight((n) => n - 1)

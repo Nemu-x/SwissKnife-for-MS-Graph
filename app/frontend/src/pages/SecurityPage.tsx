@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ShieldAlert, AppWindow, Search } from 'lucide-react'
 import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
@@ -72,7 +72,7 @@ export function SecurityPage() {
   }
 
   const loadSps = () => {
-    setTab('consents'); setLoadingSp(true); setSelSp(null)
+    setTab('consents'); setLoadingSp(true); clearSelection()
     api.security.servicePrincipals(search, 500)
       .then((r) => {
         setSps(r)
@@ -82,14 +82,24 @@ export function SecurityPage() {
       .finally(() => setLoadingSp(false))
   }
 
+  // Picking B while A's requests are still in flight must not fill B's pane
+  // with A's grants: only the newest selection may write.
+  const detailReq = useRef(0)
   const loadSpDetail = useCallback((sp: GraphObject) => {
-    api.security.oauthGrants(sp.id).then(setGrants).catch(() => setGrants([]))
-    api.security.appRoleAssignments(sp.id).then(setAppRoles).catch(() => setAppRoles([]))
+    const ticket = ++detailReq.current
+    const fresh = () => detailReq.current === ticket
+    api.security.oauthGrants(sp.id).then((r) => { if (fresh()) setGrants(r) }).catch(() => { if (fresh()) setGrants([]) })
+    api.security.appRoleAssignments(sp.id).then((r) => { if (fresh()) setAppRoles(r) }).catch(() => { if (fresh()) setAppRoles([]) })
   }, [])
 
   const pickSp = (sp: GraphObject) => {
     setSelSp(sp); setGrants(null); setAppRoles(null)
     loadSpDetail(sp)
+  }
+
+  const clearSelection = () => {
+    detailReq.current++ // invalidate anything still in flight
+    setSelSp(null); setGrants(null); setAppRoles(null)
   }
 
   // The selection is restored from the cache on mount, but its grants are not —
@@ -238,7 +248,7 @@ export function SecurityPage() {
       busy={loadingCa || loadingSp}
       busyLabel={loadingCa ? t('security.loadPolicies') : t('common.search')}
       hasResult={(tab === 'ca' && !!policies) || (tab === 'consents' && !!sps) || loadingCa || loadingSp}
-      onClearResult={() => { setPolicies(null); setSelPolicy(null); setSps(null); setSelSp(null); setCache('security.policies', null); setCache('security.sps', null) }}
+      onClearResult={() => { setPolicies(null); setSelPolicy(null); setSps(null); clearSelection(); setCache('security.policies', null); setCache('security.sps', null) }}
       result={resultPane}
     />
   )

@@ -88,10 +88,19 @@ func TestOffboardOwnershipSurvivesAnExistingOwner(t *testing.T) {
 	if !strings.Contains(strings.Join(calls, "\n"), "DELETE /groups/g1/owners/leaver-id/$ref") {
 		t.Errorf("an already-owner must not block dropping the leaver:\n%s", strings.Join(calls, "\n"))
 	}
+	// A vacuous loop would pass when no step was emitted at all.
+	transferred := false
 	for _, s := range res.Steps {
-		if s.Name == "Transfer ownership" && !s.OK {
+		if s.Name != "Transfer ownership" {
+			continue
+		}
+		transferred = true
+		if !s.OK {
 			t.Errorf("the step must succeed, got error %q", s.Error)
 		}
+	}
+	if !transferred {
+		t.Errorf("no ownership transfer step was reported: %+v", res.Steps)
 	}
 }
 
