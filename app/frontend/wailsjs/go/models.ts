@@ -207,6 +207,34 @@ export namespace secrets {
 
 export namespace services {
 	
+	export class AccessRow {
+	    kind: string;
+	    id: string;
+	    name: string;
+	    teamId?: string;
+	    teamName?: string;
+	    sub?: string;
+	    status: string;
+	    copyable: boolean;
+	    reasonKey?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccessRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.teamId = source["teamId"];
+	        this.teamName = source["teamName"];
+	        this.sub = source["sub"];
+	        this.status = source["status"];
+	        this.copyable = source["copyable"];
+	        this.reasonKey = source["reasonKey"];
+	    }
+	}
 	export class ChannelRef {
 	    teamId: string;
 	    channelId: string;
@@ -461,6 +489,24 @@ export namespace services {
 	    }
 	}
 	
+	export class MirrorRequest {
+	    source: string;
+	    target: string;
+	    kinds: string[];
+	    confirm: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MirrorRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.source = source["source"];
+	        this.target = source["target"];
+	        this.kinds = source["kinds"];
+	        this.confirm = source["confirm"];
+	    }
+	}
 	export class NotifyConfig {
 	    webhookUrl: string;
 	    notifyPlaybooks: boolean;
@@ -493,6 +539,8 @@ export namespace services {
 	    intuneAction: string;
 	    removeMfaMethods: boolean;
 	    deleteRegisteredDevices: boolean;
+	    transferOwnershipTo: string;
+	    cancelFutureEvents: boolean;
 	    delete: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -518,6 +566,8 @@ export namespace services {
 	        this.intuneAction = source["intuneAction"];
 	        this.removeMfaMethods = source["removeMfaMethods"];
 	        this.deleteRegisteredDevices = source["deleteRegisteredDevices"];
+	        this.transferOwnershipTo = source["transferOwnershipTo"];
+	        this.cancelFutureEvents = source["cancelFutureEvents"];
 	        this.delete = source["delete"];
 	    }
 	}
@@ -628,6 +678,24 @@ export namespace services {
 		    }
 		    return a;
 		}
+	}
+	export class SignInQuery {
+	    upn: string;
+	    days: number;
+	    failedOnly: boolean;
+	    top: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SignInQuery(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.upn = source["upn"];
+	        this.days = source["days"];
+	        this.failedOnly = source["failedOnly"];
+	        this.top = source["top"];
+	    }
 	}
 	export class SiteUsage {
 	    id: string;

@@ -18,6 +18,7 @@ export function HistoryPage() {
   const [detail, setDetail] = useState<journal.Run | null>(null)
   const [detailErr, setDetailErr] = useState('')
   const [resuming, setResuming] = useState('')
+  const [tab, setTab] = useState<'runs' | 'actions'>('runs')
 
   const load = () => {
     api.journal.list(100).then((r) => { setRuns(r || []); setError(null) }).catch((e) => setError(errMessage(e)))
@@ -81,6 +82,19 @@ export function HistoryPage() {
 
   return (
     <Page title={t('history.title')} subtitle={t('history.subtitle')}>
+      {/* Two journals, one page: multi-step runs and the flat write log. */}
+      <div className="mb-4 inline-flex rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] p-1">
+        {([['runs', t('history.tabRuns')], ['actions', t('history.tabActions')]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium ${tab === id ? 'bg-[var(--accent)] text-[var(--accent-fg)]' : 'text-[var(--text-dim)]'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'actions' && <ActionLog />}
+
+      {tab === 'runs' && <>
       <div className="mb-3 flex items-center gap-2">
         <Button variant="subtle" onClick={load}><RefreshCw size={15} /> {t('common.refresh')}</Button>
       </div>
@@ -184,6 +198,60 @@ export function HistoryPage() {
           </div>
         ))}
       </div>
+      </>}
     </Page>
+  )
+}
+
+// The local write/destructive log (ADR-002): what this app did on this machine,
+// as opposed to the tenant-side audit under Insights.
+function ActionLog() {
+  const { t } = useTranslation()
+  const [entries, setEntries] = useState<any[] | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = () => {
+    setLoading(true)
+    api.audit.activity(200)
+      .then((e) => setEntries((e || []).reverse()))
+      .catch(() => setEntries([]))
+      .finally(() => setLoading(false))
+  }
+  useEffect(() => { load() }, [])
+
+  // Playbook summaries are stored as {key, params} JSON so they render in the
+  // UI language; any other detail stays as-is.
+  const detailText = (d: string) => {
+    if (d && d.startsWith('{')) {
+      try {
+        const o = JSON.parse(d)
+        if (o.key) return String(t(o.key, { ...o.params, defaultValue: d }))
+      } catch { /* plain detail */ }
+    }
+    return d
+  }
+
+  return (
+    <>
+      <div className="mb-3 flex items-center gap-2">
+        <Button variant="subtle" onClick={load} disabled={loading}>
+          {loading ? <Spinner /> : <RefreshCw size={15} />} {t('common.refresh')}
+        </Button>
+        <span className="text-xs text-[var(--text-faint)]">{t('activity.subtitle')}</span>
+      </div>
+      {loading && <Spinner />}
+      {!loading && entries?.length === 0 && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
+      <div className="flex flex-col gap-1">
+        {(entries || []).map((e, i) => (
+          <div key={i} className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] px-3 py-2 text-sm">
+            {e.ok ? <CheckCircle2 size={15} className="shrink-0 text-[var(--ok)]" /> : <XCircle size={15} className="shrink-0 text-[var(--danger)]" />}
+            <span className="shrink-0 font-mono text-xs text-[var(--accent)]">{e.action}</span>
+            <span className="truncate text-[var(--text-dim)]">{e.target}</span>
+            {e.detail && <span className="truncate text-xs text-[var(--text-faint)]">{detailText(e.detail)}</span>}
+            <span className="ml-auto shrink-0 text-xs text-[var(--text-faint)]">{new Date(e.time).toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
+    </>
   )
 }

@@ -5,11 +5,13 @@ import type { ReactNode } from 'react'
 import { Page } from '../components/Layout'
 import { Card, Button, Spinner, ErrorNote } from '../components/ui'
 import { api, errMessage } from '../lib/api'
+import { useStore } from '../lib/store'
 import { skuFriendly, isFreeOrTrial } from '../lib/skuNames'
 import type { services } from '../../wailsjs/go/models'
 
 export function DashboardPage() {
   const { t } = useTranslation()
+  const { goTo } = useStore()
   const [data, setData] = useState<services.DashboardSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -34,16 +36,22 @@ export function DashboardPage() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
+      {/* Every number opens the list behind it — a dashboard that cannot be
+          drilled into is a dead end. */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat icon={<Users size={18} />} label={t('dashboard.users')} value={data?.users} loading={loading} />
-        <Stat icon={<Boxes size={18} />} label={t('dashboard.groups')} value={data?.groups} loading={loading} />
-        <Stat icon={<Globe size={18} />} label={t('dashboard.domains')} value={data?.domains} loading={loading} />
+        <Stat icon={<Users size={18} />} label={t('dashboard.users')} value={data?.users} loading={loading}
+          onClick={() => goTo('users', 'list')} />
+        <Stat icon={<Boxes size={18} />} label={t('dashboard.groups')} value={data?.groups} loading={loading}
+          onClick={() => goTo('groups', 'list')} />
+        <Stat icon={<Globe size={18} />} label={t('dashboard.domains')} value={data?.domains} loading={loading}
+          onClick={() => goTo('connect')} />
         <Stat
           icon={<KeyRound size={18} />}
           label={t('dashboard.licensesInUse')}
           value={data?.licensesUsed}
           suffix={t('dashboard.assigned')}
           loading={loading}
+          onClick={() => goTo('licensing', 'skus')}
         />
       </div>
 
@@ -94,11 +102,16 @@ export function DashboardPage() {
   )
 }
 
-function Stat({ icon, label, value, suffix, loading }: {
-  icon: ReactNode; label: string; value?: number | string; suffix?: string; loading?: boolean
+function Stat({ icon, label, value, suffix, loading, onClick }: {
+  icon: ReactNode; label: string; value?: number | string; suffix?: string; loading?: boolean; onClick?: () => void
 }) {
+  const Tag = onClick ? 'button' : 'div'
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-4">
+    <Tag
+      onClick={onClick}
+      className={`rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-4 text-left
+        ${onClick ? 'transition-colors hover:border-[var(--accent)] hover:bg-[var(--bg-elev-2)]' : ''}`}
+    >
       <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-[10px] text-[var(--accent)]"
         style={{ background: 'color-mix(in srgb, var(--accent) 14%, transparent)' }}>
         {icon}
@@ -108,6 +121,6 @@ function Stat({ icon, label, value, suffix, loading }: {
         {!loading && suffix && value != null && <span className="ml-1 text-sm font-medium text-[var(--text-faint)]">{suffix}</span>}
       </div>
       <div className="mt-0.5 text-sm text-[var(--text-dim)]">{label}</div>
-    </div>
+    </Tag>
   )
 }

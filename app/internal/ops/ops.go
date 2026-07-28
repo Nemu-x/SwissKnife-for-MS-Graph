@@ -23,6 +23,7 @@ const (
 	KindTransfer Kind = "transfer"
 	KindPlaybook Kind = "playbook"
 	KindCleanup  Kind = "cleanup"
+	KindMirror   Kind = "mirror"
 	KindBulk     Kind = "bulk"
 	KindUpdate   Kind = "update"
 )

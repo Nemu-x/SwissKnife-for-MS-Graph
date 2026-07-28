@@ -95,6 +95,17 @@ interface Store {
   cache: Record<string, any>
   setCache: (key: string, value: any) => void
 
+  // Task palette → page handshake: the palette navigates to a page and leaves
+  // the id of the toolbar action it wants; the ActionPage claims it on mount.
+  pendingAction: string | null
+  requestAction: (id: string | null) => void
+
+  // Navigation, exposed so any page can send the operator onward: a dashboard
+  // number is only useful if clicking it opens the list behind it. Shell wires
+  // the real navigator; `goTo` also carries an optional action id to open.
+  setNavigator: (fn: (page: string, action?: string) => void) => void
+  goTo: (page: string, action?: string) => void
+
   toasts: Toast[]
   toast: (kind: Toast['kind'], text: string) => void
   dismiss: (id: number) => void
@@ -137,6 +148,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setCache = useCallback((key: string, value: any) => {
     setCacheState((c) => ({ ...c, [key]: value }))
   }, [])
+
+  const [pendingAction, setPendingAction] = useState<string | null>(null)
+  const requestAction = useCallback((id: string | null) => setPendingAction(id), [])
+
+  const navigatorRef = useRef<(page: string, action?: string) => void>(() => {})
+  const setNavigator = useCallback((fn: (page: string, action?: string) => void) => {
+    navigatorRef.current = fn
+  }, [])
+  const goTo = useCallback((page: string, action?: string) => navigatorRef.current(page, action), [])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -219,6 +239,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       jobLog(key, `${icon} ${d.name}${reason ? ' — ' + reason : ''}`)
       patchJob(key, { progress: `${d.copied} copied…` })
     })
+    // Access mirror: one line per scan stage, so a long channel walk is visible.
+    const offM = EventsOn('mirror:progress', (d: any) => {
+      const side = i18n.t(`mirror.side.${d.side}`, { defaultValue: d.side })
+      const what = i18n.t(`mirror.scan.${d.what}`, { name: d.name, done: d.done, total: d.total, defaultValue: d.what })
+      patchJob(keyOf(d, 'mirror'), { progress: `${side} · ${what}` })
+    })
     const offC = EventsOn('cleanup:progress', (d: any) => {
       patchJob(keyOf(d, 'cleanup'), { progress: d.total > 0 ? `${d.stage} ${d.done}/${d.total}` : `${d.stage} ${d.done}…` })
     })
@@ -264,7 +290,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         jobLog(key, `${d.ok ? '✓' : '✗'} ${d.name}${d.detail ? ' — ' + d.detail : ''}${d.error ? ' — ' + d.error : ''}`)
       }
     })
-    return () => { offOS(); offP(); offF(); offC(); offCL(); offO(); offPB() }
+    return () => { offOS(); offP(); offF(); offM(); offC(); offCL(); offO(); offPB() }
   }, [patchJob, jobLog])
 
   const startTransfer = useCallback(async (p: TransferParams) => {
@@ -436,6 +462,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearJob,
     cache,
     setCache,
+    pendingAction,
+    requestAction,
+    setNavigator,
+    goTo,
     toasts,
     toast,
     dismiss: (id) => setToasts((t) => t.filter((x) => x.id !== id)),

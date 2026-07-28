@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   Plug, LayoutDashboard, PlayCircle, Users, KeyRound, ShieldCheck, Boxes, MessagesSquare, MessageCircle, Mail,
   FolderOpen, UserMinus, Smartphone, MonitorSmartphone, AppWindow, BarChart3, Sparkles, HeartPulse,
-  ScrollText, TerminalSquare, Activity, Settings, Lock, Layers, ShieldAlert, History, ChevronDown,
+  ScrollText, TerminalSquare, Settings, Lock, Layers, ShieldAlert, History, ChevronDown, Search,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import logo from '../assets/images/logo.png'
@@ -66,7 +66,8 @@ const groups: { key: string; items: NavItem[] }[] = [
       { id: 'reports', icon: <BarChart3 size={17} />, key: 'nav.reports' },
       { id: 'audit', icon: <ScrollText size={17} />, key: 'nav.audit' },
       { id: 'health', icon: <HeartPulse size={17} />, key: 'nav.health' },
-      { id: 'activity', icon: <Activity size={17} />, key: 'nav.activity' },
+      // The local action log lives inside Run history now — one place for
+      // "what did this app do", instead of two journals in two tabs.
       { id: 'history', icon: <History size={17} />, key: 'nav.history' },
     ],
   },
@@ -82,10 +83,12 @@ const groups: { key: string; items: NavItem[] }[] = [
 export function Layout({
   page,
   onNavigate,
+  onOpenPalette,
   children,
 }: {
   page: PageId
   onNavigate: (p: PageId) => void
+  onOpenPalette?: () => void
   children: ReactNode
 }) {
   const { t } = useTranslation()
@@ -129,6 +132,18 @@ export function Layout({
           <img src={logo} alt="SwissKnife" className="h-7 w-7 rounded-md" />
           <span className="text-sm font-semibold leading-tight">SwissKnife<br /><span className="text-xs font-normal text-[var(--text-faint)]">for MS Graph</span></span>
         </div>
+        {onOpenPalette && (
+          <div className="px-2 pb-2">
+            <button
+              onClick={onOpenPalette}
+              className="flex w-full items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text-faint)] hover:border-[var(--accent)] hover:text-[var(--text-dim)]"
+            >
+              <Search size={15} className="mt-0.5 shrink-0" />
+              <span className="min-w-0 flex-1 text-left leading-snug">{t('palette.open')}</span>
+              <kbd className="mt-0.5 shrink-0 rounded border border-[var(--border)] px-1 py-0.5 text-[10px] leading-none">Ctrl K</kbd>
+            </button>
+          </div>
+        )}
         <nav className="flex-1 overflow-y-auto px-2 py-1">
           {pinned.filter(itemVisible).map(renderItem)}
           {groups.map((g) => {

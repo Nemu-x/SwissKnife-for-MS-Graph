@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { List, UserCheck, Plus, Minus } from 'lucide-react'
-import { Page } from '../components/Layout'
-import { TwoPane } from '../components/TwoPane'
+import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
-import { Button, Card, Field, Input } from '../components/ui'
+import { Button, Field } from '../components/ui'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadUsers, loadSkus } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useStore } from '../lib/store'
 import { api, errMessage, type GraphObject } from '../lib/api'
@@ -15,51 +16,82 @@ export function LicensingPage() {
   const res = useAsync<GraphObject[] | GraphObject>()
   const [target, setTarget] = useState('')
   const [skuId, setSkuId] = useState('')
+  const [status, setStatus] = useState<Record<string, ActionStatus>>({})
 
-  const doWrite = async (fn: () => Promise<any>, ok: string) => {
-    try { await fn(); toast('ok', ok) } catch (e) { toast('err', errMessage(e)) }
+  const doWrite = async (id: string, fn: () => Promise<any>, ok: string) => {
+    try {
+      await fn()
+      setStatus((s) => ({ ...s, [id]: { ok: true, text: ok, at: Date.now() } }))
+      toast('ok', ok)
+    } catch (e) {
+      const m = errMessage(e)
+      setStatus((s) => ({ ...s, [id]: { ok: false, text: m, at: Date.now() } }))
+      toast('err', m)
+    }
   }
 
-  return (
-    <Page title={t('nav.licensing')}>
-      <TwoPane
-        controls={
-          <>
-            <Card title={t('nav.licensing')}>
-              <div className="flex flex-col gap-2">
-                <Button variant="primary" onClick={() => res.run(() => api.licensing.skus())}>
-                  <List size={15} /> Tenant SKUs
-                </Button>
-                <Field label={t('common.user')}>
-                  <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="user@contoso.com" />
-                </Field>
-                <Button variant="subtle" disabled={!target} onClick={() => res.run(() => api.users.licenseDetails(target))}>
-                  <UserCheck size={15} /> User licenses
-                </Button>
-              </div>
-            </Card>
+  const userField = (
+    <Field label={t('common.user')}>
+      <EntityPicker value={target} onChange={setTarget} load={loadUsers} placeholder={t('licensing.pickUser')} />
+    </Field>
+  )
 
-            <Card title="Assign / remove">
-              <div className="flex flex-col gap-3">
-                <Field label="SKU ID (GUID)">
-                  <Input value={skuId} onChange={(e) => setSkuId(e.target.value)} placeholder="00000000-0000-…" />
-                </Field>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button variant="subtle" disabled={readOnly || !target || !skuId}
-                    onClick={() => doWrite(() => api.licensing.assign(target, [skuId], []), t('common.add'))}>
-                    <Plus size={15} /> {t('common.add')}
-                  </Button>
-                  <Button variant="subtle" disabled={readOnly || !target || !skuId}
-                    onClick={() => doWrite(() => api.licensing.assign(target, [], [skuId]), t('common.remove'))}>
-                    <Minus size={15} /> {t('common.remove')}
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </>
-        }
-        result={<ResultView data={res.data} loading={res.loading} error={res.error} />}
-      />
-    </Page>
+  const actions: TaskAction[] = [
+    {
+      id: 'skus', label: t('licensing.tileSkus'), hint: t('licensing.hintSkus'), icon: <List size={16} />, variant: 'primary',
+      onClick: () => res.run(() => api.licensing.skus()),
+    },
+    {
+      id: 'userLicenses', label: t('licensing.tileUserLicenses'), hint: t('licensing.hintUserLicenses'), icon: <UserCheck size={16} />,
+      panel: (
+        <TaskForm>
+          {userField}
+          <Button variant="primary" disabled={!target} onClick={() => res.run(() => api.users.licenseDetails(target))}>
+            <UserCheck size={15} /> {t('licensing.userLicenses')}
+          </Button>
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'assign', label: t('licensing.tileAssign'), hint: t('licensing.hintAssign'), icon: <Plus size={16} />, variant: 'primary', write: true,
+      note: (
+        <>
+          <p>{t('licensing.noteAssign')}</p>
+          <p className="text-[var(--warn)]">{t('licensing.noteRemove')}</p>
+        </>
+      ),
+      panel: (
+        <TaskForm>
+          {userField}
+          <Field label={t('licensing.sku')} hint={t('licensing.skuHint')}>
+            <EntityPicker value={skuId} onChange={setSkuId} load={loadSkus} placeholder={t('licensing.pickSku')} />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="primary" disabled={readOnly || !target || !skuId}
+              onClick={() => doWrite('assign', () => api.licensing.assign(target, [skuId], []), t('licensing.assigned'))}>
+              <Plus size={15} /> {t('common.add')}
+            </Button>
+            <Button variant="subtle" disabled={readOnly || !target || !skuId}
+              onClick={() => doWrite('assign', () => api.licensing.assign(target, [], [skuId]), t('licensing.removed'))}>
+              <Minus size={15} /> {t('common.remove')}
+            </Button>
+          </div>
+        </TaskForm>
+      ),
+    },
+  ]
+
+  return (
+    <TaskPage
+      pageId="licensing"
+      title={t('nav.licensing')}
+      subtitle={t('licensing.subtitle')}
+      actions={actions}
+      status={status}
+      busy={res.loading}
+      onClearResult={res.reset}
+      hasResult={!!res.data || res.loading || !!res.error}
+      result={<ResultView data={res.data} loading={res.loading} error={res.error} />}
+    />
   )
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderTree, Search, Upload, Download, Trash2, Link2 } from 'lucide-react'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
-import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
+import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input, Select } from '../components/ui'
 import { EntityPicker } from '../components/EntityPicker'
@@ -25,6 +25,7 @@ export function FilesPage() {
   const [folder, setFolder] = useState('')
   const [query, setQuery] = useState('')
   const [progress, setProgress] = useState<{ name: string; pct: number } | null>(null)
+  const [status, setStatus] = useState<Record<string, ActionStatus>>({})
 
   useEffect(() => {
     const off = EventsOn('transfer:progress', (d: any) => {
@@ -35,57 +36,88 @@ export function FilesPage() {
     return () => off()
   }, [])
 
-  const doWrite = async (fn: () => Promise<any>, ok: string) => {
-    try { await fn(); toast('ok', ok) } catch (e) { toast('err', errMessage(e)) }
+  const doWrite = async (id: string, fn: () => Promise<any>, ok: string) => {
+    try {
+      await fn()
+      setStatus((s) => ({ ...s, [id]: { ok: true, text: ok, at: Date.now() } }))
+      toast('ok', ok)
+    } catch (e) {
+      const m = errMessage(e)
+      setStatus((s) => ({ ...s, [id]: { ok: false, text: m, at: Date.now() } }))
+      toast('err', m)
+    }
   }
 
-  const actions: Action[] = [
+  // Every tile works against one drive: a user's OneDrive or a SharePoint site.
+  const driveField = (
+    <>
+      <Select value={ownerType} onChange={(e) => { setOwnerType(e.target.value as any); setOwnerId('') }} className="w-full">
+        <option value="user">{t('files.oneDrive')}</option>
+        <option value="site">{t('files.sharePoint')}</option>
+      </Select>
+      <Field label={ownerType === 'user' ? t('common.user') : t('files.site')}>
+        <EntityPicker value={ownerId} onChange={setOwnerId}
+          load={ownerType === 'user' ? loadUsers : loadSites} reloadKey={ownerType}
+          placeholder={ownerType === 'user' ? t('files.pickUser') : t('files.pickSite')} />
+      </Field>
+    </>
+  )
+
+  const actions: TaskAction[] = [
     {
-      id: 'drive', label: 'Drive', icon: <FolderTree size={15} />, variant: 'primary',
+      id: 'drive', label: t('files.tileBrowse'), hint: t('files.hintBrowse'), icon: <FolderTree size={16} />, variant: 'primary',
       panel: (
-        <DrawerForm>
-          <Select value={ownerType} onChange={(e) => { setOwnerType(e.target.value as any); setOwnerId('') }} className="w-full">
-            <option value="user">OneDrive (user)</option>
-            <option value="site">SharePoint (site)</option>
-          </Select>
-          <Field label={ownerType === 'user' ? t('common.user') : 'SharePoint site'}>
-            <EntityPicker value={ownerId} onChange={setOwnerId}
-              load={ownerType === 'user' ? loadUsers : loadSites} reloadKey={ownerType}
-              placeholder={ownerType === 'user' ? 'Pick a user…' : 'Pick a site…'} />
+        <TaskForm>
+          {driveField}
+          <Button variant="primary" disabled={!ownerId} onClick={() => res.run(() => api.drive.listRoot(ownerType, ownerId))}>
+            <FolderTree size={15} /> {t('files.listRoot')}
+          </Button>
+          <Field label={t('common.search')}>
+            <div className="flex gap-2">
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} />
+              <Button variant="subtle" disabled={!ownerId} onClick={() => res.run(() => api.drive.search(ownerType, ownerId, query))}><Search size={15} /></Button>
+            </div>
           </Field>
-          <Button variant="primary" disabled={!ownerId} onClick={() => res.run(() => api.drive.listRoot(ownerType, ownerId))}><FolderTree size={15} /> List root</Button>
-          <div className="flex gap-2">
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('common.search')} />
-            <Button variant="subtle" disabled={!ownerId} onClick={() => res.run(() => api.drive.search(ownerType, ownerId, query))}><Search size={15} /></Button>
-          </div>
-        </DrawerForm>
+        </TaskForm>
       ),
     },
     {
-      id: 'item', label: 'Item ops', icon: <Upload size={15} />,
+      id: 'upload', label: t('files.tileUpload'), hint: t('files.hintUpload'), icon: <Upload size={16} />, write: true,
+      note: <p>{t('files.noteUpload')}</p>,
       panel: (
-        <DrawerForm>
-          <Field label="Item ID"><Input value={itemId} onChange={(e) => setItemId(e.target.value)} /></Field>
-          <Input placeholder="Suggested name (download)" value={itemName} onChange={(e) => setItemName(e.target.value)} />
+        <TaskForm>
+          {driveField}
+          <Field label={t('files.uploadFolder')}><Input value={folder} onChange={(e) => setFolder(e.target.value)} /></Field>
+          <Button variant="primary" disabled={readOnly || !ownerId}
+            onClick={() => doWrite('upload', async () => res.setData(await api.drive.upload(ownerType, ownerId, folder)), t('files.upload'))}>
+            <Upload size={15} /> {t('files.upload')}
+          </Button>
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'item', label: t('files.tileItem'), hint: t('files.hintItem'), icon: <Download size={16} />, write: true,
+      note: <p>{t('files.itemIdHint')}</p>,
+      panel: (
+        <TaskForm>
+          {driveField}
+          <Field label={t('files.itemId')}><Input value={itemId} onChange={(e) => setItemId(e.target.value)} /></Field>
+          <Field label={t('files.suggestedName')}><Input value={itemName} onChange={(e) => setItemName(e.target.value)} /></Field>
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="subtle" disabled={!ownerId || !itemId}
-              onClick={() => doWrite(async () => { const p = await api.drive.download(ownerType, ownerId, itemId, itemName || 'download'); if (p) toast('ok', p) }, t('common.run'))}>
-              <Download size={15} /> Download
+            <Button variant="primary" disabled={!ownerId || !itemId}
+              onClick={() => doWrite('item', async () => { const p = await api.drive.download(ownerType, ownerId, itemId, itemName || 'download'); if (p) toast('ok', p) }, t('files.download'))}>
+              <Download size={15} /> {t('files.download')}
             </Button>
             <Button variant="subtle" disabled={readOnly || !ownerId || !itemId}
-              onClick={() => doWrite(() => api.drive.createLink(ownerType, ownerId, itemId, 'view', 'organization'), 'link')}>
-              <Link2 size={15} /> Link
+              onClick={() => doWrite('item', () => api.drive.createLink(ownerType, ownerId, itemId, 'view', 'organization'), t('files.link'))}>
+              <Link2 size={15} /> {t('files.link')}
             </Button>
           </div>
-          <Input placeholder="Upload to folder ('' = root)" value={folder} onChange={(e) => setFolder(e.target.value)} />
-          <Button variant="primary" disabled={readOnly || !ownerId} onClick={() => doWrite(async () => res.setData(await api.drive.upload(ownerType, ownerId, folder)), 'upload')}>
-            <Upload size={15} /> Upload file…
-          </Button>
           <Button variant="danger" disabled={readOnly || !ownerId || !itemId}
-            onClick={() => askConfirm(itemId, (c) => doWrite(() => api.drive.delete(ownerType, ownerId, itemId, c), t('common.delete')))}>
+            onClick={() => askConfirm(itemId, (c) => doWrite('item', () => api.drive.delete(ownerType, ownerId, itemId, c), t('common.delete')))}>
             <Trash2 size={15} /> {t('common.delete')}
           </Button>
-        </DrawerForm>
+        </TaskForm>
       ),
     },
   ]
@@ -93,9 +125,16 @@ export function FilesPage() {
   return (
     <>
       {confirmElement}
-      <ActionPage
+      <TaskPage
+        pageId="files"
         title={t('nav.files')}
+        subtitle={t('files.subtitle')}
         actions={actions}
+        status={status}
+        busy={res.loading || !!progress}
+        busyLabel={progress ? `${progress.name} — ${progress.pct}%` : undefined}
+        onClearResult={res.reset}
+        hasResult={!!res.data || res.loading || !!res.error || !!progress}
         result={
           <div className="flex h-full flex-col">
             {progress && (
@@ -108,7 +147,8 @@ export function FilesPage() {
                 </div>
               </div>
             )}
-            <div className="min-h-0 flex-1"><ResultView data={res.data} loading={res.loading} error={res.error} /></div>
+            {/* "Use this ID" fills the item field, so a listed file can be acted on. */}
+            <div className="min-h-0 flex-1"><ResultView data={res.data} loading={res.loading} error={res.error} onUseId={setItemId} /></div>
           </div>
         }
       />

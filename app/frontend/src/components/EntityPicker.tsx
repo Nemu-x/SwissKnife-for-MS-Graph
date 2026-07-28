@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import type { Option } from './MultiSelect'
 import { dropdownStyle } from '../lib/dropdown'
@@ -19,6 +20,7 @@ export function EntityPicker({
   placeholder?: string
   reloadKey?: string // change to force a reload (e.g. when a parent selection changes)
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
   const [options, setOptions] = useState<Option[] | null>(null)
@@ -51,7 +53,7 @@ export function EntityPicker({
   }
 
   const selectedLabel = () => {
-    if (!value) return placeholder || 'Select…'
+    if (!value) return placeholder || t('picker.select')
     const hit = options?.find((o) => o.value === value)
     return hit ? hit.label : value
   }
@@ -85,15 +87,15 @@ export function EntityPicker({
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && filter.trim()) pick(filter.trim()) }}
-                placeholder="Search or paste an ID…"
+                placeholder={t('picker.searchOrPaste')}
                 className="w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs outline-none focus:border-[var(--accent)]"
               />
             </div>
-            {loading && <div className="flex items-center gap-2 px-3 py-2 text-xs text-[var(--text-faint)]"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
+            {loading && <div className="flex items-center gap-2 px-3 py-2 text-xs text-[var(--text-faint)]"><Loader2 size={13} className="animate-spin" /> {t('common.loading')}</div>}
             {error && <div className="px-3 py-2 text-xs text-[var(--danger)]">{error}</div>}
             {!loading && !error && shown.length === 0 && (
               <div className="px-3 py-2 text-xs text-[var(--text-faint)]">
-                {filter.trim() ? 'Press Enter to use typed value' : 'No options'}
+                {filter.trim() ? t('picker.enterToUse') : t('picker.noOptions')}
               </div>
             )}
             {shown.map((o) => (

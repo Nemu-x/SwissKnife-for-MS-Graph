@@ -2,6 +2,7 @@
 // options. Kept small; large tenants can still paste an ID manually.
 import { api, type GraphObject } from './api'
 import { humanBytes } from './format'
+import { skuFriendly } from './skuNames'
 import type { Option } from '../components/MultiSelect'
 
 export const loadUsers = async (): Promise<Option[]> =>
@@ -18,6 +19,14 @@ export const loadGroups = async (): Promise<Option[]> =>
     sub: g.mail,
   }))
 
+// Licenses by product name with seats used/total — nobody remembers SKU GUIDs.
+export const loadSkus = async (): Promise<Option[]> =>
+  (await api.licensing.skus()).map((s: GraphObject) => ({
+    value: s.skuId,
+    label: skuFriendly(s.skuPartNumber),
+    sub: `${s.consumedUnits ?? '?'} / ${s.prepaidUnits?.enabled ?? '?'} · ${s.skuPartNumber}`,
+  }))
+
 export const loadTeams = async (): Promise<Option[]> =>
   (await api.teams.all()).map((t: GraphObject) => ({
     value: t.id,
@@ -31,6 +40,17 @@ export const loadChannels = (teamId: string) => async (): Promise<Option[]> =>
     label: c.displayName || c.id,
     sub: c.membershipType,
   }))
+
+// Only private and shared channels have their own membership — a standard
+// channel inherits the team's members and Graph rejects adding anyone to it.
+export const loadMembershipChannels = (teamId: string) => async (): Promise<Option[]> =>
+  (await api.teams.channels(teamId))
+    .filter((c: GraphObject) => c.membershipType && c.membershipType !== 'standard')
+    .map((c: GraphObject) => ({
+      value: c.id,
+      label: c.displayName || c.id,
+      sub: c.membershipType,
+    }))
 
 export const loadRoles = async (): Promise<Option[]> =>
   (await api.roles.list()).map((r: GraphObject) => ({

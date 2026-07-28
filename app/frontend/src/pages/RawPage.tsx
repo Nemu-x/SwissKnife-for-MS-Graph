@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Play, Star, History, Trash2 } from 'lucide-react'
 import { Page } from '../components/Layout'
 import { ResultView } from '../components/ResultView'
-import { Button, Card, Select, Input, Textarea } from '../components/ui'
+import { Button, Card, Select, Input, Textarea, Spinner } from '../components/ui'
 import { useAsync } from '../lib/useAsync'
 import { useStore } from '../lib/store'
 import { api, type GraphObject } from '../lib/api'
@@ -59,7 +59,9 @@ export function RawPage() {
                 onChange={(e) => setItem({ ...item, body: e.target.value })}
                 placeholder={bodyDisabled ? '—' : t('raw.body')} />
               <div className="flex gap-2">
-                <Button variant="primary" className="flex-1" onClick={send}><Play size={15} /> {t('common.run')}</Button>
+                <Button variant="primary" className="flex-1" disabled={res.loading} onClick={send}>
+                  {res.loading ? <Spinner /> : <Play size={15} />} {res.loading ? t('common.working') : t('common.run')}
+                </Button>
                 <Button variant="ghost" onClick={addFav}><Star size={15} /></Button>
               </div>
             </div>

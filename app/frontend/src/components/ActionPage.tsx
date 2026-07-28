@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Button } from './ui'
+import { useStore } from '../lib/store'
 
 // Layout B: the result fills the page, actions live in a top toolbar, and each
 // action opens a small slide-over drawer with just its form.
@@ -37,11 +38,26 @@ export function ActionPage({
 }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const open = actions.find((a) => a.id === openId)
+  const { pendingAction, requestAction } = useStore()
 
   const trigger = (a: Action) => {
     if (a.panel) setOpenId((cur) => (cur === a.id ? null : a.id))
     a.onClick?.()
   }
+
+  // The task palette navigates here and leaves the action it wants. Actions are
+  // rebuilt every render, so they are read through a ref — the effect must run
+  // on the request, not on every render.
+  const actionsRef = useRef(actions)
+  actionsRef.current = actions
+  useEffect(() => {
+    if (!pendingAction) return
+    const a = actionsRef.current.find((x) => x.id === pendingAction)
+    if (!a) return
+    requestAction(null)
+    if (a.panel) setOpenId(a.id)
+    a.onClick?.()
+  }, [pendingAction, requestAction])
 
   return (
     <div className="flex h-full flex-col">
