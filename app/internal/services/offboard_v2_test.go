@@ -12,12 +12,12 @@ func TestOffboardTransfersGroupOwnershipInSafeOrder(t *testing.T) {
 	var calls []string
 	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
-		switch {
-		case r.URL.Path == "/users/lead@contoso.com":
+		switch r.URL.Path {
+		case "/users/lead@contoso.com":
 			w.Write([]byte(`{"id":"new-owner-id"}`))
-		case r.URL.Path == "/users/leaver@contoso.com":
+		case "/users/leaver@contoso.com":
 			w.Write([]byte(`{"id":"leaver-id","displayName":"Leaver"}`))
-		case r.URL.Path == "/users/leaver@contoso.com/ownedObjects":
+		case "/users/leaver@contoso.com/ownedObjects":
 			w.Write([]byte(`{"value":[
 				{"@odata.type":"#microsoft.graph.group","id":"g1","displayName":"Global Finance"},
 				{"@odata.type":"#microsoft.graph.application","id":"a1","displayName":"Some app"}]}`))
@@ -64,8 +64,8 @@ func TestOffboardCancelsOnlyOrganisedFutureMeetings(t *testing.T) {
 	var calls []string
 	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
-		switch {
-		case r.URL.Path == "/users/leaver@contoso.com/events":
+		switch r.URL.Path {
+		case "/users/leaver@contoso.com/events":
 			if f := r.URL.Query().Get("$filter"); !strings.Contains(f, "start/dateTime ge") {
 				t.Errorf("future-only filter missing, got %q", f)
 			}
