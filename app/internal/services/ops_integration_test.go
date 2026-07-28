@@ -51,8 +51,13 @@ func (b *eventBuffer) snapshot() []capturedEvent {
 // request that is currently blocked on the server, not wait it out.
 func TestCancelAbortsInFlightHTTP(t *testing.T) {
 	release := make(chan struct{})
+	reached := make(chan struct{}, 1)
 	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/users/arch@contoso.com/drive") {
+			select {
+			case reached <- struct{}{}: // deterministic: the copy IS in flight now
+			default:
+			}
 			<-release // block the server-side-copy setup call until the test ends
 		}
 		w.Write([]byte(`{}`))
@@ -67,8 +72,12 @@ func TestCancelAbortsInFlightHTTP(t *testing.T) {
 		res, _ = drive.CopyBetweenUsers("alice@contoso.com", "arch@contoso.com", "backup", false)
 	}()
 
-	// Give the goroutine time to reach the blocked call, then cancel.
-	time.Sleep(150 * time.Millisecond)
+	// Wait until the request is provably blocked on the server, then cancel.
+	select {
+	case <-reached:
+	case <-time.After(3 * time.Second):
+		t.Fatal("copy never reached the blocked call")
+	}
 	start := time.Now()
 	sess.Ops.CancelKind(ops.KindTransfer)
 	select {
@@ -88,8 +97,13 @@ func TestCancelAbortsInFlightHTTP(t *testing.T) {
 // immediately with a typed error.
 func TestTransferSingleFlight(t *testing.T) {
 	release := make(chan struct{})
+	reached := make(chan struct{}, 1)
 	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/users/arch@contoso.com/drive") {
+			select {
+			case reached <- struct{}{}:
+			default:
+			}
 			<-release
 		}
 		w.Write([]byte(`{}`))
@@ -101,7 +115,11 @@ func TestTransferSingleFlight(t *testing.T) {
 		defer close(done)
 		_, _ = drive.CopyBetweenUsers("alice@contoso.com", "arch@contoso.com", "backup", false)
 	}()
-	time.Sleep(150 * time.Millisecond)
+	select {
+	case <-reached: // first copy provably holds the transfer slot
+	case <-time.After(3 * time.Second):
+		t.Fatal("first copy never reached the blocked call")
+	}
 
 	_, err := drive.CopyBetweenUsers("bob@contoso.com", "arch@contoso.com", "backup2", false)
 	var are *ops.AlreadyRunningError

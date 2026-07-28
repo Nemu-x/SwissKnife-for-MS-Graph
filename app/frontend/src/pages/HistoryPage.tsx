@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RefreshCw, ChevronDown, ChevronRight, CheckCircle2, XCircle, PlayCircle, Loader2, Clock } from 'lucide-react'
 import { Page } from '../components/Layout'
 import { Button, Badge, Spinner, ErrorNote } from '../components/ui'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
+// The action log shares the store cache with the rest of the app.
 import type { journal } from '../../wailsjs/go/models'
 
 // History reads the persistent run journal: every playbook/transfer run
@@ -16,17 +17,41 @@ export function HistoryPage() {
   const [error, setError] = useState<string | null>(null)
   const [openId, setOpenId] = useState('')
   const [detail, setDetail] = useState<journal.Run | null>(null)
+  const [detailErr, setDetailErr] = useState('')
   const [resuming, setResuming] = useState('')
+  const [tab, setTab] = useState<'runs' | 'actions'>('runs')
 
   const load = () => {
     api.journal.list(100).then((r) => { setRuns(r || []); setError(null) }).catch((e) => setError(errMessage(e)))
   }
   useEffect(load, [])
 
+  // Stale-response protection: async callbacks must consult CURRENT state
+  // (refs), never their closure — any open/close/resume bumps the request
+  // generation and only the matching response may land.
+  const detailRequest = useRef(0)
+  const openIdRef = useRef('')
+  useEffect(() => { openIdRef.current = openId }, [openId])
+
+  const fetchDetail = (id: string) => {
+    const request = ++detailRequest.current
+    setDetail(null) // a failed refresh must show the error, never stale content
+    setDetailErr('')
+    api.journal.get(id)
+      .then((r) => { if (detailRequest.current === request) setDetail(r) })
+      .catch((e) => { if (detailRequest.current === request) setDetailErr(errMessage(e)) })
+  }
+
   const open = (id: string) => {
-    if (openId === id) { setOpenId(''); setDetail(null); return }
-    setOpenId(id); setDetail(null)
-    api.journal.get(id).then(setDetail).catch((e) => toast('err', errMessage(e)))
+    if (openId === id) {
+      ++detailRequest.current // invalidate any in-flight fetch for this panel
+      openIdRef.current = '' // sync: async callbacks must see the change NOW
+      setOpenId(''); setDetail(null); setDetailErr('')
+      return
+    }
+    openIdRef.current = id
+    setOpenId(id)
+    fetchDetail(id)
   }
 
   const resume = (id: string) => {
@@ -35,8 +60,9 @@ export function HistoryPage() {
       .then((r) => {
         toast('ok', t('history.resumed', { n: r.copied?.length || 0 }))
         load()
-        // Refresh the expanded detail too, so the events reflect the resume.
-        if (openId === id) api.journal.get(id).then(setDetail).catch(() => {})
+        // Refresh the detail only if THIS run is still the open one (current
+        // state via ref, not the closure) — failures surface like in open().
+        if (openIdRef.current === id) fetchDetail(id)
       })
       .catch((e) => toast('err', errMessage(e)))
       .finally(() => setResuming(''))
@@ -57,6 +83,19 @@ export function HistoryPage() {
 
   return (
     <Page title={t('history.title')} subtitle={t('history.subtitle')}>
+      {/* Two journals, one page: multi-step runs and the flat write log. */}
+      <div className="mb-4 inline-flex rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] p-1">
+        {([['runs', t('history.tabRuns')], ['actions', t('history.tabActions')]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium ${tab === id ? 'bg-[var(--accent)] text-[var(--accent-fg)]' : 'text-[var(--text-dim)]'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'actions' && <ActionLog />}
+
+      {tab === 'runs' && <>
       <div className="mb-3 flex items-center gap-2">
         <Button variant="subtle" onClick={load}><RefreshCw size={15} /> {t('common.refresh')}</Button>
       </div>
@@ -75,7 +114,8 @@ export function HistoryPage() {
             </button>
             {openId === r.opId && (
               <div className="border-t border-[var(--border)] px-4 py-3">
-                {!detail && <Spinner />}
+                {!detail && detailErr && <ErrorNote>{detailErr}</ErrorNote>}
+                {!detail && !detailErr && <Spinner />}
                 {detail && (
                   <div className="flex flex-col gap-1.5">
                     {r.kind === 'transfer' && r.interrupted && (
@@ -159,6 +199,67 @@ export function HistoryPage() {
           </div>
         ))}
       </div>
+      </>}
     </Page>
+  )
+}
+
+// The local write/destructive log (ADR-002): what this app did on this machine,
+// as opposed to the tenant-side audit under Insights.
+function ActionLog() {
+  const { t } = useTranslation()
+  const { cache, setCache } = useStore()
+  // Cached: switching back to Runs unmounts this, and re-reading 200 entries on
+  // every flip is wasted work.
+  const [entries, setEntriesLocal] = useState<any[] | null>(() => cache['activity.entries'] ?? null)
+  const setEntries = (v: any[] | null) => { setEntriesLocal(v); setCache('activity.entries', v) }
+  const [loading, setLoading] = useState(!entries)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = () => {
+    setLoading(true); setError(null)
+    api.audit.activity(200)
+      .then((e) => setEntries((e || []).reverse()))
+      // A failed read is not an empty log — saying "no entries" would be a lie.
+      .catch((e) => setError(errMessage(e)))
+      .finally(() => setLoading(false))
+  }
+  useEffect(() => { if (!entries) load() }, [])
+
+  // Playbook summaries are stored as {key, params} JSON so they render in the
+  // UI language; any other detail stays as-is.
+  const detailText = (d: string) => {
+    if (d && d.startsWith('{')) {
+      try {
+        const o = JSON.parse(d)
+        if (o.key) return String(t(o.key, { ...o.params, defaultValue: d }))
+      } catch { /* plain detail */ }
+    }
+    return d
+  }
+
+  return (
+    <>
+      <div className="mb-3 flex items-center gap-2">
+        <Button variant="subtle" onClick={load} disabled={loading}>
+          {loading ? <Spinner /> : <RefreshCw size={15} />} {t('common.refresh')}
+        </Button>
+        <span className="text-xs text-[var(--text-faint)]">{t('activity.subtitle')}</span>
+      </div>
+      {loading && <Spinner />}
+      {!loading && error && <ErrorNote>{error}</ErrorNote>}
+      {!loading && !error && entries?.length === 0 && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
+      <div className="flex flex-col gap-1">
+        {(entries || []).map((e, i) => (
+          <div key={i} className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] px-3 py-2 text-sm">
+            {e.ok ? <CheckCircle2 size={15} className="shrink-0 text-[var(--ok)]" /> : <XCircle size={15} className="shrink-0 text-[var(--danger)]" />}
+            <span className="shrink-0 font-mono text-xs text-[var(--accent)]">{e.action}</span>
+            <span className="truncate text-[var(--text-dim)]">{e.target}</span>
+            {e.detail && <span className="truncate text-xs text-[var(--text-faint)]">{detailText(e.detail)}</span>}
+            <span className="ml-auto shrink-0 text-xs text-[var(--text-faint)]">{new Date(e.time).toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
+    </>
   )
 }

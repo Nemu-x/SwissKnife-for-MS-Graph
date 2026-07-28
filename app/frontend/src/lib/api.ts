@@ -4,6 +4,7 @@
 import * as Connect from '../../wailsjs/go/services/ConnectService'
 import * as Dashboard from '../../wailsjs/go/services/DashboardService'
 import * as Playbook from '../../wailsjs/go/services/PlaybookService'
+import * as Mirror from '../../wailsjs/go/services/MirrorService'
 import * as Access from '../../wailsjs/go/services/AccessService'
 import * as Users from '../../wailsjs/go/services/UsersService'
 import * as AuthMethods from '../../wailsjs/go/services/AuthMethodsService'
@@ -29,13 +30,16 @@ import * as Journal from '../../wailsjs/go/services/JournalService'
 import * as Notify from '../../wailsjs/go/services/NotifyService'
 import type { journal, secrets, services } from '../../wailsjs/go/models'
 import { parseErr, type ParsedError } from './graphError'
+import i18n from '../i18n'
 
 export type GraphObject = Record<string, any>
 export type Profile = secrets.Profile
 export type Status = services.Status
 export type ConnectRequest = services.ConnectRequest
 
-const list = (p: Promise<any>) => p as Promise<GraphObject[]>
+// A Go service that returns a nil slice marshals to `null`, not `[]` — coerce
+// here so no caller has to guard a .map() against an empty collection.
+const list = (p: Promise<any>) => p.then((v) => (v ?? []) as GraphObject[])
 const one = (p: Promise<any>) => p as Promise<GraphObject>
 
 export const api = {
@@ -163,6 +167,18 @@ export const api = {
   access: {
     probe: () => Access.Probe() as Promise<Record<string, boolean>>,
   },
+  auditQuery: {
+    signIns: (upn: string, days: number, failedOnly: boolean, top: number) =>
+      list(Audit.SignInsFiltered({ upn, days, failedOnly, top } as any)),
+    directory: (search: string, days: number, top: number) => list(Audit.DirectoryAuditsFiltered(search, days, top)),
+  },
+  // "Give user1 the same access user2 has": diff first, then copy what is missing.
+  mirror: {
+    compare: (source: string, target: string) => Mirror.Compare(source, target) as Promise<services.AccessRow[]>,
+    copy: (source: string, target: string, kinds: string[], confirm: string) =>
+      Mirror.Copy({ source, target, kinds, confirm } as any) as Promise<services.PlaybookResult>,
+    cancel: () => Mirror.Cancel() as Promise<void>,
+  },
   intune: {
     devices: (max: number) => list(Intune.Devices(max)),
     device: (id: string) => one(Intune.Device(id)),
@@ -186,6 +202,7 @@ export const api = {
     disable: (id: string) => Devices.Disable(id),
     delete: (id: string, confirm: string) => Devices.Delete(id, confirm),
     bitlockerKeys: (max: number) => list(Devices.BitLockerKeys(max)),
+    bitlockerKeysForDevice: (deviceId: string) => list(Devices.BitLockerKeysForDevice(deviceId)),
     bitlockerKey: (id: string) => one(Devices.BitLockerKey(id)),
   },
   apps: {
@@ -250,10 +267,10 @@ export function errMessage(e: unknown): string {
   let msg = p.message
   if (p.code && p.status) msg = `${p.status} ${p.code}: ${msg}`
   if (p.hint) {
-    msg += ` — grant the ${p.hint} application permission in Entra and give admin consent.`
+    msg += ' — ' + i18n.t('errors.grantPermission', { p: p.hint })
   } else if (p.status === 403) {
     // Missing-permission 403 without a known mapping: still point the way.
-    msg += ' — the app registration is likely missing a Graph permission for this call. Add the required Application permission and grant admin consent.'
+    msg += ' — ' + i18n.t('errors.missingPermission')
   }
   if (p.requestId) msg += ` (requestId=${p.requestId})`
   return msg

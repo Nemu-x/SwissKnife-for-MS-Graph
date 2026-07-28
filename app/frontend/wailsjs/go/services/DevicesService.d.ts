@@ -6,6 +6,8 @@ export function BitLockerKey(arg1:string):Promise<json.RawMessage>;
 
 export function BitLockerKeys(arg1:number):Promise<Array<json.RawMessage>>;
 
+export function BitLockerKeysForDevice(arg1:string):Promise<Array<json.RawMessage>>;
+
 export function Delete(arg1:string,arg2:string):Promise<void>;
 
 export function Disable(arg1:string):Promise<void>;

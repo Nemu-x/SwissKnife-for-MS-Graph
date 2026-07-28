@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestSingleFlightPerKind(t *testing.T) {
@@ -82,8 +83,10 @@ func TestFinishFreesSlotOnlyForSameOp(t *testing.T) {
 }
 
 func TestIDsAreSortable(t *testing.T) {
-	a, b := newID(), newID()
-	if a >= b && a[:11] != b[:11] {
+	a := newID()
+	time.Sleep(2 * time.Millisecond) // force a later millisecond prefix
+	b := newID()
+	if a >= b {
 		t.Fatalf("ids must sort by time: %s then %s", a, b)
 	}
 }

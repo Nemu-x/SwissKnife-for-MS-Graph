@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, Copy, ArrowRight } from 'lucide-react'
-import { Page } from '../components/Layout'
-import { Card, Field, Input, Textarea, Button, Badge, ErrorNote, Spinner } from '../components/ui'
+import { Search, Copy, HardDriveDownload, Users } from 'lucide-react'
+import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
+import { Field, Input, Textarea, Button, Badge, ErrorNote, Spinner } from '../components/ui'
 import { JobConsole } from '../components/JobConsole'
-import { UpnInput } from '../components/UpnInput'
+import { EntityPicker } from '../components/EntityPicker'
+import { loadUsers } from '../lib/pickers'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
 import { humanBytes } from '../lib/format'
@@ -12,7 +13,7 @@ import type { services } from '../../wailsjs/go/models'
 
 export function OffboardingPage() {
   const { t } = useTranslation()
-  const { readOnly, jobs, jobLog, startTransfer, cancelTransfer, clearJob } = useStore()
+  const { readOnly, jobs, jobLog, startTransfer, cancelTransfer, clearJob, cache, setCache } = useStore()
 
   const [source, setSource] = useState('')
   const [target, setTarget] = useState('')
@@ -21,9 +22,13 @@ export function OffboardingPage() {
   const [usePool, setUsePool] = useState(false)
   const [pool, setPool] = useState(localStorage.getItem('offboard.pool') || '')
 
-  const [preview, setPreview] = useState<services.CopyPreview | null>(null)
+  // A preview walks the whole drive; keeping its result in the store means
+  // leaving the page and coming back to start the copy does not throw it away.
+  const [preview, setPreviewLocal] = useState<services.CopyPreview | null>(() => cache['offboarding.preview'] ?? null)
+  const setPreview = (v: services.CopyPreview | null) => { setPreviewLocal(v); setCache('offboarding.preview', v) }
   const [previewing, setPreviewing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<Record<string, ActionStatus>>({})
 
   // The copy runs in the store, so its state survives leaving and returning.
   const job = jobs.transfer
@@ -36,10 +41,14 @@ export function OffboardingPage() {
     try {
       const p = await api.drive.offboardingPreview(source)
       setPreview(p)
+      const line = t('offboarding.previewResult', { files: p.files, folders: p.folders, size: humanBytes(p.totalBytes) })
+      setStatus((s) => ({ ...s, preview: { ok: true, text: line, at: Date.now() } }))
       jobLog('transfer', `✓ Preview — ${p.files} files · ${p.folders} folders · ${humanBytes(p.totalBytes)}`)
     } catch (e) {
-      setError(errMessage(e))
-      jobLog('transfer', `✗ Preview error: ${errMessage(e)}`)
+      const m = errMessage(e)
+      setError(m)
+      setStatus((s) => ({ ...s, preview: { ok: false, text: m, at: Date.now() } }))
+      jobLog('transfer', `✗ Preview error: ${m}`)
     } finally { setPreviewing(false) }
   }
 
@@ -48,92 +57,128 @@ export function OffboardingPage() {
     startTransfer({ source, target, dest, overwrite, usePool, pool })
   }
 
-  return (
-    <Page title={t('offboarding.title')} subtitle={t('offboarding.subtitle')}>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(340px,420px)_1fr]">
-        <div className="flex flex-col gap-4">
-          <Card title={t('offboarding.title')}>
-            <div className="flex flex-col gap-3">
-              <Field label={t('offboarding.source')}>
-                <UpnInput value={source} onChange={setSource} placeholder="alice@contoso.com" />
-              </Field>
-              <div className="flex justify-center text-[var(--text-faint)]"><ArrowRight size={16} /></div>
-              <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
-                <input type="checkbox" checked={usePool} onChange={(e) => setUsePool(e.target.checked)} />
-                {t('offboarding.usePool')}
-              </label>
-              {usePool ? (
-                <Field label={t('offboarding.pool')}>
-                  <Textarea rows={3} value={pool} placeholder="backup1@contoso.com&#10;backup2@contoso.com"
-                    onChange={(e) => { setPool(e.target.value); localStorage.setItem('offboard.pool', e.target.value) }} />
-                </Field>
-              ) : (
-                <Field label={t('offboarding.target')}>
-                  <UpnInput value={target} onChange={setTarget} placeholder="backup@contoso.com" />
-                </Field>
-              )}
-              <Field label={t('offboarding.destFolder')} hint={t('offboarding.destHint')}>
-                <Input value={dest} onChange={(e) => setDest(e.target.value)} placeholder="(defaults to the user's name)" />
-              </Field>
-              <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
-                <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
-                {t('offboarding.overwrite')}
-              </label>
+  const sourceField = (
+    <Field label={t('offboarding.source')}>
+      <EntityPicker value={source} onChange={setSource} load={loadUsers} placeholder={t('users.pickUser')} />
+    </Field>
+  )
 
-              <div className="flex gap-2">
-                <Button variant="subtle" className="flex-1" disabled={!source || previewing} onClick={runPreview}>
-                  {previewing ? <Spinner /> : <Search size={15} />} {t('offboarding.preview')}
-                </Button>
-                <Button variant="primary" className="flex-1" disabled={readOnly || !source || (!usePool && !target) || (usePool && !pool.trim()) || copying} onClick={runCopy}>
-                  {copying ? <Spinner /> : <Copy size={15} />} {copying ? t('offboarding.running') : t('offboarding.start')}
-                </Button>
-              </div>
-              {error && <ErrorNote>{error}</ErrorNote>}
-            </div>
-          </Card>
-
+  const actions: TaskAction[] = [
+    {
+      id: 'preview', label: t('offboarding.tilePreview'), hint: t('offboarding.hintPreview'),
+      icon: <Search size={16} />, variant: 'primary',
+      note: <p>{t('offboarding.notePreview')}</p>,
+      panel: (
+        <TaskForm>
+          {sourceField}
+          <Button variant="primary" disabled={!source || previewing} onClick={runPreview}>
+            {previewing ? <Spinner /> : <Search size={15} />} {t('offboarding.preview')}
+          </Button>
           {preview && (
-            <Card title={t('offboarding.preview')}>
-              <p className="text-sm text-[var(--text-dim)]">
-                {t('offboarding.previewResult', {
-                  files: preview.files,
-                  folders: preview.folders,
-                  size: humanBytes(preview.totalBytes),
-                })}
-              </p>
-            </Card>
+            <p className="text-sm text-[var(--text-dim)]">
+              {t('offboarding.previewResult', { files: preview.files, folders: preview.folders, size: humanBytes(preview.totalBytes) })}
+            </p>
           )}
-        </div>
-
-        {/* Right column: live copy log on top, the final report beneath it. */}
-        <div className="flex min-w-0 flex-col gap-4">
-          {job && (job.log.length > 0 || job.running) ? (
-            <JobConsole job={job} onCancel={cancelTransfer} onClear={() => clearJob('transfer')} />
+          {error && <ErrorNote>{error}</ErrorNote>}
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'copy', label: t('offboarding.tileCopy'), hint: t('offboarding.hintCopy'),
+      icon: <HardDriveDownload size={16} />, variant: 'primary', write: true,
+      note: (
+        <>
+          <p>{t('offboarding.noteCopy')}</p>
+          {usePool && <p>{t('offboarding.notePool')}</p>}
+        </>
+      ),
+      panel: (
+        <TaskForm>
+          {sourceField}
+          <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+            <input type="checkbox" checked={usePool} onChange={(e) => setUsePool(e.target.checked)} />
+            {t('offboarding.usePool')}
+          </label>
+          {usePool ? (
+            <Field label={t('offboarding.pool')}>
+              <Textarea rows={3} value={pool} placeholder="backup1@contoso.com&#10;backup2@contoso.com"
+                onChange={(e) => { setPool(e.target.value); localStorage.setItem('offboard.pool', e.target.value) }} />
+            </Field>
           ) : (
-            <Card title={t('common.log')} className="min-h-[120px]">
-              <p className="text-sm text-[var(--text-faint)]">{t('offboarding.logEmpty')}</p>
-            </Card>
+            <Field label={t('offboarding.target')}>
+              <EntityPicker value={target} onChange={setTarget} load={loadUsers} placeholder={t('users.pickUser')} />
+            </Field>
           )}
+          <Field label={t('offboarding.destFolder')} hint={t('offboarding.destHint')}>
+            <Input value={dest} onChange={(e) => setDest(e.target.value)} />
+          </Field>
+          <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+            <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
+            {t('offboarding.overwrite')}
+          </label>
+          <Button variant="primary"
+            disabled={readOnly || !source || (!usePool && !target) || (usePool && !pool.trim()) || copying}
+            onClick={runCopy}>
+            {copying ? <Spinner /> : <Copy size={15} />} {copying ? t('offboarding.running') : t('offboarding.start')}
+          </Button>
+          {error && <ErrorNote>{error}</ErrorNote>}
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'pool', label: t('offboarding.tilePool'), hint: t('offboarding.hintPool'),
+      icon: <Users size={16} />,
+      note: <p>{t('offboarding.notePool')}</p>,
+      panel: (
+        <TaskForm>
+          <Field label={t('offboarding.pool')}>
+            <Textarea rows={5} value={pool} placeholder="backup1@contoso.com&#10;backup2@contoso.com"
+              onChange={(e) => { setPool(e.target.value); localStorage.setItem('offboard.pool', e.target.value) }} />
+          </Field>
+          <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+            <input type="checkbox" checked={usePool} onChange={(e) => setUsePool(e.target.checked)} />
+            {t('offboarding.usePool')}
+          </label>
+        </TaskForm>
+      ),
+    },
+  ]
 
-          <Card title={t('offboarding.report')} className="min-h-[220px]">
-            {!report && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
-            {report && (
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-wrap gap-2">
-                  <Badge kind="ok">{t('offboarding.copied')}: {report.copied?.length || 0}</Badge>
-                  <Badge kind="warn">{t('offboarding.skipped')}: {Object.keys(report.skipped || {}).length}</Badge>
-                  <Badge kind="danger">{t('offboarding.failed')}: {Object.keys(report.failed || {}).length}</Badge>
-                  {report.canceled && <Badge kind="warn">{t('common.canceled')}</Badge>}
-                </div>
-                <ReportList title={t('offboarding.copied')} items={(report.copied || []).map((n) => [n, ''])} ok />
-                <ReportList title={t('offboarding.skipped')} items={Object.entries(report.skipped || {})} />
-                <ReportList title={t('offboarding.failed')} items={Object.entries(report.failed || {})} danger />
-              </div>
-            )}
-          </Card>
+  const resultPane = (
+    <div className="flex h-full flex-col gap-3 overflow-auto p-3">
+      {job && (job.log.length > 0 || job.running)
+        ? <JobConsole job={job} onCancel={cancelTransfer} onClear={() => clearJob('transfer')} />
+        : <p className="text-sm text-[var(--text-faint)]">{t('offboarding.logEmpty')}</p>}
+
+      {report && (
+        <div className="flex flex-col gap-4 rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
+          <div className="flex flex-wrap gap-2">
+            <Badge kind="ok">{t('offboarding.copied')}: {report.copied?.length || 0}</Badge>
+            <Badge kind="warn">{t('offboarding.skipped')}: {Object.keys(report.skipped || {}).length}</Badge>
+            <Badge kind="danger">{t('offboarding.failed')}: {Object.keys(report.failed || {}).length}</Badge>
+            {report.canceled && <Badge kind="warn">{t('common.canceled')}</Badge>}
+          </div>
+          <ReportList title={t('offboarding.copied')} items={(report.copied || []).map((n) => [n, ''])} ok />
+          <ReportList title={t('offboarding.skipped')} items={Object.entries(report.skipped || {})} />
+          <ReportList title={t('offboarding.failed')} items={Object.entries(report.failed || {})} danger />
         </div>
-      </div>
-    </Page>
+      )}
+    </div>
+  )
+
+  return (
+    <TaskPage
+      pageId="offboarding"
+      title={t('offboarding.title')}
+      subtitle={t('offboarding.subtitle')}
+      actions={actions}
+      status={status}
+      busy={copying || previewing}
+      busyLabel={copying ? job?.progress || t('offboarding.running') : t('offboarding.preview')}
+      hasResult={!!job && (job.log.length > 0 || job.running || !!report)}
+      onClearResult={() => clearJob('transfer')}
+      result={resultPane}
+    />
   )
 }
 
@@ -143,7 +188,7 @@ function ReportList({ title, items, ok, danger }: { title: string; items: [strin
   return (
     <div>
       <h3 className="mb-1 text-xs font-semibold" style={{ color }}>{title} ({items.length})</h3>
-      <div className="max-h-48 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--bg)]">
+      <div className="max-h-48 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--bg-elev)]">
         {items.map(([name, reason], i) => (
           <div key={i} className="flex justify-between gap-3 border-b border-[var(--border)]/50 px-2.5 py-1 text-xs last:border-0">
             <span className="truncate text-[var(--text)]" title={name}>{name}</span>

@@ -95,6 +95,18 @@ interface Store {
   cache: Record<string, any>
   setCache: (key: string, value: any) => void
 
+  // Task palette → page handshake: the palette navigates to a page and leaves
+  // the id of the tile it wants opened; TaskPage claims it on mount and clears
+  // it whether or not that page has a matching action.
+  pendingAction: string | null
+  requestAction: (id: string | null) => void
+
+  // Navigation, exposed so any page can send the operator onward: a dashboard
+  // number is only useful if clicking it opens the list behind it. Shell wires
+  // the real navigator; `goTo` also carries an optional action id to open.
+  setNavigator: (fn: (page: string, action?: string) => void) => void
+  goTo: (page: string, action?: string) => void
+
   toasts: Toast[]
   toast: (kind: Toast['kind'], text: string) => void
   dismiss: (id: number) => void
@@ -116,6 +128,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [accent, setAccentState] = useState<string>(localStorage.getItem('accent') ?? '')
 
   const [jobs, setJobs] = useState<Record<string, JobState>>({})
+  // Latest jobs snapshot for event handlers (they run outside React's render
+  // cycle and must not put side effects inside state updaters).
+  const jobsRef = useRef(jobs)
+  useEffect(() => { jobsRef.current = jobs }, [jobs])
   const patchJob = useCallback((key: string, patch: Partial<JobState>) => {
     setJobs((all) => ({ ...all, [key]: { ...(all[key] ?? emptyJob()), ...patch } }))
   }, [])
@@ -133,6 +149,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setCache = useCallback((key: string, value: any) => {
     setCacheState((c) => ({ ...c, [key]: value }))
   }, [])
+
+  const [pendingAction, setPendingAction] = useState<string | null>(null)
+  const requestAction = useCallback((id: string | null) => setPendingAction(id), [])
+
+  const navigatorRef = useRef<(page: string, action?: string) => void>(() => {})
+  const setNavigator = useCallback((fn: (page: string, action?: string) => void) => {
+    navigatorRef.current = fn
+  }, [])
+  const goTo = useCallback((page: string, action?: string) => navigatorRef.current(page, action), [])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -189,19 +214,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const opKeys = new Map<string, string>()
     const keyOf = (d: any, kind: string) => (d?.opId && opKeys.get(d.opId)) || kind
     const offOS = EventsOn('op:start', (d: any) => {
-      if (!d?.opId || !d?.opKind) return
-      setJobs((all) => {
-        const primary = all[d.opKind]
-        const taken = primary?.running && primary.opId && primary.opId !== d.opId
-        const key = taken ? `${d.opKind}:${d.opId}` : d.opKind
-        opKeys.set(d.opId, key)
-        // Stamp the opId onto the job the operator just started; a child op
-        // (e.g. a playbook's backup copy) only claims routing, not job state.
-        if (!taken && primary?.running && !primary.opId) {
-          return { ...all, [key]: { ...primary, opId: d.opId } }
-        }
-        return all
-      })
+      if (!d?.opId || !d?.opKind || opKeys.has(d.opId)) return
+      // Routing decision happens HERE (plain event handler, jobs snapshot via
+      // ref) — the setJobs updater below stays pure, so React replays can
+      // neither double-reserve nor desync opKeys from job state.
+      const primary = jobsRef.current[d.opKind]
+      const taken = primary?.running && primary.opId && primary.opId !== d.opId
+      const key = taken ? `${d.opKind}:${d.opId}` : d.opKind
+      opKeys.set(d.opId, key)
+      // Stamp the opId onto the job the operator just started; a child op
+      // (e.g. a playbook's backup copy) only claims routing, not job state.
+      if (!taken && primary?.running && !primary.opId) {
+        patchJob(key, { opId: d.opId })
+      }
     })
     const offP = EventsOn('transfer:progress', (d: any) => {
       const pct = d.total > 0 ? Math.round((d.done / d.total) * 100) : 0
@@ -214,6 +239,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const reason = d.reason ? i18n.t(REASON_KEYS[d.reason] ?? '', { defaultValue: d.reason }) : ''
       jobLog(key, `${icon} ${d.name}${reason ? ' — ' + reason : ''}`)
       patchJob(key, { progress: `${d.copied} copied…` })
+    })
+    // Access mirror: one line per scan stage, so a long channel walk is visible.
+    const offM = EventsOn('mirror:progress', (d: any) => {
+      const side = i18n.t(`mirror.side.${d.side}`, { defaultValue: d.side })
+      const what = i18n.t(`mirror.scan.${d.what}`, { name: d.name, done: d.done, total: d.total, defaultValue: d.what })
+      patchJob(keyOf(d, 'mirror'), { progress: `${side} · ${what}` })
     })
     const offC = EventsOn('cleanup:progress', (d: any) => {
       patchJob(keyOf(d, 'cleanup'), { progress: d.total > 0 ? `${d.stage} ${d.done}/${d.total}` : `${d.stage} ${d.done}…` })
@@ -260,7 +291,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         jobLog(key, `${d.ok ? '✓' : '✗'} ${d.name}${d.detail ? ' — ' + d.detail : ''}${d.error ? ' — ' + d.error : ''}`)
       }
     })
-    return () => { offOS(); offP(); offF(); offC(); offCL(); offO(); offPB() }
+    return () => { offOS(); offP(); offF(); offM(); offC(); offCL(); offO(); offPB() }
   }, [patchJob, jobLog])
 
   const startTransfer = useCallback(async (p: TransferParams) => {
@@ -432,6 +463,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearJob,
     cache,
     setCache,
+    pendingAction,
+    requestAction,
+    setNavigator,
+    goTo,
     toasts,
     toast,
     dismiss: (id) => setToasts((t) => t.filter((x) => x.id !== id)),

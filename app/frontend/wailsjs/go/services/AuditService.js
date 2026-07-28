@@ -10,6 +10,14 @@ export function DirectoryAudits(arg1) {
   return window['go']['services']['AuditService']['DirectoryAudits'](arg1);
 }
 
+export function DirectoryAuditsFiltered(arg1, arg2, arg3) {
+  return window['go']['services']['AuditService']['DirectoryAuditsFiltered'](arg1, arg2, arg3);
+}
+
 export function SignIns(arg1) {
   return window['go']['services']['AuditService']['SignIns'](arg1);
+}
+
+export function SignInsFiltered(arg1) {
+  return window['go']['services']['AuditService']['SignInsFiltered'](arg1);
 }

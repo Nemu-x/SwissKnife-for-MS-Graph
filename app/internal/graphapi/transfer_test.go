@@ -121,6 +121,35 @@ func TestSlowButProgressingDownloadCompletes(t *testing.T) {
 	}
 }
 
+// TestRetryAfterIsCapped: oversized Retry-After values are honored only up to
+// the 60-second ceiling; smaller values pass through unchanged.
+func TestRetryAfterIsCapped(t *testing.T) {
+	for header, want := range map[string]time.Duration{"120": 60 * time.Second, "2": 2 * time.Second} {
+		var calls atomic.Int32
+		h := header
+		c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if calls.Add(1) == 1 {
+				w.Header().Set("Retry-After", h)
+				w.WriteHeader(429)
+				fmt.Fprint(w, `{"error":{"code":"activityLimitReached","message":"throttled"}}`)
+				return
+			}
+			fmt.Fprint(w, `{}`)
+		}))
+		var slept []time.Duration
+		c.sleep = func(ctx context.Context, d time.Duration) error {
+			slept = append(slept, d)
+			return nil
+		}
+		if err := c.Get(context.Background(), "/users", nil, nil); err != nil {
+			t.Fatalf("Retry-After %s: %v", header, err)
+		}
+		if len(slept) != 1 || slept[0] != want {
+			t.Fatalf("Retry-After %s: slept %v, want [%v]", header, slept, want)
+		}
+	}
+}
+
 // TestDownloadRetriesOn429: a throttled download retries and completes.
 func TestDownloadRetriesOn429(t *testing.T) {
 	var calls atomic.Int32

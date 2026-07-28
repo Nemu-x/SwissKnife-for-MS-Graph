@@ -49,6 +49,7 @@ func main() {
 			services.NewDashboardService(sess),
 			services.NewAccessService(sess),
 			services.NewPlaybookService(sess),
+			services.NewMirrorService(sess),
 			services.NewUsersService(sess),
 			services.NewAuthMethodsService(sess),
 			services.NewRolesService(sess),

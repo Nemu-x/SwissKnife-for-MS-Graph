@@ -10,6 +10,10 @@ export function BitLockerKeys(arg1) {
   return window['go']['services']['DevicesService']['BitLockerKeys'](arg1);
 }
 
+export function BitLockerKeysForDevice(arg1) {
+  return window['go']['services']['DevicesService']['BitLockerKeysForDevice'](arg1);
+}
+
 export function Delete(arg1, arg2) {
   return window['go']['services']['DevicesService']['Delete'](arg1, arg2);
 }

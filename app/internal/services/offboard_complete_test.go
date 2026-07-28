@@ -29,6 +29,9 @@ func TestOffboardIntuneRetireAndWipe(t *testing.T) {
 					{"id":"d1","deviceName":"LAPTOP-01","operatingSystem":"Windows"},
 					{"id":"d2","deviceName":"iPhone","operatingSystem":"iOS"}]}`))
 			case strings.HasPrefix(r.URL.Path, "/deviceManagement/managedDevices/"):
+				if r.Method != "POST" {
+					t.Errorf("intune action must be POST, got %s %s", r.Method, r.URL.Path)
+				}
 				actions = append(actions, r.URL.Path)
 				w.WriteHeader(204)
 			default:
