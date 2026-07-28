@@ -1,23 +1,30 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Search, UserCog, Ban, CheckCircle, KeyRound, LogOut, UserPlus, Trash2,
-  UserSquare, MapPin, ShieldAlert, ListRestart, RotateCcw, Ticket, MailPlus, Copy,
+  UserCog, Ban, KeyRound, LogOut, UserPlus, Trash2, UserSquare, ShieldAlert,
+  ListRestart, RotateCcw, Ticket, MailPlus, Copy, FileJson, Search, ArrowLeftRight, CopyPlus,
 } from 'lucide-react'
-import { ActionPage, DrawerForm, type Action } from '../components/ActionPage'
+import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
-import { Button, Field, Input, Textarea } from '../components/ui'
+import { Button, Field, Input, Textarea, Spinner } from '../components/ui'
 import { UpnInput } from '../components/UpnInput'
 import { EntityPicker } from '../components/EntityPicker'
 import { loadUsers } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
+import { useTaskStatus } from '../lib/useTaskStatus'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore } from '../lib/store'
+import { skuFriendly } from '../lib/skuNames'
 import { api, errMessage, type GraphObject } from '../lib/api'
+import type { services } from '../../wailsjs/go/models'
+
+// Access kinds a mirror run can copy, in the order the tiles offer them.
+const MIRROR_KINDS = ['group', 'team', 'channel', 'role', 'license'] as const
+const STATUS_RANK: Record<string, number> = { missing: 0, both: 1, targetOnly: 2 }
 
 export function UsersPage() {
   const { t } = useTranslation()
-  const { readOnly, toast, cache, setCache } = useStore()
+  const { readOnly, toast, cache, setCache, jobs, patchJob } = useStore()
   const { askConfirm, confirmElement } = useConfirm()
   const res = useAsync<GraphObject[] | GraphObject>()
 
@@ -40,6 +47,23 @@ export function UsersPage() {
   const [tapLifetime, setTapLifetime] = useState(60)
   const [tapOnce, setTapOnce] = useState(true)
   const [invite, setInvite] = useState({ email: '', name: '', sendMail: true })
+  const { status, busy: writing, mark, doWrite, doShow: runWrite } = useTaskStatus()
+  // Mirror: "give the target the same access this source user has".
+  const [mirrorSource, setMirrorSource] = useState('')
+  const [mirrorKinds, setMirrorKinds] = useState<Record<string, boolean>>({
+    group: true, team: true, channel: true, role: false, license: false,
+  })
+  // The comparison is kept raw so the pane can be re-rendered when the operator
+  // switches between "only what will be copied" and the full picture.
+  const [diff, setDiff] = useState<services.AccessRow[] | null>(null)
+  const [showAll, setShowAll] = useState(false)
+
+  const listUsers = () => res.run(() => api.users.list(search, 0))
+  // A write whose result is worth looking at also lands in the results pane.
+  const doShow = async (id: string, fn: () => Promise<any>, ok: string) => {
+    const r = await runWrite(id, fn, ok)
+    if (r !== undefined) res.setData(r)
+  }
 
   // Issue a Temporary Access Pass and show it once, with a QR for phone entry.
   const makeTap = async () => {
@@ -47,137 +71,363 @@ export function UsersPage() {
       const r = await api.authMethods.createTAP(target, tapLifetime, tapOnce)
       setTap(r)
       setTapQr('')
+      mark('tap', true, t('users.createTap'))
       const QRCode = await import('qrcode')
       setTapQr(await QRCode.toDataURL(String(r.temporaryAccessPass || ''), { margin: 1, width: 220 }))
-    } catch (e) { toast('err', errMessage(e)) }
+    } catch (e) { const m = errMessage(e); mark('tap', false, m); toast('err', m) }
   }
 
-  const listUsers = () => res.run(() => api.users.list(search, 0))
-  const doWrite = async (fn: () => Promise<any>, ok: string) => {
-    try { await fn(); toast('ok', ok) } catch (e) { toast('err', errMessage(e)) }
-  }
-  const doShow = async (fn: () => Promise<any>, ok: string) => {
-    try { res.setData(await fn()); toast('ok', ok) } catch (e) { toast('err', errMessage(e)) }
+  // The diff and the copy report are Graph shapes: translate them here so the
+  // results view shows sentences instead of keys.
+  const counts = (rows: services.AccessRow[]) => ({
+    copy: rows.filter((r) => r.status === 'missing' && r.copyable).length,
+    blocked: rows.filter((r) => r.status === 'missing' && !r.copyable).length,
+    both: rows.filter((r) => r.status === 'both').length,
+    targetOnly: rows.filter((r) => r.status === 'targetOnly').length,
+  })
+
+  // A 60-row dump answers nothing. By default the pane shows only what the copy
+  // would actually touch; the rest is one checkbox away.
+  const diffRows = (rows: services.AccessRow[], all: boolean) =>
+    [...rows]
+      .filter((r) => all || r.status === 'missing')
+      .sort((a, b) => (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9) || a.kind.localeCompare(b.kind))
+      // Name first: the results list labels each row by its first scalar field.
+      .map((r) => ({
+        [t('mirror.colName')]: `${r.status === 'missing' ? (r.copyable ? '+ ' : '! ') : r.status === 'both' ? '= ' : '· '}${r.kind === 'license' ? skuFriendly(r.name) : r.name}`,
+        [t('mirror.colWhat')]: t(`mirror.kind.${r.kind}`),
+        [t('mirror.colTeam')]: r.teamName || '—',
+        [t('mirror.colStatus')]: t(`mirror.status.${r.status}`),
+        [t('mirror.colCopyable')]: r.status !== 'missing' ? '—' : r.copyable ? t('mirror.yes') : t('mirror.no'),
+        [t('mirror.colNote')]: r.reasonKey ? t(r.reasonKey) : '',
+      }))
+
+  const stepRows = (result: services.PlaybookResult) =>
+    (result.steps || []).map((s) => ({
+      [t('mirror.colName')]: s.detail || '',
+      [t('mirror.colStep')]: s.nameKey ? t(s.nameKey, { defaultValue: s.name }) : s.name,
+      [t('mirror.colResult')]: s.ok ? '✓' : '✗',
+      [t('mirror.colNote')]: s.ok ? '' : s.detailKey ? t(s.detailKey) : s.error || '',
+    }))
+
+  // The scan runs in the store's job slot, so its live line survives navigation
+  // and a second click cannot start a competing run.
+  const mirrorJob = jobs.mirror
+  const mirrorBusy = !!mirrorJob?.running
+
+  const compareAccess = async () => {
+    if (mirrorBusy) return
+    patchJob('mirror', { running: true, error: null, progress: t('mirror.starting'), startedAt: Date.now() })
+    try {
+      const rows = await api.mirror.compare(mirrorSource, target)
+      setDiff(rows)
+      res.setData(diffRows(rows, showAll) as any)
+      const c = counts(rows)
+      mark('compareAccess', true, t('mirror.summary', c))
+    } catch (e) { const m = errMessage(e); mark('compareAccess', false, m); toast('err', m) }
+    finally { patchJob('mirror', { running: false, progress: '' }) }
   }
 
-  const targetField = (
-    <Field label={t('common.user')}><EntityPicker value={target} onChange={setTarget} load={loadUsers} placeholder="Pick a user…" /></Field>
+  const copyAccess = (confirm: string) => async () => {
+    if (mirrorBusy) return
+    const kinds = MIRROR_KINDS.filter((k) => mirrorKinds[k])
+    patchJob('mirror', { running: true, error: null, progress: t('mirror.starting'), startedAt: Date.now() })
+    try {
+      const r = await api.mirror.copy(mirrorSource, target, kinds, confirm)
+      setDiff(null)
+      res.setData(stepRows(r) as any)
+      const failed = (r.steps || []).filter((s) => !s.ok).length
+      mark('copyAccess', failed === 0, failed === 0 ? t('mirror.copied') : t('mirror.copiedWithErrors', { n: failed }))
+      toast(failed === 0 ? 'ok' : 'err', failed === 0 ? t('mirror.copied') : t('mirror.copiedWithErrors', { n: failed }))
+    } catch (e) { const m = errMessage(e); mark('copyAccess', false, m); toast('err', m) }
+    finally { patchJob('mirror', { running: false, progress: '' }) }
+  }
+
+  // Live line + cancel, shown inside both mirror tiles while a scan runs.
+  const mirrorProgress = mirrorBusy && (
+    <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-xs text-[var(--accent2)]">
+      <Spinner />
+      <span className="min-w-0 flex-1 truncate">{mirrorJob?.progress || t('mirror.starting')}</span>
+      <button
+        disabled={mirrorJob?.canceled}
+        onClick={() => {
+          // Mark the request immediately: the scan keeps running until the
+          // current Graph call returns, and a button that does nothing visible
+          // invites a second click.
+          patchJob('mirror', { canceled: true, progress: t('common.canceling') })
+          api.mirror.cancel().catch((e) => toast('err', errMessage(e)))
+        }}
+        className="shrink-0 text-[var(--danger)] hover:underline disabled:opacity-50"
+      >
+        {mirrorJob?.canceled ? t('common.canceling') : t('common.cancel')}
+      </button>
+    </div>
   )
 
-  const actions: Action[] = [
+  const diffToggle = diff && (
+    <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+      <input type="checkbox" checked={showAll}
+        onChange={(e) => { setShowAll(e.target.checked); res.setData(diffRows(diff, e.target.checked) as any) }} />
+      {t('mirror.showAll', { n: diff.length })}
+    </label>
+  )
+
+  const kindChecks = (
+    <div className="flex flex-col gap-1.5">
+      {MIRROR_KINDS.map((k) => (
+        <label key={k} className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+          <input type="checkbox" checked={!!mirrorKinds[k]}
+            onChange={(e) => setMirrorKinds({ ...mirrorKinds, [k]: e.target.checked })} />
+          {t(`mirror.kind.${k}`)}
+        </label>
+      ))}
+    </div>
+  )
+
+  const targetField = (
+    <Field label={t('common.user')}>
+      <EntityPicker value={target} onChange={setTarget} load={loadUsers} placeholder={t('users.pickUser')} />
+    </Field>
+  )
+
+  const actions: TaskAction[] = [
     {
-      id: 'account', label: t('nav.users'), icon: <UserCog size={15} />,
+      id: 'list', label: t('users.tileList'), hint: t('users.hintList'), icon: <Search size={16} />,
+      onClick: listUsers,
+    },
+    {
+      id: 'snapshot', label: t('users.tileSnapshot'), hint: t('users.hintSnapshot'), icon: <UserCog size={16} />, variant: 'primary',
+      note: <p>{t('users.noteSnapshot')}</p>,
       panel: (
-        <DrawerForm>
+        <TaskForm>
           {targetField}
           <Button variant="primary" disabled={!target} onClick={() => res.run(() => api.users.snapshot(target) as any)}>
             <UserCog size={15} /> {t('users.snapshot')}
           </Button>
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="subtle" disabled={readOnly || !target} onClick={() => doWrite(() => api.users.block(target), t('users.block'))}><Ban size={15} /> {t('users.block')}</Button>
-            <Button variant="subtle" disabled={readOnly || !target} onClick={() => doWrite(() => api.users.unblock(target), t('users.unblock'))}><CheckCircle size={15} /> {t('users.unblock')}</Button>
-          </div>
-          <Button variant="subtle" disabled={readOnly || !target}
-            onClick={() => askConfirm(target, (c) => doWrite(() => api.users.revokeSessions(target, c), t('users.revokeSessions')))}>
-            <LogOut size={15} /> {t('users.revokeSessions')}
-          </Button>
-        </DrawerForm>
+        </TaskForm>
       ),
     },
     {
-      id: 'security', label: t('users.security'), icon: <ShieldAlert size={15} />,
+      id: 'compareAccess', label: t('mirror.tileCompare'), hint: t('mirror.hintCompare'), icon: <ArrowLeftRight size={16} />, variant: 'primary',
+      note: <p>{t('mirror.noteCompare')}</p>,
       panel: (
-        <DrawerForm>
+        <TaskForm>
+          <Field label={t('mirror.source')}>
+            <EntityPicker value={mirrorSource} onChange={setMirrorSource} load={loadUsers} placeholder={t('users.pickUser')} />
+          </Field>
+          <Field label={t('mirror.target')}>
+            <EntityPicker value={target} onChange={setTarget} load={loadUsers} placeholder={t('users.pickUser')} />
+          </Field>
+          {diffToggle}
+          <Button variant="primary" disabled={mirrorBusy || !mirrorSource || !target || mirrorSource === target} onClick={compareAccess}>
+            {mirrorBusy ? <Spinner /> : <ArrowLeftRight size={15} />} {t('mirror.compare')}
+          </Button>
+          {mirrorProgress}
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'copyAccess', label: t('mirror.tileCopy'), hint: t('mirror.hintCopy'), icon: <CopyPlus size={16} />, variant: 'primary', write: true,
+      note: (
+        <>
+          <p>{t('mirror.noteCopy')}</p>
+          <p className="text-[var(--warn)]">{t('mirror.noteCopyWarn')}</p>
+        </>
+      ),
+      panel: (
+        <TaskForm>
+          <Field label={t('mirror.source')}>
+            <EntityPicker value={mirrorSource} onChange={setMirrorSource} load={loadUsers} placeholder={t('users.pickUser')} />
+          </Field>
+          <Field label={t('mirror.target')}>
+            <EntityPicker value={target} onChange={setTarget} load={loadUsers} placeholder={t('users.pickUser')} />
+          </Field>
+          <Field label={t('mirror.whatToCopy')}>{kindChecks}</Field>
+          <Button variant="subtle" disabled={mirrorBusy || !mirrorSource || !target || mirrorSource === target} onClick={compareAccess}>
+            {mirrorBusy ? <Spinner /> : <ArrowLeftRight size={15} />} {t('mirror.previewFirst')}
+          </Button>
+          {diffToggle}
+          <Button variant="primary"
+            disabled={readOnly || mirrorBusy || !mirrorSource || !target || mirrorSource === target || !MIRROR_KINDS.some((k) => mirrorKinds[k])}
+            onClick={() => askConfirm(target, (c) => copyAccess(c)())}>
+            <CopyPlus size={15} /> {t('mirror.copy')}
+          </Button>
+          {mirrorProgress}
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'block', label: t('users.tileBlock'), hint: t('users.hintBlock'), icon: <Ban size={16} />, write: true,
+      panel: (
+        <TaskForm>
+          {targetField}
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="primary" disabled={readOnly || !target} onClick={() => doWrite('block', () => api.users.block(target), t('users.block'))}>
+              <Ban size={15} /> {t('users.block')}
+            </Button>
+            <Button variant="subtle" disabled={readOnly || !target} onClick={() => doWrite('block', () => api.users.unblock(target), t('users.unblock'))}>
+              {t('users.unblock')}
+            </Button>
+          </div>
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'sessions', label: t('users.tileSessions'), hint: t('users.hintSessions'), icon: <LogOut size={16} />, write: true,
+      note: <p>{t('users.noteSessions')}</p>,
+      panel: (
+        <TaskForm>
+          {targetField}
+          <Button variant="danger" disabled={readOnly || !target}
+            onClick={() => askConfirm(target, (c) => doWrite('sessions', () => api.users.revokeSessions(target, c), t('users.revokeSessions')))}>
+            <LogOut size={15} /> {t('users.revokeSessions')}
+          </Button>
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'password', label: t('users.tilePassword'), hint: t('users.hintPassword'), icon: <KeyRound size={16} />, write: true,
+      panel: (
+        <TaskForm>
           {targetField}
           <Field label={t('users.newPassword')}><Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
           <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
             <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} /> {t('users.forceChange')}
           </label>
           <Button variant="danger" disabled={readOnly || !pw || !target}
-            onClick={() => askConfirm(target, (c) => doWrite(() => api.users.resetPassword(target, pw, force, c), t('users.resetPassword')))}>
+            onClick={() => askConfirm(target, (c) => doWrite('password', () => api.users.resetPassword(target, pw, force, c), t('users.resetPassword')))}>
             <KeyRound size={15} /> {t('users.resetPassword')}
           </Button>
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="subtle" disabled={!target} onClick={() => res.run(() => api.authMethods.list(target))}>{t('users.authMethods')}</Button>
-            <Button variant="danger" disabled={readOnly || !target}
-              onClick={() => askConfirm(target, (c) => doShow(() => api.authMethods.resetMFA(target, c), t('users.resetMfa')))}>
-              <RotateCcw size={15} /> {t('users.resetMfa')}
-            </Button>
-          </div>
-          <div className="my-1 border-t border-[var(--border)]" />
-          <div className="flex items-center gap-2">
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'mfa', label: t('users.tileMfa'), hint: t('users.hintMfa'), icon: <ShieldAlert size={16} />, write: true,
+      note: <p>{t('users.noteMfa')}</p>,
+      panel: (
+        <TaskForm>
+          {targetField}
+          <Button variant="subtle" disabled={!target} onClick={() => res.run(() => api.authMethods.list(target))}>
+            {t('users.authMethods')}
+          </Button>
+          <Button variant="danger" disabled={readOnly || !target}
+            onClick={() => askConfirm(target, (c) => doShow('mfa', () => api.authMethods.resetMFA(target, c), t('users.resetMfa')))}>
+            <RotateCcw size={15} /> {t('users.resetMfa')}
+          </Button>
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'tap', label: t('users.tileTap'), hint: t('users.hintTap'), icon: <Ticket size={16} />, write: true,
+      note: <p>{t('users.tapHint')}</p>,
+      panel: (
+        <TaskForm>
+          {targetField}
+          <div className="flex items-end gap-3">
             <Field label={t('users.tapLifetime')}>
               <Input type="number" value={tapLifetime} onChange={(e) => setTapLifetime(Math.max(10, Number(e.target.value) || 60))} className="w-24" />
             </Field>
-            <label className="mt-5 flex items-center gap-2 text-sm text-[var(--text-dim)]">
+            <label className="flex items-center gap-2 pb-1.5 text-sm text-[var(--text-dim)]">
               <input type="checkbox" checked={tapOnce} onChange={(e) => setTapOnce(e.target.checked)} /> {t('users.tapOnce')}
             </label>
           </div>
           <Button variant="primary" disabled={readOnly || !target} onClick={makeTap}>
             <Ticket size={15} /> {t('users.createTap')}
           </Button>
-        </DrawerForm>
+        </TaskForm>
       ),
     },
     {
-      id: 'directory', label: t('users.directory'), icon: <UserSquare size={15} />,
+      id: 'manager', label: t('users.tileManager'), hint: t('users.hintManager'), icon: <UserSquare size={16} />, write: true,
       panel: (
-        <DrawerForm>
+        <TaskForm>
           {targetField}
-          <Button variant="subtle" disabled={!target} onClick={() => res.run(() => api.users.getManager(target))}><UserSquare size={15} /> {t('users.getManager')}</Button>
+          <Button variant="subtle" disabled={!target} onClick={() => res.run(() => api.users.getManager(target))}>
+            <UserSquare size={15} /> {t('users.getManager')}
+          </Button>
           <Field label={t('users.manager')}><UpnInput value={mgr} onChange={setMgr} placeholder="manager@contoso.com" /></Field>
-          <Button variant="subtle" disabled={readOnly || !target || !mgr} onClick={() => doWrite(() => api.users.setManager(target, mgr), t('users.setManager'))}>{t('users.setManager')}</Button>
-          <div className="flex gap-2">
-            <Input value={loc} onChange={(e) => setLoc(e.target.value)} placeholder={t('users.usageLocation')} />
-            <Button variant="subtle" disabled={readOnly || !target || !loc} onClick={() => doWrite(() => api.users.setUsageLocation(target, loc), t('users.setUsageLocation'))}><MapPin size={15} /></Button>
-          </div>
-          <Field label={t('users.updateFields')}><Textarea rows={4} value={patch} onChange={(e) => setPatch(e.target.value)} /></Field>
-          <Button variant="subtle" disabled={readOnly || !target} onClick={() => doWrite(() => api.users.update(target, patch), t('users.update'))}>{t('users.update')}</Button>
-        </DrawerForm>
+          <Button variant="primary" disabled={readOnly || !target || !mgr} onClick={() => doWrite('manager', () => api.users.setManager(target, mgr), t('users.setManager'))}>
+            {t('users.setManager')}
+          </Button>
+          <Field label={t('users.usageLocation')}><Input value={loc} onChange={(e) => setLoc(e.target.value)} placeholder="US" /></Field>
+          <Button variant="subtle" disabled={readOnly || !target || !loc} onClick={() => doWrite('manager', () => api.users.setUsageLocation(target, loc), t('users.setUsageLocation'))}>
+            {t('users.setUsageLocation')}
+          </Button>
+        </TaskForm>
       ),
     },
     {
-      id: 'lifecycle', label: t('users.lifecycle'), icon: <UserPlus size={15} />, variant: 'primary',
+      id: 'patch', label: t('users.tilePatch'), hint: t('users.hintPatch'), icon: <FileJson size={16} />, write: true,
+      note: <p>{t('users.notePatch')}</p>,
       panel: (
-        <DrawerForm>
-          <Input placeholder={t('users.displayName')} value={create.name} onChange={(e) => setCreate({ ...create, name: e.target.value })} />
-          <Input placeholder="user@contoso.com" value={create.upn} onChange={(e) => setCreate({ ...create, upn: e.target.value })} />
-          <Input placeholder={t('users.mailNickname')} value={create.nick} onChange={(e) => setCreate({ ...create, nick: e.target.value })} />
-          <Input type="password" placeholder={t('users.newPassword')} value={create.pw} onChange={(e) => setCreate({ ...create, pw: e.target.value })} />
-          <Input placeholder={t('users.usageLocation')} value={create.loc} onChange={(e) => setCreate({ ...create, loc: e.target.value })} />
+        <TaskForm>
+          {targetField}
+          <Field label={t('users.updateFields')}><Textarea rows={5} value={patch} onChange={(e) => setPatch(e.target.value)} /></Field>
+          <Button variant="primary" disabled={readOnly || !target} onClick={() => doWrite('patch', () => api.users.update(target, patch), t('users.update'))}>
+            {t('users.update')}
+          </Button>
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'create', label: t('users.tileCreate'), hint: t('users.hintCreate'), icon: <UserPlus size={16} />, variant: 'primary', write: true,
+      note: <p>{t('users.noteCreate')}</p>,
+      panel: (
+        <TaskForm>
+          <Field label={t('users.displayName')}><Input value={create.name} onChange={(e) => setCreate({ ...create, name: e.target.value })} /></Field>
+          <Field label={t('users.upn')}><UpnInput value={create.upn} onChange={(v) => setCreate({ ...create, upn: v })} /></Field>
+          <Field label={t('users.mailNickname')}><Input value={create.nick} onChange={(e) => setCreate({ ...create, nick: e.target.value })} /></Field>
+          <Field label={t('users.newPassword')}><Input type="password" value={create.pw} onChange={(e) => setCreate({ ...create, pw: e.target.value })} /></Field>
+          <Field label={t('users.usageLocation')}><Input value={create.loc} onChange={(e) => setCreate({ ...create, loc: e.target.value })} placeholder="US" /></Field>
           <Button variant="primary" disabled={readOnly || !create.name || !create.upn || !create.nick || !create.pw}
-            onClick={() => doShow(() => api.users.create(create.name, create.upn, create.nick, create.pw, true, create.loc), t('users.createUser'))}>
+            onClick={() => doShow('create', () => api.users.create(create.name, create.upn, create.nick, create.pw, true, create.loc), t('users.createUser'))}>
             <UserPlus size={15} /> {t('users.createUser')}
           </Button>
-          <div className="my-1 border-t border-[var(--border)]" />
-          {targetField}
-          <Button variant="danger" disabled={readOnly || !target}
-            onClick={() => askConfirm(target, (c) => doWrite(() => api.users.delete(target, c), t('users.deleteUser')))}>
-            <Trash2 size={15} /> {t('users.deleteUser')}
-          </Button>
-          <div className="my-1 border-t border-[var(--border)]" />
-          <Input placeholder="guest@example.com" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} />
-          <Input placeholder={t('users.inviteName')} value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} />
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'invite', label: t('users.tileInvite'), hint: t('users.hintInvite'), icon: <MailPlus size={16} />, write: true,
+      panel: (
+        <TaskForm>
+          <Field label={t('users.inviteEmail')}><Input placeholder="guest@example.com" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} /></Field>
+          <Field label={t('users.inviteName')}><Input value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} /></Field>
           <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
             <input type="checkbox" checked={invite.sendMail} onChange={(e) => setInvite({ ...invite, sendMail: e.target.checked })} /> {t('users.inviteSendMail')}
           </label>
-          <Button variant="subtle" disabled={readOnly || !invite.email}
-            onClick={() => doShow(() => api.users.inviteGuest(invite.email, invite.name, '', '', invite.sendMail), t('users.inviteGuest'))}>
+          <Button variant="primary" disabled={readOnly || !invite.email}
+            onClick={() => doShow('invite', () => api.users.inviteGuest(invite.email, invite.name, '', '', invite.sendMail), t('users.inviteGuest'))}>
             <MailPlus size={15} /> {t('users.inviteGuest')}
           </Button>
-        </DrawerForm>
+        </TaskForm>
       ),
     },
     {
-      id: 'deleted', label: t('users.deleted'), icon: <ListRestart size={15} />,
+      id: 'delete', label: t('users.tileDelete'), hint: t('users.hintDelete'), icon: <Trash2 size={16} />, variant: 'danger', write: true,
+      note: <p className="text-[var(--danger)]">{t('users.noteDelete')}</p>,
       panel: (
-        <DrawerForm>
-          <Button variant="subtle" onClick={() => res.run(() => api.users.listDeleted(0))}><ListRestart size={15} /> {t('users.listDeleted')}</Button>
+        <TaskForm>
+          {targetField}
+          <Button variant="danger" disabled={readOnly || !target}
+            onClick={() => askConfirm(target, (c) => doWrite('delete', () => api.users.delete(target, c), t('users.deleteUser')))}>
+            <Trash2 size={15} /> {t('users.deleteUser')}
+          </Button>
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'restore', label: t('users.tileRestore'), hint: t('users.hintRestore'), icon: <ListRestart size={16} />, write: true,
+      note: <p>{t('users.noteRestore')}</p>,
+      panel: (
+        <TaskForm>
+          <Button variant="subtle" onClick={() => res.run(() => api.users.listDeleted(0))}>
+            <ListRestart size={15} /> {t('users.listDeleted')}
+          </Button>
           <Field label={t('users.objectId')}><Input value={restoreId} placeholder="object id" onChange={(e) => setRestoreId(e.target.value)} /></Field>
-          <Button variant="subtle" disabled={readOnly || !restoreId} onClick={() => doShow(() => api.users.restoreDeleted(restoreId), t('users.restore'))}>
+          <Button variant="primary" disabled={readOnly || !restoreId} onClick={() => doShow('restore', () => api.users.restoreDeleted(restoreId), t('users.restore'))}>
             <RotateCcw size={15} /> {t('users.restore')}
           </Button>
-        </DrawerForm>
+        </TaskForm>
       ),
     },
   ]
@@ -202,10 +452,17 @@ export function UsersPage() {
           </div>
         </div>
       )}
-      <ActionPage
+      <TaskPage
+        pageId="users"
         title={t('nav.users')}
-        search={{ value: search, onChange: setSearch, onSubmit: listUsers, placeholder: t('common.search') }}
-        actions={[{ id: 'run-search', label: t('common.search'), icon: <Search size={15} />, variant: 'primary', onClick: listUsers }, ...actions]}
+        subtitle={t('users.subtitle')}
+        search={{ value: search, onChange: setSearch, onSubmit: listUsers, placeholder: t('users.searchHint') }}
+        actions={actions}
+        status={status}
+        busy={res.loading || writing || mirrorBusy}
+        busyLabel={mirrorBusy ? mirrorJob?.progress || t('mirror.starting') : undefined}
+        onClearResult={() => { res.reset(); setDiff(null); setShowAll(false) }}
+        hasResult={!!res.data || res.loading || !!res.error}
         result={<ResultView data={res.data} loading={res.loading} error={res.error} onUseId={setTarget} />}
       />
     </>

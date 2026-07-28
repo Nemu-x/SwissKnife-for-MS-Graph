@@ -31,16 +31,20 @@
 
 SwissKnife is a lightweight cross-platform desktop client for the Microsoft Graph API — built for IT administrators who prefer clean UI actions over bulky PowerShell scripts. One window gives you Entra ID, Teams, Chats, mail, OneDrive, SharePoint, Intune, devices, app registrations, licensing, storage cleanup, audit logs, usage reports, guided on/offboarding runbooks, and a raw Graph playground.
 
-Everything is pick-by-name: users, groups, teams, channels, sites, roles, devices and chats load into searchable pickers, so you rarely type a raw ID.
+**The app is organised around tasks, not endpoints.** Every page opens as a grid of the jobs it can do — "add someone to a private channel", "why can this person not sign in?", "give the same access as another user" — each with a one-line explanation and the Graph caveats next to the form. Press **Ctrl+K** anywhere and describe the task in your own words instead of hunting for the right tab. Raw tables, JSON and tree views are still one click away; they are just no longer the first thing you see.
+
+Everything is pick-by-name: users, groups, teams, channels, sites, roles, devices, licenses and chats load into searchable pickers, so you rarely type a raw ID.
 
 Authentication is **app-only (client credentials)** or **delegated (device code)**. Secrets live only in the OS keychain, the access token never leaves the Go backend, and every write/destructive action is guarded by a typed confirmation and recorded in a local audit log.
 
 ## Features
 
-- **Dashboard** — tenant overview: user/group/domain counts and license usage (paid vs free/trial, seats remaining)
-- **Playbooks** — guided onboarding & offboarding runbooks that chain the individual actions into one reviewed flow
+- **Task palette (Ctrl+K)** — ~60 jobs described in plain language, in English and Russian, each landing on the exact form that performs it
+- **Access mirror** — "give Bell the same access Whitfield has": diffs two people across groups, teams, private channels, admin roles and licenses, then copies only what is missing (additive, typed confirmation, private channels bring their team along)
+- **Dashboard** — tenant overview: user/group/domain counts and license usage (paid vs free/trial, seats remaining); every number opens the list behind it
+- **Playbooks** — guided onboarding & offboarding runbooks that chain the individual actions into one reviewed flow, with reusable role profiles and live cancellable steps
 - **Users & Admin** — search, snapshot, create/update/delete, block/unblock, reset password, revoke sessions, manager, usage location, restore deleted users
-- **Security** — reset MFA & list authentication methods, admin (directory) role assignment
+- **Security** — reset MFA & list authentication methods, admin (directory) role assignment; Conditional Access policies rendered as facts (who they hit, what they demand) instead of raw JSON, and enterprise app consents
 - **Licensing** — tenant SKUs, per-user licenses, assign/remove
 - **Teams / Groups / Chats** — channels, membership, Teamify, group & group-chat creation
 - **Mail** — send email as any user (typed confirmation, audit-logged)
@@ -49,22 +53,33 @@ Authentication is **app-only (client credentials)** or **delegated (device code)
 - **Cleanup — reclaim space** — find duplicate files and version-history bloat across OneDrive & SharePoint (all document libraries), trim old versions or delete extras; optional per-site size scan sorts the biggest sites first
 - **Devices** — Entra devices (enable/disable/delete) + BitLocker recovery keys, plus Intune (wipe/retire/lock)
 - **App registrations** — inventory + expiring secret/certificate monitoring
+- **Audit** — "why can this person not sign in?": one user's failed sign-ins with the Entra error behind each, plus directory changes by actor and time window
 - **Reports** — Microsoft 365 usage reports (CSV) · **Service health** & message center
 - **Raw Graph** — GET/POST/PATCH/PUT/DELETE playground with history & favorites
-- **Everywhere** — searchable pickers instead of raw IDs, results as master-detail / JSON / tree, CSV export, dark & light themes, custom accent color, English + Russian, read-only mode, in-app update check
+- **Everywhere** — searchable pickers instead of raw IDs, a per-page Actions / Both / Data view switch, results as master-detail / JSON / tree, CSV export, live progress on every long operation, dark & light themes, custom accent color, English + Russian, read-only mode, in-app update check
 
 ## Screenshots
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/dashboard.png" alt="Dashboard" /><br /><sub><b>Dashboard</b> — counts and license usage at a glance</sub></td>
-    <td width="50%"><img src="docs/screenshots/users.png" alt="Users" /><br /><sub><b>Users & Admin</b> — lifecycle, security, manager, licensing</sub></td>
+    <td width="50%"><img src="docs/screenshots/teams.png" alt="Teams" /><br /><sub><b>Action-first pages</b> — every capability visible, forms open in place with the Graph caveats beside them</sub></td>
+    <td width="50%"><img src="docs/screenshots/palette.png" alt="Task palette" /><br /><sub><b>Ctrl+K</b> — describe the task, land on the form that does it</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/offboarding.png" alt="Offboarding" /><br /><sub><b>Offboarding</b> — OneDrive backup with preview & report</sub></td>
+    <td width="50%"><img src="docs/screenshots/access-mirror.png" alt="Access mirror" /><br /><sub><b>Access mirror</b> — diff two people, copy only what is missing</sub></td>
+    <td width="50%"><img src="docs/screenshots/audit.png" alt="Audit" /><br /><sub><b>Audit</b> — why a person cannot sign in, not just the last 50 events</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/playbooks.png" alt="Playbooks" /><br /><sub><b>Playbooks</b> — onboarding with reusable role profiles, live steps, cancel</sub></td>
+    <td width="50%"><img src="docs/screenshots/security.png" alt="Security review" /><br /><sub><b>Conditional Access</b> — read as facts, with the raw JSON one click away</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/dashboard.png" alt="Dashboard" /><br /><sub><b>Dashboard</b> — counts and license usage, each tile clickable</sub></td>
     <td width="50%"><img src="docs/screenshots/raw.png" alt="Raw Graph" /><br /><sub><b>Raw Graph</b> — request playground with history</sub></td>
   </tr>
 </table>
+
+<sub>Screenshots are generated from the production bundle against stubbed bindings (`SHOTS=1 npx playwright test e2e/screenshots.spec.ts`) — no tenant data is shown.</sub>
 
 ## Downloads
 

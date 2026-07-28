@@ -85,7 +85,14 @@ func (cl *CleanupService) driveBases(ctx context.Context, ownerType, ownerID str
 	}
 	switch ownerType {
 	case "user":
-		return []string{"/users/" + url.PathEscape(ownerID) + "/drive"}, nil
+		// Address the user by object id: a UPN holding an apostrophe, a leading
+		// '$' or the guest '#EXT#' marker makes Graph's OData parser misread the
+		// deep /drive/... segments and answer 400 Request_BadRequest.
+		id, err := resolveUserID(ctx, c, ownerID)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"/users/" + url.PathEscape(id) + "/drive"}, nil
 	case "site":
 		var resp struct {
 			Value []struct {

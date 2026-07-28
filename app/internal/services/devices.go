@@ -2,7 +2,9 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"net/url"
+	"strings"
 
 	"swissknife-app/internal/session"
 )
@@ -82,6 +84,31 @@ func (d *DevicesService) BitLockerKeys(maxItems int) ([]json.RawMessage, error) 
 		return nil, err
 	}
 	return c.ListAll(d.s.Ctx(), "/informationProtection/bitlocker/recoveryKeys", nil, maxItems)
+}
+
+// BitLockerKeysForDevice lists the recovery keys of one device. The operator has
+// a device in front of them, not a tenant-wide key list — Graph filters this
+// collection by deviceId (the device's *device id*, not its object id).
+func (d *DevicesService) BitLockerKeysForDevice(deviceID string) ([]json.RawMessage, error) {
+	c, err := d.s.Client()
+	if err != nil {
+		return nil, err
+	}
+	id := strings.TrimSpace(deviceID)
+	if id == "" {
+		return nil, errors.New("device id is required")
+	}
+	// Accept an Entra object id too: look up its deviceId first.
+	if looksLikeGUID(id) {
+		var dev struct {
+			DeviceID string `json:"deviceId"`
+		}
+		if err := c.Get(d.s.Ctx(), "/devices/"+url.PathEscape(id), url.Values{"$select": {"deviceId"}}, &dev); err == nil && dev.DeviceID != "" {
+			id = dev.DeviceID
+		}
+	}
+	return c.ListAll(d.s.Ctx(), "/informationProtection/bitlocker/recoveryKeys",
+		url.Values{"$filter": {"deviceId eq '" + escapeODataLiteral(id) + "'"}}, 0)
 }
 
 // BitLockerKey returns a single recovery key including its secret value.

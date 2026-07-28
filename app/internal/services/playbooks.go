@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/journal"
@@ -48,6 +49,7 @@ var stepKeys = map[string]string{
 	"Add to group":              "steps.addToGroup",
 	"Add to team":               "steps.addToTeam",
 	"Add to channel":            "steps.addToChannel",
+	"Add to role":               "steps.addToRole",
 	"Block sign-in":             "steps.blockSignIn",
 	"Revoke sessions":           "steps.revokeSessions",
 	"Set auto-reply (OOF)":      "steps.oof",
@@ -58,6 +60,8 @@ var stepKeys = map[string]string{
 	"Backup OneDrive":           "steps.backupOneDrive",
 	"Backup Teams chats":        "steps.backupChats",
 	"Remove from groups":        "steps.removeFromGroups",
+	"Transfer ownership":        "steps.transferOwnership",
+	"Cancel future meetings":    "steps.cancelEvents",
 	"Remove from group":         "steps.removeFromGroup",
 	"Remove MFA method":         "steps.removeMfaMethod",
 	"Check mailbox type":        "steps.checkMailboxType",
@@ -313,7 +317,24 @@ type OffboardRequest struct {
 	IntuneAction            string `json:"intuneAction"`
 	RemoveMfaMethods        bool   `json:"removeMfaMethods"`
 	DeleteRegisteredDevices bool   `json:"deleteRegisteredDevices"`
-	Delete                  bool   `json:"delete"`
+	// TransferOwnershipTo takes over the groups and teams the leaver owns: the
+	// new owner is added first, then the leaver is dropped as owner. A group
+	// left without an owner is a support ticket waiting to happen.
+	TransferOwnershipTo string `json:"transferOwnershipTo"`
+	// CancelFutureEvents cancels meetings the leaver organised from now on, so
+	// their colleagues stop seeing a dead organiser in the invite.
+	CancelFutureEvents bool `json:"cancelFutureEvents"`
+	Delete             bool `json:"delete"`
+}
+
+// alreadyExists reports a Graph "reference already exists" rejection, which is a
+// success for our purposes: the new owner is already an owner.
+func alreadyExists(err error) bool {
+	var ge *graphapi.GraphError
+	if !errors.As(err, &ge) {
+		return false
+	}
+	return strings.Contains(strings.ToLower(ge.Message), "already exist")
 }
 
 // Offboard runs the offboarding sequence. Destructive: requires typed confirm
@@ -437,6 +458,128 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				"role":         "read",
 			}, nil)
 		})
+	}
+	if req.CancelFutureEvents && !r.stop() {
+		// Only meetings the leaver organises are cancelled; ones they merely
+		// attend are left alone — those belong to somebody else.
+		r.doD("Cancel future meetings", req.Upn, func() (string, error) {
+			// A recurring series that started in the past still has future
+			// occurrences, and its master carries the past start date — filter
+			// on the series master as well, or weekly stand-ups survive the
+			// offboarding.
+			from := time.Now().UTC().Format("2006-01-02T15:04:05")
+			events, e := c.ListAll(op.Ctx, "/users/"+u+"/events", url.Values{
+				"$filter": {"start/dateTime ge '" + from + "' or type eq 'seriesMaster'"},
+				"$select": {"id,subject,isOrganizer,isCancelled,attendees,type,recurrence"},
+				"$top":    {"50"},
+			}, 500)
+			if e != nil {
+				return "", e
+			}
+			canceled, deleted, failed := 0, 0, 0
+			for _, raw := range events {
+				if r.stop() {
+					break
+				}
+				var ev struct {
+					ID          string `json:"id"`
+					Type        string `json:"type"`
+					IsOrganizer bool   `json:"isOrganizer"`
+					IsCancelled bool   `json:"isCancelled"`
+					Attendees   []any  `json:"attendees"`
+					Recurrence  *struct {
+						Range struct {
+							Type    string `json:"type"`
+							EndDate string `json:"endDate"`
+						} `json:"range"`
+					} `json:"recurrence"`
+				}
+				if json.Unmarshal(raw, &ev) != nil || !ev.IsOrganizer || ev.IsCancelled || ev.ID == "" {
+					continue
+				}
+				// A series that already ran out has nothing left to cancel;
+				// cancelling it would only produce a Graph error.
+				if ev.Type == "seriesMaster" && ev.Recurrence != nil &&
+					ev.Recurrence.Range.Type == "endDate" && ev.Recurrence.Range.EndDate != "" &&
+					ev.Recurrence.Range.EndDate < time.Now().UTC().Format("2006-01-02") {
+					continue
+				}
+				path := "/users/" + u + "/events/" + url.PathEscape(ev.ID)
+				var err error
+				if len(ev.Attendees) > 0 {
+					// cancel notifies the attendees; delete would leave them with
+					// a ghost meeting in their calendars.
+					err = c.Post(op.Ctx, path+"/cancel",
+						map[string]any{"comment": "The organizer has left the organization; this meeting is cancelled."}, nil)
+					if err == nil {
+						canceled++
+					}
+				} else {
+					err = c.Delete(op.Ctx, path)
+					if err == nil {
+						deleted++
+					}
+				}
+				if err != nil {
+					failed++
+				}
+			}
+			r.setDetail("stepDetails.events", map[string]any{"canceled": canceled, "deleted": deleted, "failed": failed})
+			detail := itoa(canceled) + " cancelled · " + itoa(deleted) + " deleted"
+			if failed > 0 {
+				return detail, fmt.Errorf("%d meeting(s) could not be cancelled", failed)
+			}
+			return detail, nil
+		})
+	}
+	if req.TransferOwnershipTo != "" && !r.stop() {
+		var newOwner struct {
+			ID string `json:"id"`
+		}
+		var leaver struct {
+			ID string `json:"id"`
+		}
+		ownerErr := c.Get(op.Ctx, "/users/"+url.PathEscape(req.TransferOwnershipTo), url.Values{"$select": {"id"}}, &newOwner)
+		if ownerErr == nil {
+			ownerErr = c.Get(op.Ctx, "/users/"+u, url.Values{"$select": {"id"}}, &leaver)
+		}
+		if ownerErr != nil {
+			r.do("Transfer ownership", req.TransferOwnershipTo, func() error { return ownerErr })
+		} else if owned, e := c.ListAll(op.Ctx, "/users/"+u+"/ownedObjects", url.Values{"$select": {"id,displayName"}}, 0); e != nil {
+			r.do("Transfer ownership", req.Upn, func() error { return e })
+		} else {
+			ref := map[string]any{"@odata.id": "https://graph.microsoft.com/v1.0/users/" + newOwner.ID}
+			found := false
+			for _, raw := range owned {
+				if r.stop() {
+					break
+				}
+				var g struct {
+					Type        string `json:"@odata.type"`
+					ID          string `json:"id"`
+					DisplayName string `json:"displayName"`
+				}
+				// Owned applications and service principals are deliberately left
+				// alone: handing those over is a separate, deliberate decision.
+				if json.Unmarshal(raw, &g) != nil || g.Type != "#microsoft.graph.group" || g.ID == "" {
+					continue
+				}
+				found = true
+				gid, name := g.ID, g.DisplayName
+				if name == "" {
+					name = gid
+				}
+				r.do("Transfer ownership", name+" → "+req.TransferOwnershipTo, func() error {
+					if e := c.Post(op.Ctx, "/groups/"+url.PathEscape(gid)+"/owners/$ref", ref, nil); e != nil && !alreadyExists(e) {
+						return e
+					}
+					return c.Delete(op.Ctx, "/groups/"+url.PathEscape(gid)+"/owners/"+url.PathEscape(leaver.ID)+"/$ref")
+				})
+			}
+			if !found {
+				r.do("Transfer ownership", "nothing owned", func() error { return nil })
+			}
+		}
 	}
 	if req.BackupToUser != "" {
 		drive := NewDriveService(p.s)

@@ -163,6 +163,7 @@ function MasterDetail({
   current: GraphRow | undefined
   onUseId?: (id: string) => void
 }) {
+  const { t } = useTranslation()
   const single = rows.length === 1
   return (
     <div className={`grid h-full ${single ? 'grid-cols-1' : 'grid-cols-[210px_1fr]'}`}>
@@ -202,7 +203,7 @@ function MasterDetail({
             onClick={() => onUseId(String(current.id))}
             className="mb-3 rounded-lg border border-[var(--accent)] px-3 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent)]/10"
           >
-            ↑ Use this ID
+            ↑ {t('common.useThisId')}
           </button>
         )}
         {current ? <Detail row={current} /> : <p className="text-sm text-[var(--text-faint)]">—</p>}

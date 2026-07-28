@@ -4,6 +4,7 @@
 import * as Connect from '../../wailsjs/go/services/ConnectService'
 import * as Dashboard from '../../wailsjs/go/services/DashboardService'
 import * as Playbook from '../../wailsjs/go/services/PlaybookService'
+import * as Mirror from '../../wailsjs/go/services/MirrorService'
 import * as Access from '../../wailsjs/go/services/AccessService'
 import * as Users from '../../wailsjs/go/services/UsersService'
 import * as AuthMethods from '../../wailsjs/go/services/AuthMethodsService'
@@ -36,7 +37,9 @@ export type Profile = secrets.Profile
 export type Status = services.Status
 export type ConnectRequest = services.ConnectRequest
 
-const list = (p: Promise<any>) => p as Promise<GraphObject[]>
+// A Go service that returns a nil slice marshals to `null`, not `[]` — coerce
+// here so no caller has to guard a .map() against an empty collection.
+const list = (p: Promise<any>) => p.then((v) => (v ?? []) as GraphObject[])
 const one = (p: Promise<any>) => p as Promise<GraphObject>
 
 export const api = {
@@ -164,6 +167,18 @@ export const api = {
   access: {
     probe: () => Access.Probe() as Promise<Record<string, boolean>>,
   },
+  auditQuery: {
+    signIns: (upn: string, days: number, failedOnly: boolean, top: number) =>
+      list(Audit.SignInsFiltered({ upn, days, failedOnly, top } as any)),
+    directory: (search: string, days: number, top: number) => list(Audit.DirectoryAuditsFiltered(search, days, top)),
+  },
+  // "Give user1 the same access user2 has": diff first, then copy what is missing.
+  mirror: {
+    compare: (source: string, target: string) => Mirror.Compare(source, target) as Promise<services.AccessRow[]>,
+    copy: (source: string, target: string, kinds: string[], confirm: string) =>
+      Mirror.Copy({ source, target, kinds, confirm } as any) as Promise<services.PlaybookResult>,
+    cancel: () => Mirror.Cancel() as Promise<void>,
+  },
   intune: {
     devices: (max: number) => list(Intune.Devices(max)),
     device: (id: string) => one(Intune.Device(id)),
@@ -187,6 +202,7 @@ export const api = {
     disable: (id: string) => Devices.Disable(id),
     delete: (id: string, confirm: string) => Devices.Delete(id, confirm),
     bitlockerKeys: (max: number) => list(Devices.BitLockerKeys(max)),
+    bitlockerKeysForDevice: (deviceId: string) => list(Devices.BitLockerKeysForDevice(deviceId)),
     bitlockerKey: (id: string) => one(Devices.BitLockerKey(id)),
   },
   apps: {

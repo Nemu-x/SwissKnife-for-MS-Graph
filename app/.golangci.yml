@@ -16,8 +16,9 @@ linters:
       # w.Write/Decode return there is pure noise.
       - path: _test\.go
         linters: [errcheck]
-      # Playbook steps are best-effort by design: r.do records the error in the
-      # per-step report; the return value is only consulted for gating steps.
-      - path: internal/services/playbooks\.go
+      # Playbook and mirror steps are best-effort by design: r.do records the
+      # error in the per-step report; the return value is only consulted for
+      # gating steps (e.g. a channel add that depends on its team add).
+      - path: internal/services/(playbooks|mirror)\.go
         linters: [errcheck]
         text: 'r\.do'

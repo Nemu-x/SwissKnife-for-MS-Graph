@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Search, Trash2, Building2, Scissors, Files as FilesIcon, History } from 'lucide-react'
-import { Page } from '../components/Layout'
-import { Card, Button, Field, Select, Badge, Spinner, Input } from '../components/ui'
+import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
+import { Button, Field, Select, Badge, Spinner, Input } from '../components/ui'
 import { EntityPicker } from '../components/EntityPicker'
 import { JobConsole } from '../components/JobConsole'
 import { loadUsers, loadSites, loadSitesBySize } from '../lib/pickers'
@@ -27,26 +27,35 @@ export function CleanupPage() {
   const [ownerId, setOwnerId] = useState('')
   const [siteSizes, setSiteSizes] = useState(false)
   const [keep, setKeep] = useState(3)
-  // Refs picked for a bulk trim; keyed by item ref so it survives re-sorts.
   const [sel, setSel] = useState<Record<string, boolean>>({})
+  const [status, setStatus] = useState<Record<string, ActionStatus>>({})
 
   // The scan runs in the store, so its progress/log survive page navigation.
   const job = jobs.cleanup
   const busy = !!job?.running
   const result = job?.result as { mode: Mode; groups?: services.DupGroup[]; bloat?: BloatRow[] } | null | undefined
-  // Only show results that match the currently selected tab.
   const groups = mode === 'duplicates' && result?.mode === 'duplicates' ? result.groups ?? null : null
   const bloat = mode === 'versions' && result?.mode === 'versions' ? result.bloat ?? null : null
 
-  const scan = () => { setSel({}); startCleanupScan({ mode, ownerType, ownerId }) }
+  const scan = (m: Mode) => { setMode(m); setSel({}); startCleanupScan({ mode: m, ownerType, ownerId }) }
 
   const deleteExtras = () => {
     if (!groups) return
     const refs = groups.flatMap((g) => g.items.slice(1).map((i) => i.ref))
     if (refs.length === 0) return
     askConfirm('DELETE', async (c) => {
-      try { const r = await api.cleanup.deleteItems(refs, c); toast('ok', `${r.deleted} deleted`); scan() }
-      catch (e) { toast('err', errMessage(e)) }
+      try {
+        const r = await api.cleanup.deleteItems(refs, c)
+        toast('ok', `${r.deleted} deleted`)
+        setStatus((s) => ({ ...s, duplicates: { ok: true, text: t('cleanup.deletedN', { n: r.deleted }), at: Date.now() } }))
+        scan('duplicates')
+      } catch (e) {
+        // Leaving the previous green "deleted N" on the tile would contradict
+        // the error the operator just saw.
+        const m = errMessage(e)
+        setStatus((s) => ({ ...s, duplicates: { ok: false, text: m, at: Date.now() } }))
+        toast('err', m)
+      }
     }, t('cleanup.deleteExtras'))
   }
 
@@ -69,7 +78,7 @@ export function CleanupPage() {
     askConfirm('TRIM', async (c) => {
       try {
         const r = await api.cleanup.trimVersions(ref, keep, c)
-        toast('ok', `${r.removed} versions removed`)
+        toast('ok', t('cleanup.trimmed', { n: r.removed }))
         applyTrim([{ ref, removed: r.removed }])
       } catch (e) { toast('err', errMessage(e)) }
     }, `${t('cleanup.trim')} — ${name}`)
@@ -91,14 +100,22 @@ export function CleanupPage() {
     askConfirm('TRIM', async (c) => {
       // Run as a job: the backend streams cleanup:progress/log events, and the
       // console's Cancel button (CancelScan) aborts between items.
-      patchJob('cleanup', { running: true, canceled: false, error: null, startedAt: Date.now(), progress: 'Trimming…' })
+      patchJob('cleanup', { running: true, canceled: false, error: null, startedAt: Date.now(), progress: t('cleanup.trimming') })
       try {
         const rs = (await api.cleanup.trimVersionsMany(refs, keep, c)) || []
         const removed = rs.reduce((a, r) => a + r.removed, 0)
         const failed = rs.filter((r) => r.error).length
-        toast(failed > 0 ? 'err' : 'ok', failed > 0 ? t('cleanup.trimFailures', { n: failed }) : `${removed} versions removed`)
+        // Tile and toast must tell the same story: a red tile saying "N trimmed"
+        // next to a toast saying "N failures" is worse than either alone.
+        const text = failed > 0 ? t('cleanup.trimFailures', { n: failed }) : t('cleanup.trimmed', { n: removed })
+        toast(failed > 0 ? 'err' : 'ok', text)
+        setStatus((s) => ({ ...s, versions: { ok: failed === 0, text, at: Date.now() } }))
         applyTrim(rs)
-      } catch (e) { toast('err', errMessage(e)) }
+      } catch (e) {
+        const m = errMessage(e)
+        setStatus((s) => ({ ...s, versions: { ok: false, text: m, at: Date.now() } }))
+        toast('err', m)
+      }
       finally { patchJob('cleanup', { running: false, progress: '' }) }
     }, `${t('cleanup.trimSelected', { n: refs.length })} · ${humanBytes(selectedBytes)}`)
   }
@@ -106,71 +123,74 @@ export function CleanupPage() {
   const totalDupWasted = (groups || []).reduce((a, g) => a + g.wasted, 0)
   const totalVerWasted = (bloat || []).reduce((a, b) => a + b.reclaimable, 0)
 
-  return (
-    <Page title={t('cleanup.title')} subtitle={t('cleanup.subtitle')}>
-      {confirmElement}
+  // Both scans work against one drive: a user's OneDrive or a SharePoint site.
+  const ownerFields = (
+    <>
+      <Select value={ownerType} onChange={(e) => { setOwnerType(e.target.value as any); setOwnerId('') }} className="w-full">
+        <option value="user">{t('files.oneDrive')}</option>
+        <option value="site">{t('files.sharePoint')}</option>
+      </Select>
+      <Field label={ownerType === 'user' ? t('common.user') : t('files.site')}>
+        <EntityPicker value={ownerId} onChange={setOwnerId}
+          load={ownerType === 'user' ? loadUsers : siteSizes ? loadSitesBySize : loadSites}
+          reloadKey={`${ownerType}${siteSizes ? ':size' : ''}`}
+          placeholder={ownerType === 'user' ? t('files.pickUser') : t('files.pickSite')} />
+      </Field>
+      {ownerType === 'site' && (
+        <label className="flex items-center gap-2 text-xs text-[var(--text-dim)]">
+          <input type="checkbox" checked={siteSizes} onChange={(e) => setSiteSizes(e.target.checked)} />
+          {t('cleanup.showSiteSizes')}
+        </label>
+      )}
+    </>
+  )
 
-      <div className="mb-4 inline-flex rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] p-1">
-        {([['versions', <History size={15} key="v" />, t('cleanup.tabVersions')], ['duplicates', <FilesIcon size={15} key="d" />, t('cleanup.tabDuplicates')]] as const).map(([m, icon, label]) => (
-          <button key={m} onClick={() => setMode(m)}
-            className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium ${mode === m ? 'bg-[var(--accent)] text-[var(--accent-fg)]' : 'text-[var(--text-dim)]'}`}>
-            {icon}{label}
-          </button>
-        ))}
-      </div>
-
-      <Card title={t('cleanup.title')} className="mb-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-[var(--text-dim)]">Drive</span>
-            <Select value={ownerType} onChange={(e) => { setOwnerType(e.target.value as any); setOwnerId('') }} className="w-48">
-              <option value="user">OneDrive (user)</option>
-              <option value="site">SharePoint (site)</option>
-            </Select>
-          </label>
-          <Field label={ownerType === 'user' ? t('common.user') : 'SharePoint site'}>
-            <div className="w-72">
-              <EntityPicker value={ownerId} onChange={setOwnerId}
-                load={ownerType === 'user' ? loadUsers : siteSizes ? loadSitesBySize : loadSites}
-                reloadKey={`${ownerType}${siteSizes ? ':size' : ''}`}
-                placeholder={ownerType === 'user' ? 'Pick a user…' : 'Pick a site…'} />
-            </div>
+  const actions: TaskAction[] = [
+    {
+      id: 'versions', label: t('cleanup.tileVersions'), hint: t('cleanup.hintVersions'),
+      icon: <History size={16} />, variant: 'primary', write: true,
+      note: <p>{t('cleanup.noteVersions')}</p>,
+      onClick: () => setMode('versions'),
+      panel: (
+        <TaskForm>
+          {ownerFields}
+          <Field label={t('cleanup.keep')} hint={t('cleanup.keepHint')}>
+            <Input type="number" value={keep} onChange={(e) => setKeep(Math.max(1, Number(e.target.value) || 1))} className="w-24" />
           </Field>
-          {mode === 'versions' && (
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-[var(--text-dim)]">{t('cleanup.keep')}</span>
-              <Input type="number" value={keep} onChange={(e) => setKeep(Math.max(1, Number(e.target.value) || 1))} className="w-20" />
-            </label>
-          )}
-          <Button variant="primary" disabled={!ownerId || busy} onClick={scan}>
+          <Button variant="primary" disabled={!ownerId || busy} onClick={() => scan('versions')}>
             {busy ? <Spinner /> : ownerType === 'site' ? <Building2 size={15} /> : <Search size={15} />}
-            {busy ? t('cleanup.scanning') : mode === 'versions' ? t('cleanup.scanVersions') : t('cleanup.scan')}
+            {busy ? t('cleanup.scanning') : t('cleanup.scanVersions')}
           </Button>
-          {mode === 'duplicates' && groups && groups.length > 0 && (
-            <Button variant="danger" disabled={readOnly} onClick={deleteExtras} className="ml-auto">
-              <Trash2 size={15} /> {t('cleanup.deleteExtras')}
-            </Button>
-          )}
-        </div>
-        {ownerType === 'site' && (
-          <label className="mt-3 flex w-fit items-center gap-2 border-t border-[var(--border)] pt-3 text-xs text-[var(--text-dim)]">
-            <input type="checkbox" checked={siteSizes} onChange={(e) => setSiteSizes(e.target.checked)} />
-            {t('cleanup.showSiteSizes')}
-          </label>
-        )}
-      </Card>
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'duplicates', label: t('cleanup.tileDuplicates'), hint: t('cleanup.hintDuplicates'),
+      icon: <FilesIcon size={16} />, variant: 'primary', write: true,
+      note: <p>{t('cleanup.noteDuplicates')}</p>,
+      onClick: () => setMode('duplicates'),
+      panel: (
+        <TaskForm>
+          {ownerFields}
+          <Button variant="primary" disabled={!ownerId || busy} onClick={() => scan('duplicates')}>
+            {busy ? <Spinner /> : ownerType === 'site' ? <Building2 size={15} /> : <Search size={15} />}
+            {busy ? t('cleanup.scanning') : t('cleanup.scan')}
+          </Button>
+        </TaskForm>
+      ),
+    },
+  ]
 
-      {job && (
-        <div className="mb-4">
-          <JobConsole job={job} onCancel={cancelCleanupScan} onClear={() => clearJob('cleanup')} />
-        </div>
+  const resultPane = (
+    <div className="flex h-full flex-col gap-3 overflow-auto p-3">
+      {job && (job.log.length > 0 || job.running) && (
+        <JobConsole job={job} onCancel={cancelCleanupScan} onClear={() => clearJob('cleanup')} />
       )}
 
-      {/* Versions */}
       {mode === 'versions' && bloat && bloat.length === 0 && <p className="text-sm text-[var(--ok)]">{t('cleanup.noVersions')}</p>}
       {mode === 'versions' && bloat && bloat.length > 0 && (
         <>
-          <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
               <input type="checkbox" checked={allSelected} disabled={trimmable.length === 0} onChange={toggleAll} />
               {t('cleanup.selectAll')}
@@ -184,7 +204,7 @@ export function CleanupPage() {
           </div>
           <div className="flex flex-col gap-2">
             {bloat.map((b) => (
-              <div key={b.ref} className={`flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-3 ${b.trimmed ? 'opacity-60' : ''}`}>
+              <div key={b.ref} className={`flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3 ${b.trimmed ? 'opacity-60' : ''}`}>
                 <input type="checkbox" checked={!b.trimmed && !!sel[b.ref]} disabled={!!b.trimmed || busy}
                   onChange={(e) => setSel((s) => ({ ...s, [b.ref]: e.target.checked }))} />
                 <div className="min-w-0 flex-1">
@@ -203,25 +223,31 @@ export function CleanupPage() {
         </>
       )}
 
-      {/* Duplicates */}
       {mode === 'duplicates' && groups && groups.length === 0 && <p className="text-sm text-[var(--ok)]">{t('cleanup.noDupes')}</p>}
       {mode === 'duplicates' && groups && groups.length > 0 && (
         <>
-          <div className="mb-3 text-sm text-[var(--text-dim)]">{t('cleanup.totalWasted', { size: humanBytes(totalDupWasted) })}</div>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-[var(--text-dim)]">{t('cleanup.totalWasted', { size: humanBytes(totalDupWasted) })}</span>
+            <Button variant="danger" disabled={readOnly || busy} onClick={deleteExtras} className="ml-auto">
+              <Trash2 size={15} /> {t('cleanup.deleteExtras')}
+            </Button>
+          </div>
           <div className="flex flex-col gap-2">
             {groups.map((g, i) => (
-              <div key={i} className="rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-3">
+              <div key={i} className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">{g.name}</div>
-                    <div className="text-xs text-[var(--text-faint)]">{humanBytes(g.size)} each · {t('cleanup.copies', { n: g.count })}</div>
+                    <div className="text-xs text-[var(--text-faint)]">{humanBytes(g.size)} · {t('cleanup.copies', { n: g.count })}</div>
                   </div>
                   <Badge kind="warn">{t('cleanup.wasted')}: {humanBytes(g.wasted)}</Badge>
                 </div>
                 <div className="mt-2 flex flex-col gap-1">
                   {g.items.map((it, j) => (
                     <div key={j} className="flex items-center gap-2 text-xs">
-                      <span className={j === 0 ? 'text-[var(--ok)]' : 'text-[var(--text-faint)]'}>{j === 0 ? '✓ keep' : '✗ extra'}</span>
+                      <span className={j === 0 ? 'text-[var(--ok)]' : 'text-[var(--text-faint)]'}>
+                        {j === 0 ? t('cleanup.keepItem') : t('cleanup.extraItem')}
+                      </span>
                       <span className="truncate text-[var(--text-dim)]">{it.path}</span>
                     </div>
                   ))}
@@ -231,6 +257,24 @@ export function CleanupPage() {
           </div>
         </>
       )}
-    </Page>
+    </div>
+  )
+
+  return (
+    <>
+      {confirmElement}
+      <TaskPage
+        pageId="cleanup"
+        title={t('cleanup.title')}
+        subtitle={t('cleanup.subtitle')}
+        actions={actions}
+        status={status}
+        busy={busy}
+        busyLabel={job?.progress || t('cleanup.scanning')}
+        hasResult={!!job && (job.log.length > 0 || job.running || !!result)}
+        onClearResult={() => clearJob('cleanup')}
+        result={resultPane}
+      />
+    </>
   )
 }
