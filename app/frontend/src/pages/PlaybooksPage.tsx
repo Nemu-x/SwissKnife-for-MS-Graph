@@ -204,7 +204,11 @@ export function PlaybooksPage() {
       if (r) setStatus((s) => ({ ...s, offboard: { ok: !!r.ok, text: off.upn, at: Date.now() } }))
       if (!r || r.canceled) return // failed or canceled run: keep the previous defaults
       for (const k of ['forwardTo', 'calendarTo', 'backupToUser', 'backupFolder', 'transferOwnershipTo', 'mailboxToUser'] as const) {
-        if (off[k]) localStorage.setItem('defaults.offboard.' + k, off[k])
+        const key = 'defaults.offboard.' + k
+        // An emptied field must not come back after a reload and send a later
+        // run's mail or files to last time's destination.
+        if (off[k]) localStorage.setItem(key, off[k])
+        else localStorage.removeItem(key)
       }
     })
   }

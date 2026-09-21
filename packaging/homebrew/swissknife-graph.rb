@@ -46,7 +46,9 @@ cask "swissknife-graph" do
 
       xattr -dr com.apple.quarantine "#{appdir}/SwissKnifeGraph.app"
 
-    Verify the download against SHA256SUMS.txt (minisign-signed) from the
-    GitHub release if you want to be sure what you are running.
+    To be sure what you are running, verify the download against SHA256SUMS.txt
+    from the GitHub release; the checksums are authenticated only when the
+    release also carries SHA256SUMS.txt.minisig (check it with minisign and
+    the repository's minisign.pub).
   EOS
 end

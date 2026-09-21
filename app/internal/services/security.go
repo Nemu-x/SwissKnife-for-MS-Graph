@@ -87,6 +87,8 @@ func (x *SecurityService) RecommendationImpacted(id string) ([]json.RawMessage, 
 		return nil, err
 	}
 	path := c.Beta("/directory/recommendations/" + url.PathEscape(id) + "/impactedResources")
-	out, err := c.ListAll(x.s.Ctx(), path, nil, 0)
+	// A recommendation can impact many directory objects; cap the crawl like
+	// the snapshot collections do.
+	out, err := c.ListAll(x.s.Ctx(), path, nil, snapshotListCap)
 	return out, wrapOpErr(err)
 }

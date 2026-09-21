@@ -22,16 +22,20 @@ const SUPPORT_WALLETS: { asset: string; address: string }[] = [
 
 export function SettingsPage() {
   const { t, i18n } = useTranslation()
-  const { theme, toggleTheme, accent, setAccent, safeMode, setSafeMode, hideUnavailable, setHideUnavailable, checkAccess, readOnly, setStatus, connected, toast } = useStore()
+  const { theme, toggleTheme, accent, setAccent, safeMode, setSafeMode, hideUnavailable, setHideUnavailable, checkAccess, readOnly, setStatus, connected, toast, cache, setCache } = useStore()
   const [checkingAccess, setCheckingAccess] = useState(false)
   const [version, setVersion] = useState('')
-  const [update, setUpdate] = useState<services.UpdateInfo | null>(null)
+  // The update check result and the recovery path below are one-time results:
+  // they live in the store cache so leaving Settings and coming back keeps them.
+  const [update, setUpdateLocal] = useState<services.UpdateInfo | null>(() => cache['settings.update'] ?? null)
+  const setUpdate = (v: services.UpdateInfo | null) => { setUpdateLocal(v); setCache('settings.update', v) }
   const [checking, setChecking] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [updateProgress, setUpdateProgress] = useState('')
   // Path of the downloaded installer, kept when the elevated launch fails so
   // the user can open its folder and run it by hand.
-  const [failedInstaller, setFailedInstaller] = useState('')
+  const [failedInstaller, setFailedInstallerLocal] = useState<string>(() => cache['settings.failedInstaller'] ?? '')
+  const setFailedInstaller = (v: string) => { setFailedInstallerLocal(v); setCache('settings.failedInstaller', v) }
 
   useEffect(() => { Version().then(setVersion).catch(() => {}) }, [])
 

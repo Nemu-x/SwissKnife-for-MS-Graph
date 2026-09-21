@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/ops"
@@ -63,9 +62,6 @@ const (
 	exportBatchBytes = 24 << 20
 	// itemsPageSize is the $top for item listings (ids and sizes only).
 	itemsPageSize = 200
-	// importSessionMargin renews the import URL this long before its
-	// expirationDateTime so a batch never straddles the expiry.
-	importSessionMargin = 2 * time.Minute
 )
 
 // MailboxFolderInfo is one folder of the source mailbox as the preview sees it.
@@ -459,10 +455,16 @@ func (m *MailboxTransferService) copyCtx(parent context.Context, req MailboxCopy
 		}
 	}()
 
-	rootID, err := m.ensureFolder(ctx, c, tgtMbx, "", rootName, "IPF.Note")
+	var rootID string
+	rootID, rootName, err = m.createUniqueRoot(ctx, c, tgtMbx, rootName)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			res.Canceled = true
+			return res, nil
+		}
 		return nil, err
 	}
+	res.RootFolder = rootName
 	// Source path → target folder id. A folder whose parent was not copied
 	// (a mail folder under a Tasks folder, say) attaches to the nearest
 	// copied ancestor, ultimately the root.
@@ -480,7 +482,8 @@ func (m *MailboxTransferService) copyCtx(parent context.Context, req MailboxCopy
 		}
 	}
 
-	imp := &mailboxImporter{c: c, mbx: tgtMbx}
+	// The import session (and its pre-authorized upload URL) stays inside graphapi.
+	imp := c.NewImportSession(mailboxPath(tgtMbx) + "/createImportSession")
 	done := 0
 	var doneBytes int64
 	m.emitOverall(op, done, total, doneBytes, "")
@@ -491,6 +494,11 @@ func (m *MailboxTransferService) copyCtx(parent context.Context, req MailboxCopy
 		fid, ferr := m.ensureFolder(ctx, c, tgtMbx, nearest(f.Parent), f.Name, kindClass[f.Kind])
 		if ferr != nil {
 			if fatalCopyErr(ferr) {
+				if errors.Is(ferr, context.Canceled) {
+					// A cancel is not a failure: hand back what was copied so far.
+					res.Canceled = true
+					return res, nil
+				}
 				res.Canceled = op.Canceled()
 				return res, ferr
 			}
@@ -506,6 +514,10 @@ func (m *MailboxTransferService) copyCtx(parent context.Context, req MailboxCopy
 		copied, cerr := m.copyFolder(ctx, op, c, srcMbx, f, fid, imp, res, &done, &doneBytes, &total)
 		if cerr != nil {
 			if fatalCopyErr(cerr) {
+				if errors.Is(cerr, context.Canceled) {
+					res.Canceled = true
+					return res, nil
+				}
 				res.Canceled = op.Canceled()
 				return res, cerr
 			}
@@ -530,7 +542,7 @@ func (m *MailboxTransferService) copyCtx(parent context.Context, req MailboxCopy
 // target folder. Per-item failures land in res.Failed; only fatal errors
 // (cancel, 401/403) come back as an error.
 func (m *MailboxTransferService) copyFolder(ctx context.Context, op *ops.Operation, c *graphapi.Client, srcMbx string,
-	f MailboxFolderInfo, targetID string, imp *mailboxImporter, res *MailboxCopyResult, done *int, doneBytes *int64, total *int) (int, error) {
+	f MailboxFolderInfo, targetID string, imp *graphapi.ImportSession, res *MailboxCopyResult, done *int, doneBytes *int64, total *int) (int, error) {
 	items, err := graphapi.ListAllInto[mbxItem](ctx, c, mailboxPath(srcMbx)+"/folders/"+url.PathEscape(f.ID)+"/items",
 		url.Values{"$select": {"id,size"}, "$top": {itoa(itemsPageSize)}}, 0)
 	if err != nil {
@@ -576,7 +588,7 @@ func (m *MailboxTransferService) copyFolder(ctx context.Context, op *ops.Operati
 			case e.Data == "":
 				fail(e.ItemID, "export returned no data")
 			default:
-				if _, err := imp.importItem(ctx, targetID, e.Data); err != nil {
+				if _, err := importItem(ctx, imp, targetID, e.Data); err != nil {
 					if fatalCopyErr(err) {
 						return copied, err
 					}
@@ -600,8 +612,9 @@ func (m *MailboxTransferService) copyFolder(ctx context.Context, op *ops.Operati
 }
 
 // ensureFolder creates a folder of the class under parentID ("" = the mailbox
-// root) and returns its id. A re-run meets the folder from last time: Graph
-// rejects the duplicate name, and the existing folder is looked up and reused.
+// root) and returns its id. Under a fresh run root a name clash can only be a
+// retry of this very run (a transient error after the create went through), so
+// the existing folder is looked up and reused.
 func (m *MailboxTransferService) ensureFolder(ctx context.Context, c *graphapi.Client, mbx, parentID, name, class string) (string, error) {
 	path := mailboxPath(mbx) + "/folders"
 	if parentID != "" {
@@ -620,8 +633,7 @@ func (m *MailboxTransferService) ensureFolder(ctx context.Context, c *graphapi.C
 		}
 		return created.ID, nil
 	}
-	var ge *graphapi.GraphError
-	if !errors.As(err, &ge) || (ge.StatusCode != 409 && !strings.Contains(strings.ToLower(ge.Code+" "+ge.Message), "exist")) {
+	if !folderExistsErr(err) {
 		return "", err
 	}
 	existing, lerr := graphapi.ListAllInto[mbxFolder](ctx, c, path,
@@ -637,57 +649,49 @@ func (m *MailboxTransferService) ensureFolder(ctx context.Context, c *graphapi.C
 	return "", err
 }
 
-// mailboxImporter holds the target mailbox's import session. The importUrl is
-// pre-authorized (its token lives in the query string) and expires; it is
-// renewed ahead of expirationDateTime and once more on a 401.
-type mailboxImporter struct {
-	c       *graphapi.Client
-	mbx     string
-	url     string
-	expires time.Time
+// folderExistsErr reports Graph's "a folder with this name already exists"
+// rejection (409, or an ErrorFolderExists-style code/message).
+func folderExistsErr(err error) bool {
+	var ge *graphapi.GraphError
+	return errors.As(err, &ge) && (ge.StatusCode == 409 || strings.Contains(strings.ToLower(ge.Code+" "+ge.Message), "exist"))
 }
 
-func (i *mailboxImporter) ensure(ctx context.Context) error {
-	if i.url != "" && time.Until(i.expires) > importSessionMargin {
-		return nil
+// createUniqueRoot creates the run's root folder at the target mailbox's top
+// level and returns its id and final name. A name that already exists gets a
+// numeric suffix instead of being reused: every item is imported in create
+// mode, so re-filling last run's folder would duplicate everything that had
+// already made it across before the failure.
+func (m *MailboxTransferService) createUniqueRoot(ctx context.Context, c *graphapi.Client, mbx, name string) (string, string, error) {
+	const maxTries = 50
+	for n := 1; n <= maxTries; n++ {
+		candidate := name
+		if n > 1 {
+			candidate = fmt.Sprintf("%s (%d)", name, n)
+		}
+		var created struct {
+			ID string `json:"id"`
+		}
+		err := c.Post(ctx, mailboxPath(mbx)+"/folders", map[string]any{"displayName": candidate, "type": "IPF.Note"}, &created)
+		if err == nil {
+			if created.ID == "" {
+				return "", "", errors.New("graph: folder create returned no id")
+			}
+			return created.ID, candidate, nil
+		}
+		if !folderExistsErr(err) {
+			return "", "", err
+		}
 	}
-	var s struct {
-		ImportURL  string    `json:"importUrl"`
-		Expiration time.Time `json:"expirationDateTime"`
-	}
-	if err := i.c.Post(ctx, mailboxPath(i.mbx)+"/createImportSession", nil, &s); err != nil {
-		return err
-	}
-	if s.ImportURL == "" {
-		return errors.New("graph: createImportSession returned no importUrl")
-	}
-	i.url = s.ImportURL
-	i.expires = s.Expiration
-	if i.expires.IsZero() {
-		i.expires = time.Now().Add(45 * time.Minute)
-	}
-	return nil
+	return "", "", fmt.Errorf("no free folder name for %q after %d tries", name, maxTries)
 }
 
-// importItem uploads one exported stream into the target folder (Mode create:
-// a new item, never an update of an existing one).
-func (i *mailboxImporter) importItem(ctx context.Context, folderID, data string) (string, error) {
-	if err := i.ensure(ctx); err != nil {
-		return "", err
-	}
+// importItem uploads one exported stream into the target folder through the
+// mailbox's import session (Mode create: a new item, never an update).
+func importItem(ctx context.Context, imp *graphapi.ImportSession, folderID, data string) (string, error) {
 	body := map[string]any{"FolderId": folderID, "Mode": "create", "Data": data}
 	var out struct {
 		ItemID string `json:"itemId"`
 	}
-	err := i.c.PostPreauthorized(ctx, i.url, body, &out)
-	var ge *graphapi.GraphError
-	if errors.As(err, &ge) && ge.StatusCode == 401 {
-		// The session token died under us: take a fresh one and retry once.
-		i.url = ""
-		if rerr := i.ensure(ctx); rerr != nil {
-			return "", rerr
-		}
-		err = i.c.PostPreauthorized(ctx, i.url, body, &out)
-	}
+	err := imp.Post(ctx, body, &out)
 	return out.ItemID, err
 }

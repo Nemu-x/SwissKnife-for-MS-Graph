@@ -305,11 +305,11 @@ func (x *SnapshotService) List() ([]SnapshotMeta, error) {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
-		doc, err := x.load(strings.TrimSuffix(e.Name(), ".json"))
+		meta, err := x.loadMeta(strings.TrimSuffix(e.Name(), ".json"))
 		if err != nil {
 			continue // a corrupt file must not hide the healthy ones
 		}
-		out = append(out, doc.Meta)
+		out = append(out, meta)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].TakenAt.Equal(out[j].TakenAt) {
@@ -402,6 +402,29 @@ func (x *SnapshotService) path(id string) (string, error) {
 func validSnapshotID(id string) bool {
 	return id != "" && !strings.HasPrefix(id, ".") && !strings.Contains(id, "..") &&
 		!strings.ContainsAny(id, `/\:`) && filepath.Base(id) == id
+}
+
+// loadMeta decodes only the metadata block: listing must not materialise
+// every snapshot's sections (thousands of groups and apps each).
+func (x *SnapshotService) loadMeta(id string) (SnapshotMeta, error) {
+	path, err := x.path(id)
+	if err != nil {
+		return SnapshotMeta{}, err
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return SnapshotMeta{}, err
+	}
+	var doc struct {
+		Meta SnapshotMeta `json:"meta"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		return SnapshotMeta{}, fmt.Errorf("snapshot %s: %w", id, err)
+	}
+	if doc.Meta.ID == "" {
+		doc.Meta.ID = id
+	}
+	return doc.Meta, nil
 }
 
 func (x *SnapshotService) load(id string) (*snapshotFile, error) {

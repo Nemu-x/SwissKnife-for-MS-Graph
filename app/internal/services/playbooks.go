@@ -659,9 +659,11 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				Source: req.Upn, Target: req.MailboxToUser, Folder: req.MailboxFolder,
 				IncludeContacts: req.MailboxIncludeContacts, IncludeCalendar: req.MailboxIncludeCalendar,
 			}, nil)
-			if e != nil {
+			if res == nil {
 				return "", e
 			}
+			// A partial result (items copied before a fatal error) is still the
+			// operator's report: record it before deciding on the error.
 			r.setDetail("stepDetails.mailbox", map[string]any{
 				"copied": res.Copied, "folders": res.Folders, "failed": len(res.Failed),
 				"root": res.RootFolder, "canceled": res.Canceled,
@@ -669,6 +671,9 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			detail := itoa(res.Copied) + " item(s) in " + itoa(res.Folders) + " folder(s) → " + res.RootFolder
 			if res.Canceled {
 				detail += " · canceled"
+			}
+			if e != nil {
+				return detail, e
 			}
 			if len(res.Failed) > 0 {
 				return detail, fmt.Errorf("%d item(s) failed — see the mailbox copy log", len(res.Failed))

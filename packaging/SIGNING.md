@@ -5,8 +5,11 @@ Authenticode signing (Azure Trusted Signing) and macOS Developer ID signing + no
 step checks for its secrets and is skipped when they are missing, so releases keep shipping unsigned
 exactly as before until the accounts below exist. Nothing else has to change in the workflow.
 
-Independently of this, every release already ships `SHA256SUMS.txt` signed with minisign
-(`MINISIGN_SECRET_KEY` / `MINISIGN_PASSWORD`, public key in `minisign.pub`).
+Independently of this, releases ship `SHA256SUMS.txt`, and when `MINISIGN_SECRET_KEY` /
+`MINISIGN_PASSWORD` are set the workflow also publishes `SHA256SUMS.txt.minisig` (public key in
+`minisign.pub`). Only a release that carries the `.minisig` file has authenticated checksums —
+verification needs both that file and `minisign.pub`; a bare `SHA256SUMS.txt` proves integrity of
+the download, not who built it.
 
 ## Secrets the workflow looks for
 

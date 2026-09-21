@@ -1025,6 +1025,7 @@ const en = {
       passwordChange: 'a password change',
       block: 'BLOCK',
     },
+    openInPortal: 'Open in the portal',
     tileRecommendations: 'What Entra recommends fixing',
     hintRecommendations: "Microsoft's daily analysis of the tenant: what to fix, why, and how.",
     noteRecommendations: 'Needs DirectoryRecommendations.Read.All. Microsoft still serves this API from /beta, so shapes may change. Recommendations tied to Identity Protection or Identity Secure Score appear only on Entra ID P2 tenants — their absence is not a clean bill of health.',

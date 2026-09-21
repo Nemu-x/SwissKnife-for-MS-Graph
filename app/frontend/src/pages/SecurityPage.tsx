@@ -8,7 +8,6 @@ import { useStore } from '../lib/store'
 import { useConfirm } from '../lib/useConfirm'
 import { api, errMessage, type GraphObject } from '../lib/api'
 import type { services } from '../../wailsjs/go/models'
-import { EventsOn } from '../../wailsjs/runtime/runtime'
 
 type Tab = 'ca' | 'consents' | 'recommendations' | 'snapshot' | 'drift'
 type SnapshotMeta = services.SnapshotMeta
@@ -71,9 +70,16 @@ function DiffValue({ v }: { v: any }) {
 
 type ImpactedState = GraphObject[] | 'loading' | { error: string }
 
+// "section|done|total" as the store records it from snapshot:progress events.
+function parseSnapshotProgress(p?: string): { section: string; done: number; total: number } | null {
+  if (!p) return null
+  const [section, done, total] = p.split('|')
+  return section ? { section, done: Number(done) || 0, total: Number(total) || 0 } : null
+}
+
 export function SecurityPage() {
   const { t, i18n } = useTranslation()
-  const { toast, cache, setCache } = useStore()
+  const { toast, cache, setCache, jobs, patchJob } = useStore()
   const { askConfirm, confirmElement } = useConfirm()
   const [tab, setTab] = useState<Tab>('ca')
 
@@ -106,8 +112,11 @@ export function SecurityPage() {
   const [snaps, setSnaps] = useState<SnapshotMeta[] | null>(null)
   const [selSnap, setSelSnap] = useState<SnapshotMeta | null>(null)
   const [snapRaw, setSnapRaw] = useState<any | null>(null)
-  const [taking, setTaking] = useState(false)
-  const [progress, setProgress] = useState<{ section: string; done: number; total: number } | null>(null)
+  // The crawl runs as the "snapshot" store job: leaving the page keeps it
+  // going, and the result is waiting in the job when the operator comes back.
+  const snapJob = jobs.snapshot
+  const taking = !!snapJob?.running
+  const progress = parseSnapshotProgress(snapJob?.progress)
   const [diffA, setDiffA] = useState('')
   const [diffB, setDiffB] = useState('')
   const [diff, setDiff] = useState<SnapshotDiff | null>(null)
@@ -202,10 +211,10 @@ export function SecurityPage() {
     }
   }, [toast])
   useEffect(() => { loadSnaps() }, [loadSnaps])
-  useEffect(() => EventsOn('snapshot:progress', (d: any) => setProgress(d)), [])
 
   const takeSnapshot = () => {
-    setTab('snapshot'); setTaking(true); setProgress(null); setSnapRaw(null)
+    setTab('snapshot'); setSnapRaw(null)
+    patchJob('snapshot', { running: true, canceled: false, progress: '', log: [], result: null, error: null, startedAt: Date.now() })
     api.snapshot.take(snapName)
       .then(async (meta) => {
         const skipped = (meta.sections || []).filter((s) => s.skipped).length
@@ -213,14 +222,16 @@ export function SecurityPage() {
         setStatus((s) => ({ ...s, snapshot: { ok: skipped === 0, text, at: Date.now() } }))
         toast(skipped ? 'info' : 'ok', text)
         setSnapName('')
+        patchJob('snapshot', { result: meta })
         await loadSnaps()
         setSelSnap(meta)
       })
       .catch((e) => {
         toast('err', errMessage(e))
+        patchJob('snapshot', { error: errMessage(e) })
         setStatus((s) => ({ ...s, snapshot: { ok: false, text: errMessage(e), at: Date.now() } }))
       })
-      .finally(() => { setTaking(false); setProgress(null) })
+      .finally(() => patchJob('snapshot', { running: false, progress: '' }))
   }
 
   const deleteSnap = (m: SnapshotMeta) => {
@@ -444,7 +455,7 @@ export function SecurityPage() {
                   {x.resourceType && <span className="text-[var(--text-faint)]">{x.resourceType}</span>}
                   {x.status && <Badge kind={statusBadge(x.status)}>{t(`security.statusLabel.${x.status}`, { defaultValue: String(x.status) })}</Badge>}
                   {x.portalUrl && (
-                    <a href={x.portalUrl} target="_blank" rel="noreferrer" className="text-[var(--accent2)]" aria-label={x.displayName}><ExternalLink size={12} /></a>
+                    <a href={x.portalUrl} target="_blank" rel="noreferrer" className="text-[var(--accent2)]" aria-label={String(x.displayName || x.subjectId || t('security.openInPortal'))}><ExternalLink size={12} /></a>
                   )}
                 </div>
               ))}

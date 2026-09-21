@@ -7,8 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"strings"
+	"net/url"
 	"time"
 )
 
@@ -20,8 +21,14 @@ import (
 // and transport failures retry exactly like ordinary Graph calls, and error
 // bodies parse into *GraphError.
 func (c *Client) PostPreauthorized(ctx context.Context, u string, body, out any) error {
-	if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+	parsed, perr := url.Parse(u)
+	if perr != nil || !parsed.IsAbs() || (parsed.Scheme != "https" && parsed.Scheme != "http") {
 		return errors.New("graph: pre-authorized URL must be absolute")
+	}
+	// The token rides in the query string: plain HTTP would put it on the wire
+	// in clear. Loopback stays allowed for the httptest-based tests.
+	if parsed.Scheme == "http" && !isLoopback(parsed.Hostname()) {
+		return errors.New("graph: pre-authorized URL must use https")
 	}
 	var payload []byte
 	if body != nil {
@@ -69,4 +76,13 @@ func (c *Client) PostPreauthorized(ctx context.Context, u string, body, out any)
 		}
 	}
 	return nil
+}
+
+// isLoopback reports whether host is localhost or a loopback IP.
+func isLoopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

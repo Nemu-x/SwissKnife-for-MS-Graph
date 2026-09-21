@@ -54,7 +54,7 @@ A few of the tasks:
   the Entra error behind each row, over a window you choose.
 - **Conditional Access as facts.** Who a policy applies to, who is excluded,
   which apps, what it demands. JSON folded away.
-- **Message trace** (next release). "Where did the email go?" against the new
+- **Message trace** (new in 1.1.0). "Where did the email go?" against the new
   `/admin/exchange/tracing/messageTraces` endpoint, with the one-time
   Transport Data Platform service principal set up for you, because that
   part is not obvious from the docs.
