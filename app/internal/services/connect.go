@@ -64,54 +64,82 @@ type Status struct {
 	Org         json.RawMessage `json:"org,omitempty"`
 }
 
-// Connect establishes the session and runs a self-test GET /organization.
-func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
-	var (
-		provider *auth.TokenProvider
-		name     string
-		err      error
-	)
+// Credentials is a resolved set of connection parameters. The secret lives in
+// memory only for the lifetime of the connect call (ADR-002).
+type Credentials struct {
+	TenantID string
+	ClientID string
+	Secret   string
+	AuthMode string // client_secret | device_code
+	Name     string // profile name; empty for ad-hoc credentials
+}
 
-	mode := req.AuthMode
-	tenant, client, secret := req.TenantID, req.ClientID, req.Secret
-
-	if req.ProfileID != "" {
-		profiles, perr := c.store.List()
-		if perr != nil {
-			return nil, perr
-		}
-		var found *secrets.Profile
-		for i := range profiles {
-			if profiles[i].ID == req.ProfileID {
-				found = &profiles[i]
-				break
-			}
-		}
-		if found == nil {
-			return nil, errors.New("profile not found")
-		}
-		tenant, client, mode, name = found.TenantID, found.ClientID, found.AuthMode, found.Name
-		if mode == string(auth.ModeClientSecret) {
-			secret, err = c.store.Secret(found.ID)
-			if err != nil {
-				return nil, err
-			}
+// ResolveCredentials turns a ConnectRequest into concrete credentials. A
+// ProfileID loads the saved profile and, for app-only mode, its keychain
+// secret; otherwise the ad-hoc fields are used as given. Shared by the GUI
+// ConnectService and the headless CLI so both connect the same way.
+func ResolveCredentials(store *secrets.Store, req ConnectRequest) (Credentials, error) {
+	cr := Credentials{
+		TenantID: req.TenantID,
+		ClientID: req.ClientID,
+		Secret:   req.Secret,
+		AuthMode: req.AuthMode,
+	}
+	if req.ProfileID == "" {
+		return cr, nil
+	}
+	profiles, err := store.List()
+	if err != nil {
+		return Credentials{}, err
+	}
+	var found *secrets.Profile
+	for i := range profiles {
+		if profiles[i].ID == req.ProfileID {
+			found = &profiles[i]
+			break
 		}
 	}
+	if found == nil {
+		return Credentials{}, errors.New("profile not found")
+	}
+	cr.TenantID, cr.ClientID, cr.AuthMode, cr.Name = found.TenantID, found.ClientID, found.AuthMode, found.Name
+	if cr.AuthMode == string(auth.ModeClientSecret) {
+		cr.Secret, err = store.Secret(found.ID)
+		if err != nil {
+			return Credentials{}, err
+		}
+	}
+	return cr, nil
+}
 
-	switch mode {
+// NewTokenProvider builds the Graph token source for the credentials. prompt
+// is invoked for device-code sign-in (the caller decides how to show the code:
+// a Wails event in the GUI, stderr in the CLI); it is ignored for app-only.
+func NewTokenProvider(cr Credentials, prompt auth.DeviceCodePrompt) (*auth.TokenProvider, error) {
+	switch cr.AuthMode {
 	case string(auth.ModeDeviceCode):
-		provider, err = auth.NewDeviceCode(tenant, client, func(url, code, msg string) {
-			wrt.EventsEmit(c.s.Ctx(), "auth:deviceCode", map[string]string{
-				"url": url, "code": code, "message": msg,
-			})
-		})
+		return auth.NewDeviceCode(cr.TenantID, cr.ClientID, prompt)
 	default:
-		if secret == "" {
+		if cr.Secret == "" {
 			return nil, errors.New("client secret is required")
 		}
-		provider, err = auth.NewClientSecret(tenant, client, secret)
+		return auth.NewClientSecret(cr.TenantID, cr.ClientID, cr.Secret)
 	}
+}
+
+// Connect establishes the session and runs a self-test GET /organization.
+func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
+	cr, err := ResolveCredentials(c.store, req)
+	if err != nil {
+		return nil, err
+	}
+	tenant, client, mode, name := cr.TenantID, cr.ClientID, cr.AuthMode, cr.Name
+
+	provider, err := NewTokenProvider(cr, func(url, code, msg string) {
+		wrt.EventsEmit(c.s.Ctx(), "auth:deviceCode", map[string]string{
+			"url": url, "code": code, "message": msg,
+		})
+	})
 	if err != nil {
 		return nil, err
 	}

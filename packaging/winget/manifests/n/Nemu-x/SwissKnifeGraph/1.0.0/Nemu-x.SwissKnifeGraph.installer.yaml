@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
+# Installer manifest for the NSIS installers published on GitHub Releases.
+#
+# ProductCode for an NSIS installer is the name of its uninstall registry key
+# (HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\<ProductCode>).
+# Wails defines it as INFO_COMPANYNAME + INFO_PRODUCTNAME (see
+# app/build/windows/installer/wails_tools.nsh, UNINST_KEY_NAME), which with
+# app/wails.json gives "Nemu-xSwissKnife for MS Graph". winget uses it to map the
+# installed app back to this package for `winget upgrade` / `winget uninstall`.
+PackageIdentifier: Nemu-x.SwissKnifeGraph
+PackageVersion: 1.0.0
+InstallerType: nullsoft
+Scope: machine
+InstallModes:
+- interactive
+- silent
+- silentWithProgress
+InstallerSwitches:
+  Silent: /S
+  SilentWithProgress: /S
+UpgradeBehavior: install
+ProductCode: 'Nemu-xSwissKnife for MS Graph'
+AppsAndFeaturesEntries:
+- DisplayName: SwissKnife for MS Graph
+  Publisher: Nemu-x
+  DisplayVersion: 1.0.0
+  ProductCode: 'Nemu-xSwissKnife for MS Graph'
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/download/v1.0.0/SwissKnifeGraph-windows-amd64-installer.exe
+  # TODO: replace with the real hash of SwissKnifeGraph-windows-amd64-installer.exe from the release's SHA256SUMS.txt
+  InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+- Architecture: arm64
+  InstallerUrl: https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/download/v1.0.0/SwissKnifeGraph-windows-arm64-installer.exe
+  # TODO: replace with the real hash of SwissKnifeGraph-windows-arm64-installer.exe from the release's SHA256SUMS.txt
+  InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+ManifestType: installer
+ManifestVersion: 1.10.0

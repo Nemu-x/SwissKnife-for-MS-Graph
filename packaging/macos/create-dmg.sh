@@ -7,6 +7,9 @@
 #   out-dmg-path where to write the final compressed DMG
 #   volume-name  mounted volume title (default: "SwissKnife for MS Graph")
 #
+# Env: DMG_SIGNED=1 when the .app is Developer-ID signed and notarized — the
+# quarantine helper and the Gatekeeper notes are then left out.
+#
 # Optional: docs/dmg-background.png (repo root) is used as the window background
 # when present; otherwise the window is plain white.
 set -euo pipefail
@@ -14,6 +17,7 @@ set -euo pipefail
 BIN_DIR="${1:?usage: create-dmg.sh <bin-dir> <out-dmg-path> [volume-name]}"
 OUT_DMG="${2:?usage: create-dmg.sh <bin-dir> <out-dmg-path> [volume-name]}"
 VOLNAME="${3:-SwissKnife for MS Graph}"
+DMG_SIGNED="${DMG_SIGNED:-}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DMG_BG="$REPO_ROOT/docs/dmg-background.png"
@@ -28,7 +32,19 @@ mkdir -p "$STAGE"
 cp -R "$APP_PATH" "$STAGE/$APP_NAME"
 ln -s /Applications "$STAGE/Applications"
 
-cat > "$STAGE/README.txt" <<EOF
+if [ -n "$DMG_SIGNED" ]; then
+  # Signed + notarized: Gatekeeper opens the app without help.
+  cat > "$STAGE/README.txt" <<EOF
+SwissKnife for MS Graph — macOS install
+=======================================
+
+1) Drag "$APP_NAME" to "Applications".
+2) Launch it from Applications.
+
+This build is signed with an Apple Developer ID and notarized.
+EOF
+else
+  cat > "$STAGE/README.txt" <<EOF
 SwissKnife for MS Graph — macOS install
 =======================================
 
@@ -41,7 +57,7 @@ If macOS blocks startup (Gatekeeper quarantine), run:
 You can also double-click "Fix Quarantine.command" in this DMG after drag&drop.
 EOF
 
-cat > "$STAGE/Fix Quarantine.command" <<EOF
+  cat > "$STAGE/Fix Quarantine.command" <<EOF
 #!/bin/bash
 set -euo pipefail
 APP="/Applications/$APP_NAME"
@@ -52,7 +68,8 @@ fi
 sudo xattr -r -d com.apple.quarantine "\$APP" || true
 osascript -e 'display dialog "Done. You can now open SwissKnife for MS Graph." buttons {"OK"} default button "OK"'
 EOF
-chmod 0755 "$STAGE/Fix Quarantine.command"
+  chmod 0755 "$STAGE/Fix Quarantine.command"
+fi
 
 HAS_BG=false
 if [ -f "$DMG_BG" ]; then

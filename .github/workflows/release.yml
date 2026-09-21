@@ -6,6 +6,12 @@
 # (workflow_dispatch builds artifacts without publishing a release).
 #
 # The Wails project lives in app/. Binary output name is SwissKnifeGraph (wails.json).
+#
+# Optional, secret-gated extras (all skipped when the secret is absent, see
+# packaging/SIGNING.md and packaging/winget/README.md):
+#   - Windows Authenticode signing via Azure Trusted Signing (AZURE_TRUSTED_SIGNING_*)
+#   - macOS Developer ID signing + notarization (MACOS_* / APPLE_*)
+#   - winget manifest PR after publish (WINGET_TOKEN)
 
 name: Release
 
@@ -61,6 +67,11 @@ jobs:
     runs-on: windows-latest
     # ARM64 is best-effort: a failure there must not block the whole release.
     continue-on-error: ${{ matrix.arch == 'arm64' }}
+    # Authenticode signing is optional: the signing steps below run only when
+    # the AZURE_TRUSTED_SIGNING_* secrets exist (CLIENT_SECRET is the switch);
+    # otherwise the artifacts are unsigned exactly as before. The secrets are
+    # handed only to the steps that sign, never to build/setup steps.
+    # See packaging/SIGNING.md.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -87,6 +98,75 @@ jobs:
       - name: Build (windows/${{ matrix.arch }} + NSIS installer)
         working-directory: ${{ env.APP_DIR }}
         run: wails build -platform windows/${{ matrix.arch }} -nsis -ldflags "-X main.version=${{ github.ref_name }}"
+      # --- Optional code signing (Azure Trusted Signing / "Artifact Signing") ---
+      # Order matters: the exe must be signed BEFORE it is packed into the NSIS
+      # installer, and the installer is signed AFTER makensis. `wails build -nsis`
+      # above already produced an installer with the unsigned exe (and dropped the
+      # WebView2 bootstrapper that project.nsi needs), so we sign the exe, re-run
+      # makensis exactly as Wails does, then sign the resulting installer.
+      - name: Check signing secrets present
+        id: sign-gate
+        shell: bash
+        env:
+          AZURE_TRUSTED_SIGNING_CLIENT_SECRET: ${{ secrets.AZURE_TRUSTED_SIGNING_CLIENT_SECRET }}
+        run: |
+          if [ -n "$AZURE_TRUSTED_SIGNING_CLIENT_SECRET" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "AZURE_TRUSTED_SIGNING_* secrets not set — artifacts stay unsigned."
+          fi
+      - name: Sign SwissKnifeGraph.exe (Azure Trusted Signing)
+        if: steps.sign-gate.outputs.enabled == 'true'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TRUSTED_SIGNING_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_TRUSTED_SIGNING_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_TRUSTED_SIGNING_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\${{ env.APP_DIR }}\build\bin\SwissKnifeGraph.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: SwissKnife for MS Graph
+          description-url: https://github.com/Nemu-x/SwissKnife-for-MS-Graph
+      - name: Rebuild NSIS installer with the signed exe
+        if: steps.sign-gate.outputs.enabled == 'true'
+        shell: pwsh
+        working-directory: ${{ env.APP_DIR }}/build/windows/installer
+        run: |
+          $exe = Join-Path $env:GITHUB_WORKSPACE "${{ env.APP_DIR }}\build\bin\SwissKnifeGraph.exe"
+          $define = "-DARG_WAILS_" + "${{ matrix.arch }}".ToUpper() + "_BINARY=$exe"
+          makensis $define project.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
+      - name: Sign the NSIS installer (Azure Trusted Signing)
+        if: steps.sign-gate.outputs.enabled == 'true'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TRUSTED_SIGNING_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_TRUSTED_SIGNING_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_TRUSTED_SIGNING_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\${{ env.APP_DIR }}\build\bin\SwissKnifeGraph-${{ matrix.arch }}-installer.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: SwissKnife for MS Graph Installer
+          description-url: https://github.com/Nemu-x/SwissKnife-for-MS-Graph
+      - name: Verify Authenticode signatures
+        if: steps.sign-gate.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          foreach ($f in @("${{ env.APP_DIR }}/build/bin/SwissKnifeGraph.exe",
+                           "${{ env.APP_DIR }}/build/bin/SwissKnifeGraph-${{ matrix.arch }}-installer.exe")) {
+            $sig = Get-AuthenticodeSignature $f
+            if ($sig.Status -ne 'Valid') { throw "$f is not validly signed: $($sig.Status) — $($sig.StatusMessage)" }
+            Write-Host "$f signed by $($sig.SignerCertificate.Subject)"
+          }
       - name: Stage artifacts
         shell: pwsh
         run: |
@@ -116,6 +196,11 @@ jobs:
             runner: macos-15-intel
             platform_arch: amd64
     runs-on: ${{ matrix.runner }}
+    # Developer ID signing + notarization is optional: every step below is gated
+    # on the MACOS_* / APPLE_* secrets (the .p12 switches signing on, the APPLE_*
+    # trio adds notarization); otherwise the DMG ships unsigned with the
+    # quarantine helper, exactly as before. Secrets are scoped to the steps that
+    # use them. See packaging/SIGNING.md.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -130,10 +215,99 @@ jobs:
       - name: Build (darwin/${{ matrix.platform_arch || matrix.arch }})
         working-directory: ${{ env.APP_DIR }}
         run: wails build -platform darwin/${{ matrix.platform_arch || matrix.arch }} -ldflags "-X main.version=${{ github.ref_name }}"
+      # --- Optional Developer ID signing + notarization (gated on secrets) ---
+      - name: Check signing secrets present
+        id: sign-gate
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          sign=false
+          notarize=false
+          if [ -n "$MACOS_CERTIFICATE_P12" ]; then
+            sign=true
+            # notarize.sh needs all three; a partial trio would fail the job.
+            if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_PASSWORD" ]; then
+              notarize=true
+            else
+              echo "APPLE_ID / APPLE_TEAM_ID / APPLE_APP_PASSWORD incomplete — signing only, no notarization."
+            fi
+          else
+            echo "MACOS_CERTIFICATE_P12 not set — DMG ships unsigned."
+          fi
+          echo "sign=$sign" >> "$GITHUB_OUTPUT"
+          echo "notarize=$notarize" >> "$GITHUB_OUTPUT"
+      - name: Import Developer ID certificate into a temporary keychain
+        if: steps.sign-gate.outputs.sign == 'true'
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PW="$(uuidgen)"
+          CERT="$RUNNER_TEMP/developer-id.p12"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security import "$CERT" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PW" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$CERT"
+          # Resolve the identity from the certificate when MACOS_SIGN_IDENTITY is not set.
+          if [ -z "$MACOS_SIGN_IDENTITY" ]; then
+            MACOS_SIGN_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')"
+            [ -n "$MACOS_SIGN_IDENTITY" ] || { echo "::error::No 'Developer ID Application' identity found in MACOS_CERTIFICATE_P12"; exit 1; }
+          fi
+          # The later codesign steps read the identity from GITHUB_ENV (the
+          # certificate name is not a secret; the .p12 and passwords stay scoped).
+          echo "MACOS_SIGN_IDENTITY=$MACOS_SIGN_IDENTITY" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          echo "Signing as: $MACOS_SIGN_IDENTITY"
+      - name: Sign SwissKnifeGraph.app (Developer ID, hardened runtime)
+        if: steps.sign-gate.outputs.sign == 'true'
+        run: |
+          APP="$(find "${{ env.APP_DIR }}/build/bin" -maxdepth 1 -name '*.app' | head -1)"
+          [ -n "$APP" ] || { echo "::error::No .app found in ${{ env.APP_DIR }}/build/bin"; exit 1; }
+          codesign --deep --force --options runtime --timestamp --keychain "$SIGNING_KEYCHAIN" --sign "$MACOS_SIGN_IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo "APP_PATH=$APP" >> "$GITHUB_ENV"
+      - name: Notarize + staple SwissKnifeGraph.app
+        if: steps.sign-gate.outputs.notarize == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          ZIP="$RUNNER_TEMP/SwissKnifeGraph-app.zip"
+          ditto -c -k --keepParent "$APP_PATH" "$ZIP"
+          bash packaging/macos/notarize.sh "$ZIP" "$APP_PATH"
+          spctl --assess --type execute --verbose=2 "$APP_PATH"
       - name: Package DMG (drag-to-Applications + install notes)
+        env:
+          # A signed + notarized app needs no quarantine helper in the DMG.
+          DMG_SIGNED: ${{ steps.sign-gate.outputs.notarize == 'true' && '1' || '' }}
         run: |
           mkdir -p dist
           bash packaging/macos/create-dmg.sh "${{ env.APP_DIR }}/build/bin" "dist/SwissKnifeGraph-macos-${{ matrix.arch }}.dmg"
+      - name: Sign (and notarize + staple) the DMG
+        if: steps.sign-gate.outputs.sign == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          NOTARIZE: ${{ steps.sign-gate.outputs.notarize }}
+        run: |
+          DMG="dist/SwissKnifeGraph-macos-${{ matrix.arch }}.dmg"
+          codesign --force --timestamp --keychain "$SIGNING_KEYCHAIN" --sign "$MACOS_SIGN_IDENTITY" "$DMG"
+          if [ "$NOTARIZE" = 'true' ]; then
+            bash packaging/macos/notarize.sh "$DMG"
+          else
+            echo "APPLE_* secrets incomplete — DMG signed but NOT notarized."
+          fi
       - name: Sanity-check DMG
         run: |
           DMG="dist/SwissKnifeGraph-macos-${{ matrix.arch }}.dmg"
@@ -144,6 +318,9 @@ jobs:
         with:
           name: macos-${{ matrix.arch }}
           path: dist/*.dmg
+      - name: Remove temporary signing keychain
+        if: always() && env.SIGNING_KEYCHAIN != ''
+        run: security delete-keychain "$SIGNING_KEYCHAIN" || true
 
   linux:
     needs: version-check
@@ -280,3 +457,34 @@ jobs:
           files: dist/*
           generate_release_notes: true
           draft: false
+
+  # Opens the winget-pkgs update PR (from the Nemu-x/winget-pkgs fork) for the
+  # freshly published release. Gated on WINGET_TOKEN: secrets are not available
+  # in a job-level `if`, so a first step checks the token and the publish step
+  # keys off its output. The releaser only updates packages that already exist —
+  # the first version is submitted by hand, see packaging/winget/README.md.
+  winget:
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check WINGET_TOKEN present
+        id: gate
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if [ -n "$WINGET_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "WINGET_TOKEN not set — skipping winget publish."
+          fi
+      - name: Publish to winget (Nemu-x.SwissKnifeGraph)
+        if: steps.gate.outputs.enabled == 'true'
+        uses: vedantmgoyal9/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # v2
+        with:
+          identifier: Nemu-x.SwissKnifeGraph
+          # Only the NSIS installers — the default regex would also pick up the portable exe.
+          installers-regex: 'SwissKnifeGraph-windows-(amd64|arm64)-installer\.exe$'
+          max-versions-to-keep: 5
+          token: ${{ secrets.WINGET_TOKEN }}

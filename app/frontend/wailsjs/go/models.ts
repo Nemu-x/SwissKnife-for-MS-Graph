@@ -488,7 +488,147 @@ export namespace services {
 	        this.daysLeft = source["daysLeft"];
 	    }
 	}
+	export class FieldChange {
+	    path: string;
+	    before: any;
+	    after: any;
 	
+	    static createFrom(source: any = {}) {
+	        return new FieldChange(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.before = source["before"];
+	        this.after = source["after"];
+	    }
+	}
+	
+	export class MailboxCopyRequest {
+	    source: string;
+	    target: string;
+	    folder: string;
+	    includeContacts: boolean;
+	    includeCalendar: boolean;
+	    confirm: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MailboxCopyRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.source = source["source"];
+	        this.target = source["target"];
+	        this.folder = source["folder"];
+	        this.includeContacts = source["includeContacts"];
+	        this.includeCalendar = source["includeCalendar"];
+	        this.confirm = source["confirm"];
+	    }
+	}
+	export class MailboxCopyResult {
+	    rootFolder: string;
+	    folders: number;
+	    totalItems: number;
+	    copied: number;
+	    failed: Record<string, string>;
+	    canceled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MailboxCopyResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.rootFolder = source["rootFolder"];
+	        this.folders = source["folders"];
+	        this.totalItems = source["totalItems"];
+	        this.copied = source["copied"];
+	        this.failed = source["failed"];
+	        this.canceled = source["canceled"];
+	    }
+	}
+	export class MailboxFolderInfo {
+	    id: string;
+	    name: string;
+	    parent: string;
+	    path: string;
+	    type: string;
+	    wellKnownName?: string;
+	    kind: string;
+	    items: number;
+	    system: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MailboxFolderInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.parent = source["parent"];
+	        this.path = source["path"];
+	        this.type = source["type"];
+	        this.wellKnownName = source["wellKnownName"];
+	        this.kind = source["kind"];
+	        this.items = source["items"];
+	        this.system = source["system"];
+	    }
+	}
+	export class MailboxPreview {
+	    mailboxId: string;
+	    displayName: string;
+	    folders: MailboxFolderInfo[];
+	    mailFolders: number;
+	    mailItems: number;
+	    contactFolders: number;
+	    contactItems: number;
+	    calendarFolders: number;
+	    calendarItems: number;
+	    otherFolders: number;
+	    otherItems: number;
+	    systemFolders: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new MailboxPreview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mailboxId = source["mailboxId"];
+	        this.displayName = source["displayName"];
+	        this.folders = this.convertValues(source["folders"], MailboxFolderInfo);
+	        this.mailFolders = source["mailFolders"];
+	        this.mailItems = source["mailItems"];
+	        this.contactFolders = source["contactFolders"];
+	        this.contactItems = source["contactItems"];
+	        this.calendarFolders = source["calendarFolders"];
+	        this.calendarItems = source["calendarItems"];
+	        this.otherFolders = source["otherFolders"];
+	        this.otherItems = source["otherItems"];
+	        this.systemFolders = source["systemFolders"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class MirrorRequest {
 	    source: string;
 	    target: string;
@@ -521,6 +661,42 @@ export namespace services {
 	        this.notifyPlaybooks = source["notifyPlaybooks"];
 	    }
 	}
+	export class ObjectChange {
+	    key: string;
+	    label: string;
+	    changes?: FieldChange[];
+	    object?: Record<string, any>;
+	
+	    static createFrom(source: any = {}) {
+	        return new ObjectChange(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.label = source["label"];
+	        this.changes = this.convertValues(source["changes"], FieldChange);
+	        this.object = source["object"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class OffboardRequest {
 	    upn: string;
 	    confirm: string;
@@ -536,6 +712,10 @@ export namespace services {
 	    backupToUser: string;
 	    backupFolder: string;
 	    backupChats: boolean;
+	    mailboxToUser: string;
+	    mailboxFolder: string;
+	    mailboxIncludeContacts: boolean;
+	    mailboxIncludeCalendar: boolean;
 	    intuneAction: string;
 	    removeMfaMethods: boolean;
 	    deleteRegisteredDevices: boolean;
@@ -563,6 +743,10 @@ export namespace services {
 	        this.backupToUser = source["backupToUser"];
 	        this.backupFolder = source["backupFolder"];
 	        this.backupChats = source["backupChats"];
+	        this.mailboxToUser = source["mailboxToUser"];
+	        this.mailboxFolder = source["mailboxFolder"];
+	        this.mailboxIncludeContacts = source["mailboxIncludeContacts"];
+	        this.mailboxIncludeCalendar = source["mailboxIncludeCalendar"];
 	        this.intuneAction = source["intuneAction"];
 	        this.removeMfaMethods = source["removeMfaMethods"];
 	        this.deleteRegisteredDevices = source["deleteRegisteredDevices"];
@@ -679,6 +863,48 @@ export namespace services {
 		    return a;
 		}
 	}
+	export class SectionDiff {
+	    name: string;
+	    skipped?: boolean;
+	    note?: string;
+	    added: ObjectChange[];
+	    removed: ObjectChange[];
+	    changed: ObjectChange[];
+	    unchanged: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SectionDiff(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.skipped = source["skipped"];
+	        this.note = source["note"];
+	        this.added = this.convertValues(source["added"], ObjectChange);
+	        this.removed = this.convertValues(source["removed"], ObjectChange);
+	        this.changed = this.convertValues(source["changed"], ObjectChange);
+	        this.unchanged = source["unchanged"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class SignInQuery {
 	    upn: string;
 	    days: number;
@@ -715,6 +941,105 @@ export namespace services {
 	        this.used = source["used"];
 	    }
 	}
+	export class SnapshotSection {
+	    name: string;
+	    count: number;
+	    skipped?: boolean;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SnapshotSection(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.count = source["count"];
+	        this.skipped = source["skipped"];
+	        this.error = source["error"];
+	    }
+	}
+	export class SnapshotMeta {
+	    id: string;
+	    name: string;
+	    // Go type: time
+	    takenAt: any;
+	    tenant?: string;
+	    sections: SnapshotSection[];
+	
+	    static createFrom(source: any = {}) {
+	        return new SnapshotMeta(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.takenAt = this.convertValues(source["takenAt"], null);
+	        this.tenant = source["tenant"];
+	        this.sections = this.convertValues(source["sections"], SnapshotSection);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class SnapshotDiff {
+	    a: SnapshotMeta;
+	    b: SnapshotMeta;
+	    sections: SectionDiff[];
+	    added: number;
+	    removed: number;
+	    changed: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SnapshotDiff(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.a = this.convertValues(source["a"], SnapshotMeta);
+	        this.b = this.convertValues(source["b"], SnapshotMeta);
+	        this.sections = this.convertValues(source["sections"], SectionDiff);
+	        this.added = source["added"];
+	        this.removed = source["removed"];
+	        this.changed = source["changed"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
 	export class Status {
 	    connected: boolean;
 	    profileName: string;
@@ -734,6 +1059,24 @@ export namespace services {
 	    }
 	}
 	
+	export class TraceQuery {
+	    sender: string;
+	    recipient: string;
+	    days: number;
+	    top: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new TraceQuery(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sender = source["sender"];
+	        this.recipient = source["recipient"];
+	        this.days = source["days"];
+	        this.top = source["top"];
+	    }
+	}
 	export class TrimResult {
 	    ref: string;
 	    removed: number;

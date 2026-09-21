@@ -291,7 +291,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         jobLog(key, `${d.ok ? '✓' : '✗'} ${d.name}${d.detail ? ' — ' + d.detail : ''}${d.error ? ' — ' + d.error : ''}`)
       }
     })
-    return () => { offOS(); offP(); offF(); offM(); offC(); offCL(); offO(); offPB() }
+    // Tenant configuration snapshot: section-by-section progress, encoded as
+    // "section|done|total" (the page localises the section name).
+    const offSN = EventsOn('snapshot:progress', (d: any) => {
+      patchJob('snapshot', { progress: `${d?.section ?? ''}|${d?.done ?? 0}|${d?.total ?? 0}` })
+    })
+    return () => { offOS(); offP(); offF(); offM(); offC(); offCL(); offO(); offPB(); offSN() }
   }, [patchJob, jobLog])
 
   const startTransfer = useCallback(async (p: TransferParams) => {

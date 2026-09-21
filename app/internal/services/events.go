@@ -12,6 +12,11 @@ import (
 // it to capture emissions; production leaves it nil.
 var eventSink func(name string, data map[string]any)
 
+// SetEventSink installs a process-wide receiver for map-shaped events, used by
+// headless front ends (the CLI) to stream progress that the GUI gets over the
+// Wails bus. nil restores the default (Wails bus when attached, else dropped).
+func SetEventSink(fn func(name string, data map[string]any)) { eventSink = fn }
+
 // emitEvent forwards to the Wails event bus. Headless runs (unit tests, CLI)
 // carry a bare context without the Wails frontend attached; the runtime would
 // log.Fatal in that case, so we only emit when the event bus is present.
