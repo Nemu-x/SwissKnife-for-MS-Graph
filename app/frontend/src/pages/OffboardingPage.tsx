@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, Copy, HardDriveDownload, Users } from 'lucide-react'
+import { Search, Copy, HardDriveDownload, Users, Mail } from 'lucide-react'
 import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
 import { Field, Input, Textarea, Button, Badge, ErrorNote, Spinner } from '../components/ui'
 import { JobConsole } from '../components/JobConsole'
+import { MailboxCopyFields, MailboxCopyNote, type MailboxCopyOptions } from '../components/MailboxCopyFields'
+import { useMailboxCopy } from '../lib/mailboxCopy'
 import { EntityPicker } from '../components/EntityPicker'
 import { loadUsers } from '../lib/pickers'
 import { useStore } from '../lib/store'
@@ -34,6 +36,13 @@ export function OffboardingPage() {
   const job = jobs.transfer
   const copying = !!job?.running
   const report = (job?.result as services.CopyResult | null) ?? null
+
+  // The mailbox copy is its own store job ("mailbox"), independent of the drive copy.
+  const mailboxCopy = useMailboxCopy()
+  const [mbx, setMbx] = useState<MailboxCopyOptions>({ target: '', folder: '', includeContacts: false, includeCalendar: false })
+  const mbxRunning = !!mailboxCopy.job?.running
+  const mbxReport = (mailboxCopy.job?.result as services.MailboxCopyResult | null) ?? null
+  const mbxHasOutput = !!mailboxCopy.job && (mailboxCopy.job.log.length > 0 || mailboxCopy.job.running || !!mbxReport)
 
   const runPreview = async () => {
     setPreviewing(true); setError(null); setPreview(null)
@@ -126,6 +135,21 @@ export function OffboardingPage() {
       ),
     },
     {
+      id: 'mailbox', label: t('mailboxTransfer.tileCopy'), hint: t('mailboxTransfer.hintCopy'),
+      icon: <Mail size={16} />, variant: 'primary', write: true,
+      note: <MailboxCopyNote />,
+      panel: (
+        <TaskForm>
+          {sourceField}
+          <MailboxCopyFields source={source} value={mbx} onChange={setMbx} disabled={mbxRunning} />
+          <Button variant="primary" disabled={readOnly || !source || !mbx.target || mbxRunning}
+            onClick={() => mailboxCopy.start({ source, ...mbx })}>
+            {mbxRunning ? <Spinner /> : <Mail size={15} />} {mbxRunning ? t('mailboxTransfer.running') : t('mailboxTransfer.start')}
+          </Button>
+        </TaskForm>
+      ),
+    },
+    {
       id: 'pool', label: t('offboarding.tilePool'), hint: t('offboarding.hintPool'),
       icon: <Users size={16} />,
       note: <p>{t('offboarding.notePool')}</p>,
@@ -163,6 +187,21 @@ export function OffboardingPage() {
           <ReportList title={t('offboarding.failed')} items={Object.entries(report.failed || {})} danger />
         </div>
       )}
+
+      {mailboxCopy.job && (mailboxCopy.job.log.length > 0 || mailboxCopy.job.running) && (
+        <JobConsole job={mailboxCopy.job} onCancel={mailboxCopy.cancel} onClear={mailboxCopy.clear} />
+      )}
+      {mbxReport && (
+        <div className="flex flex-col gap-4 rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
+          <div className="flex flex-wrap gap-2">
+            <Badge kind="ok">{t('mailboxTransfer.reportCopied')}: {mbxReport.copied} / {mbxReport.totalItems}</Badge>
+            <Badge kind="danger">{t('offboarding.failed')}: {Object.keys(mbxReport.failed || {}).length}</Badge>
+            {mbxReport.canceled && <Badge kind="warn">{t('common.canceled')}</Badge>}
+          </div>
+          <p className="text-xs text-[var(--text-dim)]">{t('mailboxTransfer.reportRoot', { root: mbxReport.rootFolder, folders: mbxReport.folders })}</p>
+          <ReportList title={t('offboarding.failed')} items={Object.entries(mbxReport.failed || {})} danger />
+        </div>
+      )}
     </div>
   )
 
@@ -175,7 +214,7 @@ export function OffboardingPage() {
       status={status}
       busy={copying || previewing}
       busyLabel={copying ? job?.progress || t('offboarding.running') : t('offboarding.preview')}
-      hasResult={!!job && (job.log.length > 0 || job.running || !!report)}
+      hasResult={(!!job && (job.log.length > 0 || job.running || !!report)) || mbxHasOutput}
       onClearResult={() => clearJob('transfer')}
       result={resultPane}
     />

@@ -6,6 +6,7 @@ import { Button, Field, Input, Spinner, ErrorNote, Badge, Select } from '../comp
 import { MultiSelect, type Option } from '../components/MultiSelect'
 import { EntityPicker } from '../components/EntityPicker'
 import { UpnInput } from '../components/UpnInput'
+import { MailboxCopyFields } from '../components/MailboxCopyFields'
 import { useConfirm } from '../lib/useConfirm'
 import { useStore, type PlaybookLiveStep } from '../lib/store'
 import { api, errMessage, type GraphObject } from '../lib/api'
@@ -81,6 +82,7 @@ export function PlaybooksPage() {
     removeAllLicenses: true, backupToUser: remembered('backupToUser'), backupFolder: remembered('backupFolder'),
     backupChats: false, intuneAction: '', removeMfaMethods: false, deleteRegisteredDevices: false,
     transferOwnershipTo: remembered('transferOwnershipTo'), cancelFutureEvents: false, delete: false,
+    mailboxToUser: remembered('mailboxToUser'), mailboxFolder: '', mailboxIncludeContacts: false, mailboxIncludeCalendar: false,
   })
 
   type OffOptions = Omit<typeof off, 'upn'>
@@ -91,7 +93,7 @@ export function PlaybooksPage() {
     },
     __phase2: {
       block: false, revokeSessions: false, oof: false, hideFromGal: false, removeFromGroups: false,
-      removeAllLicenses: true, delete: false, forwardTo: '', calendarTo: '', backupToUser: '', backupFolder: '',
+      removeAllLicenses: true, delete: false, forwardTo: '', calendarTo: '', backupToUser: '', backupFolder: '', mailboxToUser: '',
     },
   }
   const [presets, setPresets] = useState(() => loadStore<Partial<OffOptions>>('playbook.presets'))
@@ -201,7 +203,7 @@ export function PlaybooksPage() {
     startPlaybook('offboard', off.upn, () => api.playbooks.offboard({ ...off, confirm })).then((r) => {
       if (r) setStatus((s) => ({ ...s, offboard: { ok: !!r.ok, text: off.upn, at: Date.now() } }))
       if (!r || r.canceled) return // failed or canceled run: keep the previous defaults
-      for (const k of ['forwardTo', 'calendarTo', 'backupToUser', 'backupFolder', 'transferOwnershipTo'] as const) {
+      for (const k of ['forwardTo', 'calendarTo', 'backupToUser', 'backupFolder', 'transferOwnershipTo', 'mailboxToUser'] as const) {
         if (off[k]) localStorage.setItem('defaults.offboard.' + k, off[k])
       }
     })
@@ -368,6 +370,13 @@ export function PlaybooksPage() {
               onChange={(e) => setOff({ ...off, backupChats: e.target.checked })} />
             {t('playbooks.backupChats')}{!off.backupToUser ? ` — ${t('playbooks.backupChatsNeedsTarget')}` : ''}
           </label>
+
+          <div className="mt-1 border-t border-[var(--border)] pt-2 text-xs font-medium text-[var(--text-dim)]">{t('mailboxTransfer.playbookSection')}</div>
+          <MailboxCopyFields source={off.upn}
+            value={{ target: off.mailboxToUser, folder: off.mailboxFolder, includeContacts: off.mailboxIncludeContacts, includeCalendar: off.mailboxIncludeCalendar }}
+            onChange={(v) => setOff({ ...off, mailboxToUser: v.target, mailboxFolder: v.folder, mailboxIncludeContacts: v.includeContacts, mailboxIncludeCalendar: v.includeCalendar })}
+            disabled={busy} />
+          {off.mailboxToUser && <p className="text-xs text-[var(--warn)]">{t('mailboxTransfer.permissionNote')}</p>}
 
           <Button variant="danger" disabled={readOnly || busy || !off.upn} onClick={() => askConfirm(off.upn, (c) => runOffboard(c)())}>
             {busy ? <Spinner /> : <Play size={15} />} {t('playbooks.run')}

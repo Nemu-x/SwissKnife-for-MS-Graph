@@ -58,6 +58,21 @@ Authentication is **app-only (client credentials)** or **delegated (device code)
 - **Raw Graph** — GET/POST/PATCH/PUT/DELETE playground with history & favorites
 - **Everywhere** — searchable pickers instead of raw IDs, a per-page Actions / Both / Data view switch, results as master-detail / JSON / tree, CSV export, live progress on every long operation, dark & light themes, custom accent color, English + Russian, read-only mode, in-app update check
 
+## Command line
+
+The same binary runs headless when started with arguments — same Go services, same
+audit log and journal, no window. Handy for scripts and scheduled tasks:
+
+```powershell
+SwissKnifeGraph get '/users?$select=displayName,userPrincipalName' --all --json | ConvertFrom-Json
+SwissKnifeGraph signins alice@contoso.com --failed --days 3
+SwissKnifeGraph offboard alice@contoso.com --confirm alice@contoso.com --block --revoke --hide-gal
+```
+
+Connects with a profile saved in the GUI (`--profile <name>`, optional when there is
+only one); exit codes 0 / 1 / 2 = ok / failed / usage. See the
+[Command line](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki/CLI) wiki page.
+
 ## Screenshots
 
 <table>
@@ -94,6 +109,9 @@ Latest release — direct links (always point to the newest version):
 | Linux x64 | [AppImage](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.AppImage) · [deb](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.deb) · [rpm](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.rpm) · [tar.gz](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.tar.gz) |
 | Linux ARM64 | [AppImage](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.AppImage) · [deb](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.deb) · [rpm](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.rpm) · [tar.gz](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.tar.gz) |
 | Arch (AUR) | `yay -S swissknife-graph-bin` |
+| Windows (winget) | `winget install Nemu-x.SwissKnifeGraph` *(pending first submission)* |
+| Windows (Scoop) | `scoop bucket add nemu-x https://github.com/Nemu-x/scoop-bucket` · `scoop install swissknife-graph` *(pending first submission)* |
+| macOS (Homebrew) | `brew install --cask Nemu-x/tap/swissknife-graph` *(pending first submission)* |
 
 Verify downloads against [`SHA256SUMS.txt`](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SHA256SUMS.txt), signed with minisign ([`.minisig`](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SHA256SUMS.txt.minisig), public key in [`minisign.pub`](minisign.pub)):
 
@@ -101,6 +119,8 @@ Verify downloads against [`SHA256SUMS.txt`](https://github.com/Nemu-x/SwissKnife
 minisign -Vm SHA256SUMS.txt -P $(cat minisign.pub)
 sha256sum -c SHA256SUMS.txt
 ```
+
+**Verified builds.** The checksum file above is the authoritative way to verify a download. Windows executables and macOS apps are **not yet code-signed**, so SmartScreen shows *Unknown publisher* (choose *More info → Run anyway*) and macOS may block the first launch. The release pipeline is already wired for Azure Trusted Signing (Windows) and Apple Developer ID + notarization (macOS) and switches on automatically once the certificates exist — see [`packaging/SIGNING.md`](packaging/SIGNING.md).
 
 macOS is unsigned for now — the DMG ships install notes and a one-click "Fix Quarantine.command"; manually: `sudo xattr -r -d com.apple.quarantine "/Applications/SwissKnifeGraph.app"`. Linux deb/rpm/tar.gz need `webkit2gtk-4.1` + `gtk3` from your distro; the AppImage still needs those system libraries present. Windows ARM64 builds are best-effort.
 

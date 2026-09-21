@@ -21,6 +21,7 @@ type Kind string
 
 const (
 	KindTransfer Kind = "transfer"
+	KindMailbox  Kind = "mailbox" // mailbox copy through the import/export APIs
 	KindPlaybook Kind = "playbook"
 	KindCleanup  Kind = "cleanup"
 	KindMirror   Kind = "mirror"

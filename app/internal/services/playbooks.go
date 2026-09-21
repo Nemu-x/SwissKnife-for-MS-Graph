@@ -59,6 +59,7 @@ var stepKeys = map[string]string{
 	"Scan OneDrive":             "steps.scanOneDrive",
 	"Backup OneDrive":           "steps.backupOneDrive",
 	"Backup Teams chats":        "steps.backupChats",
+	"Copy mailbox":              "steps.copyMailbox",
 	"Remove from groups":        "steps.removeFromGroups",
 	"Transfer ownership":        "steps.transferOwnership",
 	"Cancel future meetings":    "steps.cancelEvents",
@@ -312,6 +313,14 @@ type OffboardRequest struct {
 	BackupToUser      string `json:"backupToUser"`
 	BackupFolder      string `json:"backupFolder"`
 	BackupChats       bool   `json:"backupChats"`
+	// MailboxToUser receives a full-fidelity copy of the leaver's mailbox
+	// (mailbox import/export API) under MailboxFolder in their own mailbox —
+	// the mail counterpart of the OneDrive backup. Runs before licenses are
+	// removed: the mailbox dies with the license.
+	MailboxToUser          string `json:"mailboxToUser"`
+	MailboxFolder          string `json:"mailboxFolder"`
+	MailboxIncludeContacts bool   `json:"mailboxIncludeContacts"`
+	MailboxIncludeCalendar bool   `json:"mailboxIncludeCalendar"`
 	// IntuneAction: "" (skip) | "retire" (remove company data, keep personal)
 	// | "wipe" (factory reset).
 	IntuneAction            string `json:"intuneAction"`
@@ -640,6 +649,33 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			return itoa(res.Messages) + " message(s) in " + itoa(res.Chats) + " chat(s)", nil
 		})
 	}
+	if req.MailboxToUser != "" {
+		// Mailbox copy must precede license removal and deletion: without a
+		// license the mailbox is gone in ~30 days, with the account at once.
+		mailbox := NewMailboxTransferService(p.s)
+		r.doD("Copy mailbox", req.Upn+" → "+req.MailboxToUser, func() (string, error) {
+			// A child operation: cancelling the playbook cancels the copy.
+			res, e := mailbox.copyCtx(op.Ctx, MailboxCopyRequest{
+				Source: req.Upn, Target: req.MailboxToUser, Folder: req.MailboxFolder,
+				IncludeContacts: req.MailboxIncludeContacts, IncludeCalendar: req.MailboxIncludeCalendar,
+			}, nil)
+			if e != nil {
+				return "", e
+			}
+			r.setDetail("stepDetails.mailbox", map[string]any{
+				"copied": res.Copied, "folders": res.Folders, "failed": len(res.Failed),
+				"root": res.RootFolder, "canceled": res.Canceled,
+			})
+			detail := itoa(res.Copied) + " item(s) in " + itoa(res.Folders) + " folder(s) → " + res.RootFolder
+			if res.Canceled {
+				detail += " · canceled"
+			}
+			if len(res.Failed) > 0 {
+				return detail, fmt.Errorf("%d item(s) failed — see the mailbox copy log", len(res.Failed))
+			}
+			return detail, nil
+		})
+	}
 	if req.RemoveFromGroups && !r.stop() {
 		// One report step per group so the operator sees exactly what happened.
 		// Dynamic-membership and Exchange-managed (distribution) groups fail
@@ -821,6 +857,13 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 	}
 	if req.ForwardTo != "" {
 		extras = append(extras, [2]string{"Mail forward", req.ForwardTo})
+	}
+	if req.MailboxToUser != "" {
+		for _, st := range r.steps {
+			if st.Name == "Copy mailbox" && st.Detail != "" {
+				extras = append(extras, [2]string{"Mailbox copy", req.MailboxToUser + " — " + st.Detail})
+			}
+		}
 	}
 	if req.BackupChats {
 		for _, st := range r.steps {

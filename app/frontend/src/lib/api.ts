@@ -18,6 +18,8 @@ import * as Calendar from '../../wailsjs/go/services/CalendarService'
 import * as Drive from '../../wailsjs/go/services/DriveService'
 import * as Intune from '../../wailsjs/go/services/IntuneService'
 import * as Audit from '../../wailsjs/go/services/AuditService'
+import * as MailTrace from '../../wailsjs/go/services/MailTraceService'
+import * as MailboxTransfer from '../../wailsjs/go/services/MailboxTransferService'
 import * as Raw from '../../wailsjs/go/services/RawService'
 import * as Devices from '../../wailsjs/go/services/DevicesService'
 import * as Apps from '../../wailsjs/go/services/AppsService'
@@ -28,6 +30,7 @@ import * as Security from '../../wailsjs/go/services/SecurityService'
 import * as Update from '../../wailsjs/go/services/UpdateService'
 import * as Journal from '../../wailsjs/go/services/JournalService'
 import * as Notify from '../../wailsjs/go/services/NotifyService'
+import * as Snapshot from '../../wailsjs/go/services/SnapshotService'
 import type { journal, secrets, services } from '../../wailsjs/go/models'
 import { parseErr, type ParsedError } from './graphError'
 import i18n from '../i18n'
@@ -172,6 +175,14 @@ export const api = {
       list(Audit.SignInsFiltered({ upn, days, failedOnly, top } as any)),
     directory: (search: string, days: number, top: number) => list(Audit.DirectoryAuditsFiltered(search, days, top)),
   },
+  // "The email did not arrive, where did it go?": Exchange Online message trace.
+  mailTrace: {
+    trace: (sender: string, recipient: string, days: number, top: number) =>
+      list(MailTrace.Trace({ sender, recipient, days, top } as any)),
+    details: (traceId: string, recipient: string) => list(MailTrace.Details(traceId, recipient)),
+    prerequisite: () => MailTrace.Prerequisite() as Promise<boolean>,
+    provision: () => MailTrace.Provision() as Promise<void>,
+  },
   // "Give user1 the same access user2 has": diff first, then copy what is missing.
   mirror: {
     compare: (source: string, target: string) => Mirror.Compare(source, target) as Promise<services.AccessRow[]>,
@@ -216,6 +227,23 @@ export const api = {
     servicePrincipals: (search: string, max: number) => list(Security.ServicePrincipals(search, max)),
     oauthGrants: (spId: string) => list(Security.OAuthGrants(spId)),
     appRoleAssignments: (spId: string) => list(Security.AppRoleAssignments(spId)),
+    recommendations: () => list(Security.Recommendations()),
+    recommendationImpacted: (id: string) => list(Security.RecommendationImpacted(id)),
+  },
+  // Local tenant-configuration snapshots and their diff (reads only; files stay on this machine).
+  mailboxTransfer: {
+    preview: (source: string) => MailboxTransfer.Preview(source) as Promise<services.MailboxPreview>,
+    copy: (req: Partial<services.MailboxCopyRequest>) =>
+      MailboxTransfer.Copy(req as services.MailboxCopyRequest) as Promise<services.MailboxCopyResult>,
+    cancel: () => MailboxTransfer.Cancel(),
+  },
+  snapshot: {
+    take: (name: string) => Snapshot.Take(name) as Promise<services.SnapshotMeta>,
+    list: () => Snapshot.List().then((v) => (v ?? []) as services.SnapshotMeta[]),
+    get: (id: string) => Snapshot.Get(id) as Promise<any>,
+    delete: (id: string) => Snapshot.Delete(id),
+    diff: (a: string, b: string) => Snapshot.Diff(a, b) as Promise<services.SnapshotDiff>,
+    diffLatest: () => Snapshot.DiffLatest() as Promise<services.SnapshotDiff>,
   },
   reports: {
     names: () => Reports.Names() as Promise<string[]>,
@@ -241,6 +269,7 @@ export const api = {
     openReleases: (url: string) => Update.OpenReleasesPage(url),
     download: (assetUrl: string, name: string, size: number) => Update.Download(assetUrl, name, size) as Promise<string>,
     apply: (installerPath: string) => Update.Apply(installerPath) as Promise<void>,
+    revealInstaller: (installerPath: string) => Update.RevealInstaller(installerPath) as Promise<void>,
   },
   journal: {
     list: (limit = 100) => Journal.List(limit) as Promise<journal.RunSummary[]>,

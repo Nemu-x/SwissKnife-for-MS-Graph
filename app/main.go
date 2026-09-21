@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"log"
+	"os"
 	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
@@ -10,6 +11,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 
 	"swissknife-app/internal/auditlog"
+	"swissknife-app/internal/cli"
 	"swissknife-app/internal/journal"
 	"swissknife-app/internal/secrets"
 	"swissknife-app/internal/services"
@@ -20,6 +22,11 @@ import (
 var assets embed.FS
 
 func main() {
+	// Any argument selects the headless CLI (no window); see internal/cli.
+	if len(os.Args) > 1 {
+		os.Exit(cli.Run(os.Args[1:], resolveVersion()))
+	}
+
 	store, err := secrets.NewStore()
 	if err != nil {
 		log.Fatal("init config dir: ", err)
@@ -64,13 +71,16 @@ func main() {
 			services.NewDevicesService(sess),
 			services.NewAppsService(sess),
 			services.NewSecurityService(sess),
+			services.NewSnapshotService(sess),
 			services.NewReportsService(sess),
 			services.NewCleanupService(sess),
 			services.NewServiceHealthService(sess),
 			services.NewAuditService(sess),
+			services.NewMailTraceService(sess),
 			services.NewRawService(sess),
 			services.NewJournalService(sess),
 			services.NewNotifyService(sess),
+			services.NewMailboxTransferService(sess),
 			updateSvc,
 		},
 	})

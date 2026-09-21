@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
@@ -182,25 +181,42 @@ func (u *UpdateService) Download(assetURL, name string, size int64) (string, err
 	return local, nil
 }
 
-// Apply launches the downloaded installer silently and quits the app so the
-// installer can replace the executable. Windows-only (NSIS /S). Only installer
-// executables inside the OS temp directory (i.e. what Download produced) run.
-func (u *UpdateService) Apply(installerPath string) error {
+// ErrUpdateDeclined is returned by Apply when the user dismisses the UAC
+// prompt. It crosses the Wails boundary as an OpError envelope with code
+// "update_declined" so the frontend can tell it apart from real failures.
+var ErrUpdateDeclined = &OpError{Code: "update_declined", Message: "update cancelled: administrator approval was declined"}
+
+// checkInstallerPath applies the guards shared by Apply and RevealInstaller:
+// only a release installer executable inside the OS temp directory (i.e. what
+// Download produced) is accepted. Windows-only. Returns the cleaned path.
+func checkInstallerPath(installerPath string) (string, error) {
 	if goruntime.GOOS != "windows" {
-		return errors.New("in-app update is available on Windows only — use the releases page")
+		return "", errors.New("in-app update is available on Windows only — use the releases page")
 	}
 	clean := filepath.Clean(installerPath)
 	if !strings.HasSuffix(strings.ToLower(clean), "-installer.exe") {
-		return errors.New("not a release installer executable")
+		return "", errors.New("not a release installer executable")
 	}
 	if filepath.Dir(clean) != filepath.Clean(os.TempDir()) {
-		return errors.New("installer must come from the update download location")
+		return "", errors.New("installer must come from the update download location")
 	}
 	if _, err := os.Stat(clean); err != nil {
+		return "", err
+	}
+	return clean, nil
+}
+
+// Apply launches the downloaded installer silently (NSIS /S) through the shell
+// with the "runas" verb — the per-machine installer needs elevation, so one UAC
+// prompt appears — and quits the app so the installer can replace the
+// executable. A declined prompt returns ErrUpdateDeclined and leaves the app
+// running; the app only quits after a successful launch.
+func (u *UpdateService) Apply(installerPath string) error {
+	clean, err := checkInstallerPath(installerPath)
+	if err != nil {
 		return err
 	}
-	cmd := exec.Command(clean, "/S")
-	if err := cmd.Start(); err != nil {
+	if err := launchElevated(clean); err != nil {
 		return err
 	}
 	// Give the frontend a beat to render the "updating" state, then exit —
@@ -212,6 +228,17 @@ func (u *UpdateService) Apply(installerPath string) error {
 		}
 	}()
 	return nil
+}
+
+// RevealInstaller opens the folder containing the downloaded installer with the
+// file selected, so the user can run it by hand when the in-app launch failed.
+// Same path guards as Apply.
+func (u *UpdateService) RevealInstaller(installerPath string) error {
+	clean, err := checkInstallerPath(installerPath)
+	if err != nil {
+		return err
+	}
+	return revealInFolder(clean)
 }
 
 // OpenReleasesPage opens the releases page in the system browser.

@@ -48,6 +48,13 @@ func wrapOpErr(err error) error {
 // permission a 403 most likely means is missing. First match wins; unknown
 // endpoints get no hint (no wrong guesses).
 var permHints = []struct{ needle, perm string }{
+	// Mailbox import/export API (offboarding mailbox copy). Application
+	// permissions; scope them per mailbox with Exchange RBAC for Applications.
+	{"/exportItems", "MailboxItem.ImportExport.All"},
+	{"/createImportSession", "MailboxItem.ImportExport.All"},
+	{"/admin/exchange/mailboxes", "MailboxFolder.ReadWrite.All + MailboxItem.Read.All"},
+	{"/settings/exchange", "User.Read.All"},
+	{"/directory/recommendations", "DirectoryRecommendations.Read.All"},
 	{"/messageRules", "Mail.ReadWrite"},
 	{"/mailFolders", "Mail.ReadWrite"},
 	{"/mailboxSettings", "MailboxSettings.ReadWrite"},
