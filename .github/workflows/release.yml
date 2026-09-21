@@ -220,13 +220,20 @@ jobs:
         id: sign-gate
         env:
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           sign=false
           notarize=false
           if [ -n "$MACOS_CERTIFICATE_P12" ]; then
             sign=true
-            if [ -n "$APPLE_APP_PASSWORD" ]; then notarize=true; fi
+            # notarize.sh needs all three; a partial trio would fail the job.
+            if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_PASSWORD" ]; then
+              notarize=true
+            else
+              echo "APPLE_ID / APPLE_TEAM_ID / APPLE_APP_PASSWORD incomplete — signing only, no notarization."
+            fi
           else
             echo "MACOS_CERTIFICATE_P12 not set — DMG ships unsigned."
           fi
@@ -292,13 +299,14 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          NOTARIZE: ${{ steps.sign-gate.outputs.notarize }}
         run: |
           DMG="dist/SwissKnifeGraph-macos-${{ matrix.arch }}.dmg"
           codesign --force --timestamp --keychain "$SIGNING_KEYCHAIN" --sign "$MACOS_SIGN_IDENTITY" "$DMG"
-          if [ -n "$APPLE_APP_PASSWORD" ]; then
+          if [ "$NOTARIZE" = 'true' ]; then
             bash packaging/macos/notarize.sh "$DMG"
           else
-            echo "APPLE_* secrets not set — DMG signed but NOT notarized."
+            echo "APPLE_* secrets incomplete — DMG signed but NOT notarized."
           fi
       - name: Sanity-check DMG
         run: |

@@ -670,6 +670,10 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			})
 			detail := itoa(res.Copied) + " item(s) in " + itoa(res.Folders) + " folder(s) → " + res.RootFolder
 			if res.Canceled {
+				// The copy is a child operation: cancelling it from the mailbox job
+				// must stop the playbook too, or the next steps would still remove
+				// licenses and delete the account.
+				r.canceled = true
 				detail += " · canceled"
 			}
 			if e != nil {
