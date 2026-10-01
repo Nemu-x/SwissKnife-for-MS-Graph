@@ -1,6 +1,6 @@
 # Builds SwissKnife for MS Graph desktop for Windows (x64 + ARM64, installer and
 # portable), macOS (Apple Silicon + Intel DMGs), and Linux (x64 + ARM64 tar.gz,
-# deb, rpm, AppImage), then attaches everything to a GitHub Release.
+# deb, rpm, self-contained AppImage), then attaches everything to a GitHub Release.
 #
 # Trigger: push a tag v* (e.g. v0.2.0) for the full release set, or run manually
 # (workflow_dispatch builds artifacts without publishing a release).
@@ -335,7 +335,31 @@ jobs:
             runner: ubuntu-24.04-arm
             aitool: aarch64
     runs-on: ${{ matrix.runner }}
+    # Built inside Ubuntu 22.04: the AppImage bundles GTK and WebKitGTK from
+    # this image, so the oldest glibc it needs on a user's machine is 2.35
+    # (Ubuntu 22.04, Debian 12) instead of the runner's 2.39.
+    # Pinned by digest (zizmor unpinned-images); bump the digest together with the
+    # comment when refreshing the base image. ubuntu:22.04 as of 2026-09-18.
+    container: ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02
+    # Container jobs default to `sh`; the version guards below use bash syntax.
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
     steps:
+      - name: Install Linux build deps
+        # git/curl/ca-certificates first: actions/checkout runs inside this
+        # container. glib-networking + the *-bin tools are what
+        # linuxdeploy-plugin-gtk bundles/needs; xvfb, mesa and a font are for
+        # the AppImage smoke test only.
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential pkg-config git curl ca-certificates file patchelf perl \
+            libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libglib2.0-bin libgdk-pixbuf2.0-bin libgtk-3-bin glib-networking gsettings-desktop-schemas \
+            desktop-file-utils xvfb xauth libgl1 libegl1 libgl1-mesa-dri fonts-dejavu-core
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -344,17 +368,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - name: Install Linux build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libgtk-3-dev libwebkit2gtk-4.1-dev
       - name: Install Wails + nfpm
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Build (linux/${{ matrix.arch }})
         working-directory: ${{ env.APP_DIR }}
-        # Ubuntu 24.04 ships webkit2gtk 4.1 only; the webkit2_41 tag targets it.
+        # webkit2gtk 4.1 is the only WebKit on 22.04+; the webkit2_41 tag targets it.
         run: wails build -platform linux/${{ matrix.arch }} -tags webkit2_41 -ldflags "-X main.version=${{ github.ref_name }}"
       - name: Package tar.gz + .deb + .rpm
         # Runs from repo root so the paths in packaging/nfpm.yaml resolve.
@@ -363,24 +384,22 @@ jobs:
           NFPM_ARCH: ${{ matrix.arch }}
         run: |
           VER="${VERSION#v}"
-          [ -z "$VER" ] && VER="0.0.0"
+          [[ "$VER" =~ ^[0-9] ]] || VER="0.0.0"
           mkdir -p dist
           BIN=$(ls app/build/bin | head -1)
           tar -C app/build/bin -czf "dist/SwissKnifeGraph-linux-${{ matrix.arch }}.tar.gz" "$BIN"
           VERSION="$VER" nfpm package -f packaging/nfpm.yaml -p deb -t "dist/SwissKnifeGraph-linux-${{ matrix.arch }}.deb"
           VERSION="$VER" nfpm package -f packaging/nfpm.yaml -p rpm -t "dist/SwissKnifeGraph-linux-${{ matrix.arch }}.rpm"
-      - name: Build AppImage
+      - name: Build AppImage (self-contained, GTK + WebKitGTK bundled)
+        id: appimage
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
-          APPDIR=AppDir
-          # Binary is renamed to match the Exec= entry of the .desktop file.
-          mkdir -p "$APPDIR/usr/bin"
-          cp app/build/bin/SwissKnifeGraph "$APPDIR/usr/bin/swissknife-graph"
-          cp packaging/linux/swissknife-graph.desktop "$APPDIR/"
-          cp app/build/appicon.png "$APPDIR/swissknife-graph.png"
-          ln -s usr/bin/swissknife-graph "$APPDIR/AppRun"
-          curl -fsSL -o appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.aitool }}.AppImage"
-          chmod +x appimagetool
-          ARCH=${{ matrix.aitool }} ./appimagetool --appimage-extract-and-run "$APPDIR" "dist/SwissKnifeGraph-linux-${{ matrix.arch }}.AppImage"
+          VER="${VERSION#v}"
+          [[ "$VER" =~ ^[0-9] ]] || VER="0.0.0"
+          bash packaging/linux/build-appimage.sh "${{ matrix.aitool }}" "$VER" dist
+      - name: Smoke-test AppImage without host WebKit
+        run: bash packaging/linux/test-appimage.sh "dist/SwissKnifeGraph-${{ matrix.aitool }}.AppImage" "${{ steps.appimage.outputs.appdir }}"
       - uses: actions/upload-artifact@v4
         with:
           name: linux-${{ matrix.arch }}
@@ -408,7 +427,7 @@ jobs:
             SwissKnifeGraph-linux-amd64.tar.gz \
             SwissKnifeGraph-linux-amd64.deb \
             SwissKnifeGraph-linux-amd64.rpm \
-            SwissKnifeGraph-linux-amd64.AppImage; do
+            SwissKnifeGraph-x86_64.AppImage; do
             [ -s "dist/$f" ] || { echo "::error::missing or empty core asset: $f"; exit 1; }
           done
       - name: Checksums
