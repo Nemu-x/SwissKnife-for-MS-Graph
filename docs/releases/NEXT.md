@@ -10,6 +10,8 @@ the real UAC round-trip still has to be exercised on a per-machine install.
 
 ## Open items
 
+- AppImage: update information embedded (`gh-releases-zsync|…|latest|SwissKnifeGraph-<arch>.AppImage.zsync`) and the `.zsync` published next to each AppImage, so AppImageUpdate can delta-update; asked for by the AppImage catalog test on the 1.1.0 submission (AppImage/appimage.github.io#8845).
+
 - Wiki push (grown on the post-1.0 branch): Permissions.md (rows for message trace, mailbox copy, recommendations, snapshot), new pages Task-First-UI.md, Offboarding.md, CLI.md, updated Installation.md, Home.md, _Sidebar.md — plus the older items: (new: `Group.ReadWrite.All` for ownership transfer,
   `Calendars.ReadWrite` for cancelling meetings), Teams-Notifications.md, a page
   on the task-first UI.
