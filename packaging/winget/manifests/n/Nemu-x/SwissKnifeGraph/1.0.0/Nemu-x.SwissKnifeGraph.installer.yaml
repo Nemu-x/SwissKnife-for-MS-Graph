@@ -23,7 +23,6 @@ ProductCode: 'Nemu-xSwissKnife for MS Graph'
 AppsAndFeaturesEntries:
 - DisplayName: SwissKnife for MS Graph
   Publisher: Nemu-x
-  DisplayVersion: 1.0.0
   ProductCode: 'Nemu-xSwissKnife for MS Graph'
 Installers:
 - Architecture: x64
