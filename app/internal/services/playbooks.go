@@ -217,7 +217,9 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 	r := &runner{op: op, kind: "onboard", ok: true, journal: p.s.Journal}
 	if r.journal != nil {
 		r.journal.Begin(op.ID, map[string]any{"kind": "playbook", "playbook": "onboard", "target": req.Upn})
-		defer func() { r.journal.End(op.ID, map[string]any{"ok": r.ok, "canceled": r.canceled, "steps": len(r.steps)}) }()
+		defer func() {
+			r.journal.End(op.ID, map[string]any{"ok": r.ok, "canceled": r.canceled, "steps": len(r.steps)})
+		}()
 	}
 
 	// Step 1: create user (blocks the rest if it fails).
@@ -365,7 +367,9 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 	r := &runner{op: op, kind: "offboard", ok: true, journal: p.s.Journal}
 	if r.journal != nil {
 		r.journal.Begin(op.ID, map[string]any{"kind": "playbook", "playbook": "offboard", "target": req.Upn})
-		defer func() { r.journal.End(op.ID, map[string]any{"ok": r.ok, "canceled": r.canceled, "steps": len(r.steps)}) }()
+		defer func() {
+			r.journal.End(op.ID, map[string]any{"ok": r.ok, "canceled": r.canceled, "steps": len(r.steps)})
+		}()
 	}
 	u := url.PathEscape(req.Upn)
 
@@ -660,6 +664,10 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				IncludeContacts: req.MailboxIncludeContacts, IncludeCalendar: req.MailboxIncludeCalendar,
 			}, nil)
 			if res == nil {
+				// No result at all (cancelled, or a failure while resolving the
+				// mailboxes, previewing or creating the root folder): nothing was
+				// copied, so the license and account steps below must not run.
+				r.canceled = true
 				return "", e
 			}
 			// A partial result (items copied before a fatal error) is still the
@@ -677,10 +685,18 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				detail += " · canceled"
 			}
 			if e != nil {
-				return detail, e
+				// A fatal copy error (403, expired session, …) must not be followed
+				// by license removal or deletion: that is exactly the mail this
+				// step exists to keep. Stop here; the operator re-runs after fixing.
+				r.canceled = true
+				return detail + " · playbook stopped, licenses and account kept", e
 			}
 			if len(res.Failed) > 0 {
-				return detail, fmt.Errorf("%d item(s) failed — see the mailbox copy log", len(res.Failed))
+				// Items that did not make it across are mail that would die with the
+				// license: stop before the license and account steps as well.
+				r.canceled = true
+				return detail + " · playbook stopped, licenses and account kept",
+					fmt.Errorf("%d item(s) failed — see the mailbox copy log", len(res.Failed))
 			}
 			return detail, nil
 		})

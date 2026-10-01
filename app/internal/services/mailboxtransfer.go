@@ -653,7 +653,11 @@ func (m *MailboxTransferService) ensureFolder(ctx context.Context, c *graphapi.C
 // rejection (409, or an ErrorFolderExists-style code/message).
 func folderExistsErr(err error) bool {
 	var ge *graphapi.GraphError
-	return errors.As(err, &ge) && (ge.StatusCode == 409 || strings.Contains(strings.ToLower(ge.Code+" "+ge.Message), "exist"))
+	if !errors.As(err, &ge) || ge.StatusCode == 404 {
+		return false // "does not exist" is a missing parent, not a clash
+	}
+	text := strings.ToLower(ge.Code + " " + ge.Message)
+	return ge.StatusCode == 409 || strings.Contains(text, "folderexists") || strings.Contains(text, "already exist")
 }
 
 // createUniqueRoot creates the run's root folder at the target mailbox's top

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"sync"
 
 	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -10,19 +11,29 @@ import (
 
 // eventSink, when non-nil, receives events instead of the Wails bus. Tests use
 // it to capture emissions; production leaves it nil.
-var eventSink func(name string, data map[string]any)
+var (
+	eventSinkMu sync.RWMutex
+	eventSink   func(name string, data map[string]any)
+)
 
 // SetEventSink installs a process-wide receiver for map-shaped events, used by
 // headless front ends (the CLI) to stream progress that the GUI gets over the
 // Wails bus. nil restores the default (Wails bus when attached, else dropped).
-func SetEventSink(fn func(name string, data map[string]any)) { eventSink = fn }
+func SetEventSink(fn func(name string, data map[string]any)) {
+	eventSinkMu.Lock()
+	eventSink = fn
+	eventSinkMu.Unlock()
+}
 
 // emitEvent forwards to the Wails event bus. Headless runs (unit tests, CLI)
 // carry a bare context without the Wails frontend attached; the runtime would
 // log.Fatal in that case, so we only emit when the event bus is present.
 func emitEvent(ctx context.Context, name string, data any) {
-	if m, ok := data.(map[string]any); ok && eventSink != nil {
-		eventSink(name, m)
+	eventSinkMu.RLock()
+	sink := eventSink
+	eventSinkMu.RUnlock()
+	if m, ok := data.(map[string]any); ok && sink != nil {
+		sink(name, m)
 		return
 	}
 	if ctx == nil || ctx.Value("events") == nil {

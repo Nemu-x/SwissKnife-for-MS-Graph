@@ -7,7 +7,8 @@ Drafts in this folder:
 
 Both are timed to the EWS retirement (1 October 2026 disablement starts, April
 2027 full removal) and the Reporting Web Service message-trace deprecation
-(8 April 2026). Post before 1 October while the topic is live.
+(8 April 2026 for the Worldwide cloud). The October disablement runs in waves over
+several months, so the topic stays live through autumn 2026; post whenever the release is out.
 
 ## Where to post
 

@@ -136,7 +136,7 @@ export function AuditPage() {
           <Field label={t('audit.limit')}>
             <Input type="number" value={traceTop} onChange={(e) => setTraceTop(Math.max(1, Number(e.target.value) || 100))} />
           </Field>
-          <Button variant="primary" disabled={!sender.trim() && !recipient.trim()} onClick={runTrace}>
+          <Button variant="primary" disabled={res.loading || (!sender.trim() && !recipient.trim())} onClick={runTrace}>
             <MailSearch size={15} /> {t('mailTrace.run')}
           </Button>
           {tracePrereq === false && (
@@ -158,7 +158,7 @@ export function AuditPage() {
             </Field>
             <Button
               variant="subtle"
-              disabled={!traceId.trim() || !traceRecipient.trim()}
+              disabled={res.loading || !traceId.trim() || !traceRecipient.trim()}
               onClick={() => res.run(() => api.mailTrace.details(traceId.trim(), traceRecipient.trim()))}
             >
               <ListTree size={15} /> {t('mailTrace.details')}

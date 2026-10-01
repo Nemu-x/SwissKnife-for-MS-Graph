@@ -52,8 +52,19 @@ func (c *Client) PostPreauthorized(ctx context.Context, u string, body, out any)
 		if payload != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
-		resp, err := c.http.Do(req)
+		// Never follow redirects: the https/loopback rule above was checked for
+		// this URL only, and Go would re-send the token (Referer, or the whole
+		// body on 307/308) to wherever a 3xx points. A 3xx comes back as an error.
+		noRedirect := *c.http
+		noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		resp, err := noRedirect.Do(req)
 		if err != nil {
+			// Transport errors quote the request URL, token included; strip the
+			// query so the text can travel to reports and the UI (ADR-002).
+			var ue *url.Error
+			if errors.As(err, &ue) {
+				ue.URL = parsed.Scheme + "://" + parsed.Host + parsed.Path
+			}
 			return 0, err
 		}
 		defer resp.Body.Close()

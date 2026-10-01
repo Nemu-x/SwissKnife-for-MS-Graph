@@ -753,7 +753,7 @@ const en = {
     reportCopied: 'Copied',
     reportRoot: '{{folders}} folder(s) recreated under "{{root}}"',
     note: "Uses the Microsoft Graph mailbox import/export APIs: items are exported from the source and imported into the target one by one, keeping headers, attachments and read state. Microsoft positions these APIs for migration, not as a backup product — this copies a leaver's mailbox into a colleague's, it does not produce a PST. Run it before removing licenses: the mailbox dies with the license.",
-    permissionNote: 'Needs the application permissions MailboxFolder.ReadWrite.All, MailboxItem.Read.All and MailboxItem.ImportExport.All with admin consent. Exchange can additionally scope them with RBAC for Applications; without that scoping the app can reach every mailbox.',
+    permissionNote: 'Needs the application permissions MailboxFolder.ReadWrite.All, MailboxItem.Read.All and MailboxItem.ImportExport.All with admin consent; consented that way they reach every mailbox in the tenant. To limit the app to specific mailboxes, grant the equivalent Exchange RBAC for Applications role with a management scope instead and leave the tenant-wide Graph permissions unconsented: RBAC assignments add to Entra consents, they never narrow them.',
   },
   dashboard: {
     title: 'Dashboard',

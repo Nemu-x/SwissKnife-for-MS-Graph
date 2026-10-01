@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"swissknife-app/internal/graphapi"
+	"swissknife-app/internal/ops"
 	"swissknife-app/internal/session"
 )
 
@@ -38,6 +39,9 @@ type SnapshotService struct {
 }
 
 func NewSnapshotService(s *session.Session) *SnapshotService { return &SnapshotService{s: s} }
+
+// Cancel aborts a running snapshot; nothing is written for a cancelled run.
+func (x *SnapshotService) Cancel() { x.s.Ops.CancelKind(ops.KindSnapshot) }
 
 // SnapshotSection describes one collected configuration area.
 type SnapshotSection struct {
@@ -219,7 +223,14 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx := x.s.Ctx()
+	// A registered operation: the UI can cancel it and routes its progress by id.
+	op, err := x.s.Ops.Start(x.s.Ctx(), ops.KindSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	defer x.s.Ops.Finish(op)
+	emitOp(x.s.Ctx(), op, "op:start", map[string]any{"target": name})
+	ctx := op.Ctx
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "snapshot"
@@ -230,7 +241,7 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 	skipped := 0
 	var firstErr error
 	for i, sec := range snapshotSections {
-		emitEvent(ctx, "snapshot:progress", map[string]any{"section": sec.name, "done": i, "total": total})
+		emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": sec.name, "done": i, "total": total})
 		info := SnapshotSection{Name: sec.name}
 		objs, err := sec.collect(ctx, c)
 		switch {
@@ -253,7 +264,7 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 		}
 		doc.Meta.Sections = append(doc.Meta.Sections, info)
 	}
-	emitEvent(ctx, "snapshot:progress", map[string]any{"section": "", "done": total, "total": total})
+	emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": "", "done": total, "total": total})
 	if skipped == total {
 		// Nothing readable at all (expired token, no permissions): a snapshot
 		// of nothing would only produce a misleading "everything removed" diff.
@@ -264,11 +275,14 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 	doc.Meta.Name = name
 	doc.Meta.TakenAt = now
 	doc.Meta.Tenant = x.s.ProfileName()
-	doc.Meta.ID = uniqueSnapshotID(dir, now, name)
-	b, err := json.Marshal(doc)
-	if err == nil {
-		err = os.WriteFile(filepath.Join(dir, doc.Meta.ID+".json"), b, 0o600)
+	// The id is claimed by creating the file exclusively: two snapshots in the
+	// same second (or two app instances) can never overwrite each other.
+	// A cancel that arrived with the last progress event must not leave a file.
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
+	id, err := writeSnapshotExclusive(ctx, dir, &doc, now, name)
+	doc.Meta.ID = id
 	x.s.Record("snapshot.take", doc.Meta.ID, fmt.Sprintf("%d sections, %d skipped", total, skipped), err)
 	if err != nil {
 		return nil, err
@@ -451,15 +465,45 @@ func (x *SnapshotService) load(id string) (*snapshotFile, error) {
 
 // uniqueSnapshotID builds "<timestamp>-<slug>" and appends -2, -3… when two
 // snapshots land in the same second.
-func uniqueSnapshotID(dir string, now time.Time, name string) string {
+// writeSnapshotExclusive picks the first free id for this stamp and name and
+// creates the file with O_EXCL, re-marshalling the document with the id that
+// actually stuck.
+func writeSnapshotExclusive(ctx context.Context, dir string, doc *snapshotFile, now time.Time, name string) (string, error) {
 	base := now.Format("20060102-150405") + "-" + slugify(name)
-	id := base
-	for n := 2; ; n++ {
-		if _, err := os.Stat(filepath.Join(dir, id+".json")); os.IsNotExist(err) {
-			return id
+	for n := 1; n <= 1000; n++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
 		}
-		id = fmt.Sprintf("%s-%d", base, n)
+		id := base
+		if n > 1 {
+			id = fmt.Sprintf("%s-%d", base, n)
+		}
+		doc.Meta.ID = id
+		b, err := json.Marshal(doc)
+		if err != nil {
+			return "", err
+		}
+		f, err := os.OpenFile(filepath.Join(dir, id+".json"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, werr := f.Write(b)
+		if cerr := f.Close(); werr == nil {
+			werr = cerr
+		}
+		if werr == nil {
+			werr = ctx.Err() // cancelled mid-write: do not keep a half-trusted file
+		}
+		if werr != nil {
+			_ = os.Remove(filepath.Join(dir, id+".json"))
+			return "", werr
+		}
+		return id, nil
 	}
+	return "", fmt.Errorf("no free snapshot id for %s", base)
 }
 
 func slugify(name string) string {

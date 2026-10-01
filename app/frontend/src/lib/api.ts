@@ -244,6 +244,7 @@ export const api = {
     delete: (id: string) => Snapshot.Delete(id),
     diff: (a: string, b: string) => Snapshot.Diff(a, b) as Promise<services.SnapshotDiff>,
     diffLatest: () => Snapshot.DiffLatest() as Promise<services.SnapshotDiff>,
+    cancel: () => Snapshot.Cancel(),
   },
   reports: {
     names: () => Reports.Names() as Promise<string[]>,

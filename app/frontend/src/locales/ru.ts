@@ -753,7 +753,7 @@ const ru: Dict<typeof en> = {
     reportCopied: 'Скопировано',
     reportRoot: 'папок воссоздано: {{folders}} в «{{root}}»',
     note: 'Используются Microsoft Graph mailbox import/export API: элементы выгружаются из исходного ящика и загружаются в целевой по одному, с заголовками, вложениями и статусом прочтения. Microsoft позиционирует эти API как миграционные, а не как бэкап — здесь ящик уволенного переезжает к коллеге, PST не создаётся. Запускайте до снятия лицензий: без лицензии ящик умирает.',
-    permissionNote: 'Нужны application-разрешения MailboxFolder.ReadWrite.All, MailboxItem.Read.All и MailboxItem.ImportExport.All с согласием администратора. Exchange может дополнительно ограничить их через RBAC for Applications; без этого приложение видит все ящики.',
+    permissionNote: 'Нужны application-разрешения MailboxFolder.ReadWrite.All, MailboxItem.Read.All и MailboxItem.ImportExport.All с согласием администратора; выданные так, они открывают все ящики тенанта. Чтобы ограничить приложение конкретными ящиками, вместо tenant-wide согласия назначьте эквивалентную роль Exchange RBAC for Applications с management scope: назначения RBAC добавляются к согласиям Entra, а не сужают их.',
   },
   dashboard: {
     title: 'Дашборд',

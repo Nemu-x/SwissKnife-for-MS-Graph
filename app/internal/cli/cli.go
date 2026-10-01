@@ -128,7 +128,25 @@ func connectProfile(ctx context.Context, p secrets.Profile, readOnly bool, stder
 	if err != nil {
 		return nil, err
 	}
-	sess.SetClient(graphapi.New(provider), cr.Name)
+	gc := graphapi.New(provider)
+	// Same self-test as the GUI Connect: bad credentials fail here, not on the
+	// first command, and the audit log never records a connect that did not work.
+	var org map[string]any
+	if err := gc.Get(ctx, "/organization", url.Values{"$select": {"id"}}, &org); err != nil {
+		// A 403 means the token itself is fine and only Organization.Read.All is
+		// missing — commands that need other permissions must still work, so
+		// only authentication failures (bad secret, wrong tenant, …) refuse.
+		var ge *graphapi.GraphError
+		if errors.As(err, &ge) && ge.StatusCode == 403 {
+			_, _ = fmt.Fprintln(stderr, "note: Organization.Read.All is not granted; connected without the organization self-test.")
+		} else {
+			// No client is attached on failure, so name the profile in the detail.
+			sess.Record("session.connect", cr.TenantID, "profile="+cr.Name+" mode="+cr.AuthMode+" via=cli", err)
+			return nil, fmt.Errorf("connect self-test (GET /organization) failed: %w", err)
+		}
+	}
+	// SetClient first: the audit entry carries the profile name from the session.
+	sess.SetClient(gc, cr.Name)
 	sess.Record("session.connect", cr.TenantID, "mode="+cr.AuthMode+" via=cli", nil)
 	return sess, nil
 }

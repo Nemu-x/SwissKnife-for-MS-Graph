@@ -50,7 +50,10 @@ Premium ≈ US$99.99. Requires an Azure subscription (pay-as-you-go is fine).
 **Lead time:** identity validation takes **1–7 business days** as a rule. Individuals are verified
 through Microsoft Entra Verified ID (government ID + a live check); organisations need a legal entity
 that is verifiable in business registries and, for Public Trust, **at least three years** of
-verifiable history — younger companies or a personal project should validate as an *Individual*.
+verifiable history — younger companies or a personal project may validate as an *Individual*, but Microsoft
+currently offers Individual validation for Public Trust only to developers in the **United States and
+Canada**; check the eligibility notes in <https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart>
+before paying for an account.
 
 ### Setup
 
