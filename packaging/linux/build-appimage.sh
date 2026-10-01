@@ -104,6 +104,26 @@ for h in "${HELPERS[@]}"; do
   patchelf --set-rpath "\$ORIGIN/$rel" "$h"
 done
 [ -x "$APPDIR/usr/bin/swissknife-graph" ] || { echo "::error::linuxdeploy did not place usr/bin/swissknife-graph"; exit 1; }
+
+# --- 3b. Integrity + a pristine WebKit ---------------------------------------
+# In plugin mode linuxdeploy "copies" libraries it reaches through
+# usr/bin/../lib onto themselves; make sure nothing came out empty, and take
+# the two WebKit libraries from the host again so the strings patched below
+# are exactly what the host build contains, whatever happened to the copies.
+bad=0
+while IFS= read -r -d '' so; do
+  if ! perl -e 'read(STDIN, $m, 4); exit($m eq "ELF" ? 0 : 1)' < "$so"; then
+    echo "::error::corrupt or empty library ${so#"$APPDIR"/} ($(stat -c %s "$so") bytes)"; bad=1
+  fi
+done < <(find "$APPDIR/usr/lib" -maxdepth 1 -type f -name '*.so*' -print0)
+[ "$bad" -eq 0 ] || exit 1
+echo "usr/lib holds $(find "$APPDIR/usr/lib" -maxdepth 1 -type f -name '*.so*' | wc -l) libraries, all ELF"
+for name in libwebkit2gtk-4.1.so.0 libjavascriptcoregtk-4.1.so.0; do
+  [ -f "$APPDIR/usr/lib/$name" ] || { echo "::error::$name was not bundled"; exit 1; }
+  echo "$name: bundled copy $(stat -c %s "$APPDIR/usr/lib/$name") bytes, $(webkit_paths "$APPDIR/usr/lib/$name" | wc -l) path string(s); host $(stat -c %s "/usr/lib/$LIBDIR/$name") bytes, $(webkit_paths "/usr/lib/$LIBDIR/$name" | wc -l) path string(s)"
+  cp -f "/usr/lib/$LIBDIR/$name" "$APPDIR/usr/lib/$name"
+  patchelf --set-rpath '$ORIGIN' "$APPDIR/usr/lib/$name"
+done
 [ -f "$APPDIR/AppRun" ] && [ ! -L "$APPDIR/AppRun" ] || { echo "::error::linuxdeploy replaced AppRun"; exit 1; }
 [ -d "$APPDIR/apprun-hooks" ] || { echo "::error::linuxdeploy-plugin-gtk installed no apprun hook"; exit 1; }
 # Top-level desktop file, icon and .DirIcon are what appimagetool reads.
