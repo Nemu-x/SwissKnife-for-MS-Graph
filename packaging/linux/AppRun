@@ -5,7 +5,8 @@
 # into apprun-hooks/; they are sourced first. The process then runs from usr/
 # on purpose: build-appimage.sh patches the absolute helper-process path that
 # WebKitGTK compiles into libwebkit2gtk-4.1.so.0 into a *relative* one of the
-# same length (/usr/lib/<triplet>/webkit2gtk-4.1 -> ././/lib/<triplet>/...),
+# same length (/usr/libexec/webkit2gtk-4.1 -> ././/libexec/webkit2gtk-4.1, or
+# the multiarch variant, whichever the distro compiled in),
 # and that relative path resolves against the working directory. Without this
 # the bundled WebKit would look for WebKitWebProcess on the host and crash on
 # every distro whose layout differs from the build host (Fedora, Arch, ...).
@@ -18,7 +19,7 @@ for hook in "$APPDIR"/apprun-hooks/*.sh; do
 done
 
 # Honoured by WebKitGTK builds with developer mode on; harmless otherwise.
-webkit_libexec="$(find "$APPDIR/usr/lib" -maxdepth 2 -type d -name 'webkit2gtk-4.1' -print -quit 2>/dev/null)"
+webkit_libexec="$(find "$APPDIR/usr" -maxdepth 3 -type d -name 'webkit2gtk-4.1' -print -quit 2>/dev/null)"
 if [ -n "$webkit_libexec" ]; then
   export WEBKIT_EXEC_PATH="$webkit_libexec"
   export WEBKIT_INJECTED_BUNDLE_PATH="$webkit_libexec/injected-bundle"

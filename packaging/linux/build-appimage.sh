@@ -12,11 +12,13 @@
 # loading shared libraries"). Bundling WebKitGTK has two traps, both handled here
 # the way Tauri does it:
 #   1. WebKit spawns helper processes (WebKitNetworkProcess, WebKitWebProcess,
-#      WebKitGPUProcess) and loads an injected bundle from an absolute path
-#      compiled into libwebkit2gtk-4.1.so.0. The helpers are copied into the
-#      AppDir keeping that path under usr/, and the string in the library is
-#      patched to a relative path of the SAME length; AppRun chdir's into usr/
-#      so it resolves to the bundled files on any distro.
+#      WebKitGPUProcess) and loads an injected bundle from absolute paths
+#      compiled into libwebkit2gtk-4.1.so.0 (/usr/libexec/webkit2gtk-4.1 or
+#      /usr/lib/<triplet>/webkit2gtk-4.1, depending on the distro build). The
+#      script reads those paths out of the library, copies the directories into
+#      the AppDir keeping the layout under usr/, and patches each string to a
+#      relative path of the SAME length; AppRun chdir's into usr/ so it
+#      resolves to the bundled files on any distro.
 #   2. GTK needs its schemas, pixbuf loaders, IM modules and GIO modules (TLS).
 #      linuxdeploy-plugin-gtk (Tauri's fork, which also bundles GIO modules)
 #      collects them and writes an apprun-hooks/ script that AppRun sources.
@@ -29,8 +31,8 @@ OUT_DIR="${3:?output directory}"
 BIN=app/build/bin/SwissKnifeGraph
 [ -x "$BIN" ] || { echo "::error::$BIN not found — run wails build first"; exit 1; }
 LIBDIR="$(dpkg-architecture -qDEB_HOST_MULTIARCH)" # x86_64-linux-gnu / aarch64-linux-gnu
-WEBKIT_LIBEXEC="/usr/lib/$LIBDIR/webkit2gtk-4.1"
-[ -d "$WEBKIT_LIBEXEC" ] || { echo "::error::$WEBKIT_LIBEXEC missing — install libwebkit2gtk-4.1-0"; exit 1; }
+HOST_WEBKIT="/usr/lib/$LIBDIR/libwebkit2gtk-4.1.so.0"
+[ -f "$HOST_WEBKIT" ] || { echo "::error::$HOST_WEBKIT missing — install libwebkit2gtk-4.1-0"; exit 1; }
 
 WORK="$(mktemp -d)"
 APPDIR="$WORK/AppDir"
@@ -38,6 +40,13 @@ TOOLS="$WORK/tools"
 mkdir -p "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/512x512/apps" \
   "$APPDIR/usr/share/metainfo" "$TOOLS" "$OUT_DIR"
 export APPIMAGE_EXTRACT_AND_RUN=1 # the tools are AppImages themselves; no FUSE in containers
+
+# webkit_paths prints every NUL-terminated string in a library that looks like
+# an absolute /usr/... path mentioning webkit2gtk-4.1 — the helper directory
+# and the injected bundle, whatever this distro's build chose.
+webkit_paths() {
+  perl -0777 -ne 'while (/(\/usr\/[\x21-\x7e]*?webkit2gtk-4\.1(?:\/[\x21-\x7e]*)?)\0/g) { print "$1\n" }' "$1" | sort -u
+}
 
 # --- 1. Application files -------------------------------------------------
 # The binary is handed to linuxdeploy under its final name (Exec= in the
@@ -51,12 +60,27 @@ sed -e "s/@VERSION@/$VERSION/" -e "s/@DATE@/$(date -u +%Y-%m-%d)/" \
 # otherwise symlink the binary, skipping the GTK hooks and the chdir).
 install -m 0755 packaging/linux/AppRun "$APPDIR/AppRun"
 
-# --- 2. WebKit helper processes + injected bundle, path preserved under usr/ -
-( cd "$APPDIR" && cp -a --parents "$WEBKIT_LIBEXEC" . )
+# --- 2. WebKit helper processes + injected bundle, layout preserved under usr/ -
+mapfile -t EMBEDDED < <(webkit_paths "$HOST_WEBKIT")
+[ "${#EMBEDDED[@]}" -gt 0 ] || { echo "::error::no /usr/...webkit2gtk-4.1 path found inside $HOST_WEBKIT"; exit 1; }
+echo "Paths compiled into libwebkit2gtk-4.1.so.0:"; printf '  %s\n' "${EMBEDDED[@]}"
+declare -A COPIED=()
+for p in "${EMBEDDED[@]}"; do
+  d="$p"; [ -d "$d" ] || d="$(dirname "$p")"
+  [ -d "$d" ] || { echo "  (skip $p — not present on this host)"; continue; }
+  [ -n "${COPIED[$d]:-}" ] && continue
+  # -L: the multiarch directory is often a symlink to /usr/libexec; the AppDir
+  # needs real files at the path WebKit will look up.
+  ( cd "$APPDIR" && cp -rL --parents "$d" . )
+  COPIED[$d]=1
+done
+[ "${#COPIED[@]}" -gt 0 ] || { echo "::error::none of the embedded WebKit paths exist on this host"; exit 1; }
 HELPERS=()
-while IFS= read -r -d '' f; do HELPERS+=("$f"); done \
-  < <(find "$APPDIR$WEBKIT_LIBEXEC" -type f \( -perm -u+x -o -name '*.so' \) -print0)
-[ "${#HELPERS[@]}" -gt 0 ] || { echo "::error::no WebKit helpers found in $WEBKIT_LIBEXEC"; exit 1; }
+for d in "${!COPIED[@]}"; do
+  while IFS= read -r -d '' f; do HELPERS+=("$f"); done \
+    < <(find "$APPDIR$d" -type f \( -perm -u+x -o -name '*.so' \) -print0)
+done
+[ "${#HELPERS[@]}" -gt 0 ] || { echo "::error::no WebKit helpers found under ${!COPIED[*]}"; exit 1; }
 echo "WebKit helpers: ${HELPERS[*]#"$APPDIR"}"
 
 # --- 3. linuxdeploy + Tauri's GTK plugin: libraries, schemas, loaders, GIO ---
@@ -73,8 +97,8 @@ PATH="$TOOLS:$PATH" DEPLOY_GTK_VERSION=3 DISABLE_COPYRIGHT_FILES_DEPLOYMENT=1 \
     --executable "$WORK/swissknife-graph" \
     "${DEPS_ARGS[@]}" \
     --plugin gtk
-# The helpers live three levels below usr/lib (lib/<triplet>/webkit2gtk-4.1/);
-# linuxdeploy only fixed the rpath of what it copied itself.
+# linuxdeploy only fixed the rpath of what it copied itself; the helpers sit
+# elsewhere under usr/, so point them at usr/lib explicitly.
 for h in "${HELPERS[@]}"; do
   rel="$(realpath --relative-to="$(dirname "$h")" "$APPDIR/usr/lib")"
   patchelf --set-rpath "\$ORIGIN/$rel" "$h"
@@ -87,25 +111,29 @@ ln -sf usr/share/applications/swissknife-graph.desktop "$APPDIR/swissknife-graph
 ln -sf usr/share/icons/hicolor/512x512/apps/swissknife-graph.png "$APPDIR/swissknife-graph.png"
 ln -sf swissknife-graph.png "$APPDIR/.DirIcon"
 
-# --- 4. Patch the compiled-in libexec path (same length, fail-closed) --------
-OLD="$WEBKIT_LIBEXEC"                         # /usr/lib/<triplet>/webkit2gtk-4.1
-NEW="././/lib/$LIBDIR/webkit2gtk-4.1"          # resolves from cwd=usr/ (AppRun)
-[ "${#OLD}" -eq "${#NEW}" ] || { echo "::error::patch strings differ in length"; exit 1; }
-export OLD NEW
+# --- 4. Patch the compiled-in paths (same length, fail-closed) ---------------
+# "/usr/<rest>" becomes "././/<rest>": four bytes for four bytes, and with
+# cwd=usr/ (AppRun) it resolves to $APPDIR/usr/<rest>, where step 2 put the files.
 patched=0
 for lib in "$APPDIR"/usr/lib/libwebkit2gtk-4.1.so*; do
   [ -f "$lib" ] && [ ! -L "$lib" ] || continue
-  before="$(perl -0777 -ne 'my $c = () = /\Q$ENV{OLD}\E/g; print $c' "$lib")"
-  [ "$before" -gt 0 ] || { echo "::error::$lib does not contain $OLD — WebKit layout changed, refusing to ship"; exit 1; }
+  before="$(webkit_paths "$lib" | wc -l)"
+  [ "$before" -gt 0 ] || { echo "::error::$lib contains no /usr/...webkit2gtk-4.1 path — refusing to ship"; exit 1; }
   size_before="$(stat -c %s "$lib")"
-  perl -0777 -pi -e 's/\Q$ENV{OLD}\E/$ENV{NEW}/g' "$lib"
-  after="$(perl -0777 -ne 'my $c = () = /\Q$ENV{OLD}\E/g; print $c' "$lib")"
-  [ "$after" -eq 0 ] || { echo "::error::$lib still contains $OLD after patching"; exit 1; }
+  perl -0777 -pi -e 's{/usr(/[\x21-\x7e]*?webkit2gtk-4\.1(?:/[\x21-\x7e]*)?)\0}{././$1\0}g' "$lib"
+  after="$(webkit_paths "$lib" | wc -l)"
+  [ "$after" -eq 0 ] || { echo "::error::$lib still contains absolute WebKit paths after patching"; exit 1; }
   [ "$(stat -c %s "$lib")" -eq "$size_before" ] || { echo "::error::$lib changed size while patching"; exit 1; }
-  echo "Patched $before occurrence(s) of $OLD in ${lib#"$APPDIR"/}"
+  echo "Patched $before WebKit path string(s) in ${lib#"$APPDIR"/}:"
+  perl -0777 -ne 'while (/(\.\/\.\/\/[\x21-\x7e]*?webkit2gtk-4\.1(?:\/[\x21-\x7e]*)?)\0/g) { print "  $1\n" }' "$lib" | sort -u
   patched=$((patched + 1))
 done
 [ "$patched" -gt 0 ] || { echo "::error::libwebkit2gtk-4.1.so was not bundled"; exit 1; }
+# Every patched path must now exist inside the AppDir.
+while IFS= read -r rel; do
+  target="$APPDIR/usr/${rel#././/}"
+  [ -e "$target" ] || { echo "::error::patched path $rel has no file at $target"; exit 1; }
+done < <(perl -0777 -ne 'while (/(\.\/\.\/\/[\x21-\x7e]*?webkit2gtk-4\.1(?:\/[\x21-\x7e]*)?)\0/g) { print "$1\n" }' "$APPDIR"/usr/lib/libwebkit2gtk-4.1.so.0 | sort -u)
 
 # --- 5. Pack --------------------------------------------------------------
 curl -fsSL -o "$TOOLS/appimagetool" \
