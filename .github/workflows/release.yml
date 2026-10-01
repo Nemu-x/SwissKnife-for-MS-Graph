@@ -338,7 +338,13 @@ jobs:
     # Built inside Ubuntu 22.04: the AppImage bundles GTK and WebKitGTK from
     # this image, so the oldest glibc it needs on a user's machine is 2.35
     # (Ubuntu 22.04, Debian 12) instead of the runner's 2.39.
-    container: ubuntu:22.04
+    # Pinned by digest (zizmor unpinned-images); bump the digest together with the
+    # comment when refreshing the base image. ubuntu:22.04 as of 2026-09-18.
+    container: ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02
+    # Container jobs default to `sh`; the version guards below use bash syntax.
+    defaults:
+      run:
+        shell: bash
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
