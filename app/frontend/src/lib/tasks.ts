@@ -73,6 +73,7 @@ export const TASKS: Task[] = [
   { id: 'uploadFile', group: 'collab', page: 'files', action: 'upload', write: true, keywords: 'upload file загрузить файл закинуть' },
   { id: 'fileActions', group: 'collab', page: 'files', action: 'item', write: true, keywords: 'download link share delete скачать ссылка расшарить удалить файл' },
   { id: 'backupOneDrive', group: 'collab', page: 'offboarding', write: true, keywords: 'backup copy onedrive leaver бэкап перенос файлов уволенного' },
+  { id: 'copyMailbox', group: 'collab', page: 'offboarding', action: 'mailbox', write: true, keywords: 'mailbox copy export import migrate leaver mail archive почта ящик перенести скопировать уволенного архив' },
   { id: 'freeSpace', group: 'collab', page: 'cleanup', write: true, keywords: 'duplicates versions storage quota дубликаты версии место квота' },
 
   // Devices
@@ -88,11 +89,15 @@ export const TASKS: Task[] = [
   // Insight
   { id: 'signIns', group: 'insight', page: 'audit', action: 'signins', keywords: 'sign-in logs login failed логи входов вход не смог' },
   { id: 'directoryAudit', group: 'insight', page: 'audit', action: 'directory', keywords: 'audit who changed кто изменил аудит директории' },
+  { id: 'messageTrace', group: 'insight', page: 'audit', action: 'trace', keywords: 'message trace email not delivered where did mail go spam quarantine трассировка письмо не дошло куда ушло почта спам карантин' },
   { id: 'usageReports', group: 'insight', page: 'reports', keywords: 'usage report activity csv отчёт использование активность' },
   { id: 'serviceHealth', group: 'insight', page: 'health', action: 'overview', keywords: 'outage incident status down лежит авария статус сервисов' },
   { id: 'messageCenter', group: 'insight', page: 'health', action: 'messages', keywords: 'message center announcements changes центр сообщений анонсы изменения' },
   { id: 'caPolicies', group: 'insight', page: 'security', action: 'ca', keywords: 'conditional access policy условный доступ политики' },
   { id: 'appConsents', group: 'insight', page: 'security', action: 'consents', keywords: 'consent oauth enterprise apps согласия разрешения приложений' },
+  { id: 'recommendations', group: 'insight', page: 'security', action: 'recommendations', keywords: 'recommendations secure score entra advice улучшить рекомендации безопасность советы' },
+  { id: 'snapshot', group: 'insight', page: 'security', action: 'snapshot', keywords: 'snapshot export config baseline backup settings снимок конфигурация бэкап настроек' },
+  { id: 'drift', group: 'insight', page: 'security', action: 'drift', keywords: 'drift diff what changed compare config изменения что поменялось сравнить дрифт' },
   { id: 'runHistory', group: 'insight', page: 'history', keywords: 'history past runs resume история запусков продолжить' },
   { id: 'rawGraph', group: 'insight', page: 'raw', keywords: 'raw graph endpoint api request запрос вручную эндпоинт' },
   { id: 'dashboard', group: 'insight', page: 'dashboard', keywords: 'overview tenant counts обзор тенант дашборд' },

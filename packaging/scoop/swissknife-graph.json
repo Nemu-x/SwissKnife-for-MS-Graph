@@ -1,0 +1,51 @@
+{
+    "version": "1.0.0",
+    "description": "SwissKnife for MS Graph - Microsoft Graph desktop client for IT admins (portable build)",
+    "homepage": "https://github.com/Nemu-x/SwissKnife-for-MS-Graph",
+    "license": "MIT",
+    "notes": [
+        "Profiles and the audit log live in %APPDATA%\\SwissKnifeGraph, secrets in Windows Credential Manager;",
+        "'scoop uninstall swissknife-graph' leaves them in place."
+    ],
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/download/v1.0.0/SwissKnifeGraph-windows-amd64-portable.exe#/SwissKnifeGraph.exe",
+            "hash": "TODO-sha256-of-SwissKnifeGraph-windows-amd64-portable.exe-from-SHA256SUMS.txt"
+        },
+        "arm64": {
+            "url": "https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/download/v1.0.0/SwissKnifeGraph-windows-arm64-portable.exe#/SwissKnifeGraph.exe",
+            "hash": "TODO-sha256-of-SwissKnifeGraph-windows-arm64-portable.exe-from-SHA256SUMS.txt"
+        }
+    },
+    "bin": [
+        [
+            "SwissKnifeGraph.exe",
+            "swissknife-graph"
+        ]
+    ],
+    "shortcuts": [
+        [
+            "SwissKnifeGraph.exe",
+            "SwissKnife for MS Graph"
+        ]
+    ],
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/download/v$version/SwissKnifeGraph-windows-amd64-portable.exe#/SwissKnifeGraph.exe",
+                "hash": {
+                    "url": "https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/download/v$version/SHA256SUMS.txt",
+                    "regex": "$sha256\\s+SwissKnifeGraph-windows-amd64-portable\\.exe"
+                }
+            },
+            "arm64": {
+                "url": "https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/download/v$version/SwissKnifeGraph-windows-arm64-portable.exe#/SwissKnifeGraph.exe",
+                "hash": {
+                    "url": "https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/download/v$version/SHA256SUMS.txt",
+                    "regex": "$sha256\\s+SwissKnifeGraph-windows-arm64-portable\\.exe"
+                }
+            }
+        }
+    }
+}

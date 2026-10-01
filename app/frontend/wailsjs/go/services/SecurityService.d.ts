@@ -8,4 +8,8 @@ export function CAPolicies():Promise<Array<json.RawMessage>>;
 
 export function OAuthGrants(arg1:string):Promise<Array<json.RawMessage>>;
 
+export function RecommendationImpacted(arg1:string):Promise<Array<json.RawMessage>>;
+
+export function Recommendations():Promise<Array<json.RawMessage>>;
+
 export function ServicePrincipals(arg1:string,arg2:number):Promise<Array<json.RawMessage>>;

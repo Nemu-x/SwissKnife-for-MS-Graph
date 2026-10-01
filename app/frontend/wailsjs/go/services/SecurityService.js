@@ -14,6 +14,14 @@ export function OAuthGrants(arg1) {
   return window['go']['services']['SecurityService']['OAuthGrants'](arg1);
 }
 
+export function RecommendationImpacted(arg1) {
+  return window['go']['services']['SecurityService']['RecommendationImpacted'](arg1);
+}
+
+export function Recommendations() {
+  return window['go']['services']['SecurityService']['Recommendations']();
+}
+
 export function ServicePrincipals(arg1, arg2) {
   return window['go']['services']['SecurityService']['ServicePrincipals'](arg1, arg2);
 }

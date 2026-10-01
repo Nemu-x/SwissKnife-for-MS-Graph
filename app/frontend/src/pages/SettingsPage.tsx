@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Moon, Sun, Lock, RefreshCw, Download, Heart, Copy } from 'lucide-react'
+import { Moon, Sun, Lock, RefreshCw, Download, Heart, Copy, FolderOpen } from 'lucide-react'
 import { Page } from '../components/Layout'
 import { Card, Select, Button, Badge, Spinner } from '../components/ui'
 import { useStore } from '../lib/store'
 import { ACCENT_PRESETS, isHex } from '../lib/color'
 import { setLanguage } from '../i18n'
-import { api, errMessage } from '../lib/api'
+import { api, errMessage, errParsed } from '../lib/api'
 import { Version } from '../../wailsjs/go/main/App'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { humanBytes } from '../lib/format'
@@ -22,13 +22,20 @@ const SUPPORT_WALLETS: { asset: string; address: string }[] = [
 
 export function SettingsPage() {
   const { t, i18n } = useTranslation()
-  const { theme, toggleTheme, accent, setAccent, safeMode, setSafeMode, hideUnavailable, setHideUnavailable, checkAccess, readOnly, setStatus, connected, toast } = useStore()
+  const { theme, toggleTheme, accent, setAccent, safeMode, setSafeMode, hideUnavailable, setHideUnavailable, checkAccess, readOnly, setStatus, connected, toast, cache, setCache } = useStore()
   const [checkingAccess, setCheckingAccess] = useState(false)
   const [version, setVersion] = useState('')
-  const [update, setUpdate] = useState<services.UpdateInfo | null>(null)
+  // The update check result and the recovery path below are one-time results:
+  // they live in the store cache so leaving Settings and coming back keeps them.
+  const [update, setUpdateLocal] = useState<services.UpdateInfo | null>(() => cache['settings.update'] ?? null)
+  const setUpdate = (v: services.UpdateInfo | null) => { setUpdateLocal(v); setCache('settings.update', v) }
   const [checking, setChecking] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [updateProgress, setUpdateProgress] = useState('')
+  // Path of the downloaded installer, kept when the elevated launch fails so
+  // the user can open its folder and run it by hand.
+  const [failedInstaller, setFailedInstallerLocal] = useState<string>(() => cache['settings.failedInstaller'] ?? '')
+  const setFailedInstaller = (v: string) => { setFailedInstallerLocal(v); setCache('settings.failedInstaller', v) }
 
   useEffect(() => { Version().then(setVersion).catch(() => {}) }, [])
 
@@ -56,16 +63,27 @@ export function SettingsPage() {
 
   const updateNow = async () => {
     if (!update?.assetUrl) return
-    setUpdating(true); setUpdateProgress('')
+    setUpdating(true); setUpdateProgress(''); setFailedInstaller('')
+    let path = ''
     try {
-      const path = await api.update.download(update.assetUrl, update.assetName || 'installer.exe', update.assetSize || 0)
+      path = await api.update.download(update.assetUrl, update.assetName || 'installer.exe', update.assetSize || 0)
       setUpdateProgress(t('settings.updateInstalling'))
       await api.update.apply(path)
       // the app quits moments later; nothing else to do
     } catch (e) {
-      toast('err', errMessage(e))
+      if (errParsed(e).code === 'update_declined') {
+        // The UAC prompt was dismissed — not a failure, just try again later.
+        toast('info', t('settings.updateDeclined'))
+      } else {
+        toast('err', errMessage(e))
+        if (path) setFailedInstaller(path)
+      }
       setUpdating(false)
     }
+  }
+
+  const revealInstaller = async () => {
+    try { await api.update.revealInstaller(failedInstaller) } catch (e) { toast('err', errMessage(e)) }
   }
 
   const toggleReadOnly = async () => setStatus(await api.connect.setReadOnly(!readOnly))
@@ -242,9 +260,17 @@ export function SettingsPage() {
                 <Button variant="subtle" disabled={updating} onClick={() => api.update.openReleases(update.url)}>
                   {t('settings.download')}
                 </Button>
+                {failedInstaller && (
+                  <Button variant="subtle" onClick={revealInstaller}>
+                    <FolderOpen size={15} /> {t('settings.updateReveal')}
+                  </Button>
+                )}
               </div>
             )}
           </div>
+          {update?.updateAvailable && update.assetUrl && (
+            <p className="mt-2 text-xs text-[var(--text-faint)]">{t('settings.updateUacHint')}</p>
+          )}
         </Card>
       </div>
     </Page>

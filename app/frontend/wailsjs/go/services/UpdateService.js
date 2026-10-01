@@ -18,6 +18,10 @@ export function OpenReleasesPage(arg1) {
   return window['go']['services']['UpdateService']['OpenReleasesPage'](arg1);
 }
 
+export function RevealInstaller(arg1) {
+  return window['go']['services']['UpdateService']['RevealInstaller'](arg1);
+}
+
 export function SetAppContext(arg1) {
   return window['go']['services']['UpdateService']['SetAppContext'](arg1);
 }

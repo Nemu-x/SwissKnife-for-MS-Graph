@@ -297,3 +297,11 @@ func (c *Client) Put(ctx context.Context, path string, body, out any) error {
 func (c *Client) Delete(ctx context.Context, path string) error {
 	return c.Do(ctx, http.MethodDelete, path, nil, nil, nil)
 }
+
+// Beta returns the absolute URL of an endpoint on the /beta version. The client
+// speaks v1.0 by default; the few features that exist only in beta (Entra
+// recommendations) opt in per call. Any other base URL (tests, national
+// clouds) keeps its host and gets "/beta" in place of the version segment.
+func (c *Client) Beta(path string) string {
+	return strings.TrimSuffix(c.baseURL, "/v1.0") + "/beta/" + strings.TrimLeft(path, "/")
+}

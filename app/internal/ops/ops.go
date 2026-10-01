@@ -21,11 +21,13 @@ type Kind string
 
 const (
 	KindTransfer Kind = "transfer"
+	KindMailbox  Kind = "mailbox" // mailbox copy through the import/export APIs
 	KindPlaybook Kind = "playbook"
 	KindCleanup  Kind = "cleanup"
 	KindMirror   Kind = "mirror"
 	KindBulk     Kind = "bulk"
 	KindUpdate   Kind = "update"
+	KindSnapshot Kind = "snapshot" // tenant configuration snapshot
 )
 
 // AlreadyRunningError signals a single-flight violation the UI can explain.

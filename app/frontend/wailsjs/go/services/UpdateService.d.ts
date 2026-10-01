@@ -11,4 +11,6 @@ export function Download(arg1:string,arg2:string,arg3:number):Promise<string>;
 
 export function OpenReleasesPage(arg1:string):Promise<void>;
 
+export function RevealInstaller(arg1:string):Promise<void>;
+
 export function SetAppContext(arg1:context.Context):Promise<void>;
