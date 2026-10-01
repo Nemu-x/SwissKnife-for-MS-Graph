@@ -38,7 +38,8 @@ export function useMailboxCopy() {
       patchJob('mailbox', { result: r })
       const failed = Object.keys(r.failed || {}).length
       jobLog('mailbox', `${r.canceled ? '⏹ Canceled' : '✓ Done'} — ${r.copied} copied in ${r.folders} folder(s), ${failed} failed → ${r.rootFolder}`)
-      toast(r.canceled ? 'info' : 'ok', `${r.copied} copied${r.canceled ? ' (canceled)' : ''}`)
+      toast(r.canceled || failed > 0 ? 'info' : 'ok',
+        `${r.copied} copied, ${failed} failed${r.canceled ? ' (canceled)' : ''}`)
       return r
     } catch (e) {
       if (owner.current !== gen) return null

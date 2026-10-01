@@ -2,12 +2,14 @@
 
 *Draft for r/sysadmin / r/Office365 / Microsoft Tech Community. Maintainer voice, first person.*
 
-On 1 October 2026 Exchange Web Services stops being supported in Exchange
-Online: tenants that have not put their EWS apps on an allow list get
-`EWSEnabled` flipped to false, and in April 2027 the protocol is removed for
-good. Earlier this year, on 8 April, the Reporting Web Service behind
-`Get-MessageTrace` / `Get-MessageTraceDetail` started its own deprecation, with
-message trace moving to Graph. Neither change is news, but together they mean
+From October 2026 Microsoft starts disabling Exchange Web Services in Exchange
+Online in phases: tenants whose organization setting is still `EWSEnabled =
+Null` get it set to `False`, only the application IDs listed in
+`EWSAllowedAppIDs` keep working, and in April 2027 the protocol is removed for
+everyone. Earlier this year, on 8 April (for the Worldwide multi-tenant cloud;
+the government and sovereign clouds follow their own dates), the Reporting Web
+Service behind `Get-MessageTrace` / `Get-MessageTraceDetail` started its own
+deprecation, with message trace moving to Graph. Neither change is news, but together they mean
 that a lot of admins are re-examining what talks to their tenant right now, and
 a fair number of "I'll just run this old script" habits are dying.
 

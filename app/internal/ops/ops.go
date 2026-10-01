@@ -27,6 +27,7 @@ const (
 	KindMirror   Kind = "mirror"
 	KindBulk     Kind = "bulk"
 	KindUpdate   Kind = "update"
+	KindSnapshot Kind = "snapshot" // tenant configuration snapshot
 )
 
 // AlreadyRunningError signals a single-flight violation the UI can explain.

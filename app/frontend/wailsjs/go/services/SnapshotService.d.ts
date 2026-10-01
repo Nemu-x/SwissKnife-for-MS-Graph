@@ -3,6 +3,8 @@
 import {services} from '../models';
 import {json} from '../models';
 
+export function Cancel():Promise<void>;
+
 export function Delete(arg1:string):Promise<void>;
 
 export function Diff(arg1:string,arg2:string):Promise<services.SnapshotDiff>;

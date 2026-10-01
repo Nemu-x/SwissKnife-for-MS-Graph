@@ -81,12 +81,12 @@ func sectionByName(m *SnapshotMeta, name string) SnapshotSection {
 func TestSnapshotTakeWritesFileAndSkipsForbiddenSection(t *testing.T) {
 	var calls []string
 	var events []map[string]any
-	eventSink = func(name string, data map[string]any) {
+	SetEventSink(func(name string, data map[string]any) {
 		if name == "snapshot:progress" {
 			events = append(events, data)
 		}
-	}
-	t.Cleanup(func() { eventSink = nil })
+	})
+	t.Cleanup(func() { SetEventSink(nil) })
 
 	svc := snapshotHarness(t, defaultSnapState(), &calls)
 	meta, err := svc.Take("Weekly check")

@@ -15,8 +15,8 @@ import (
 func captureEvents(t *testing.T) *eventBuffer {
 	t.Helper()
 	buf := &eventBuffer{}
-	eventSink = buf.add
-	t.Cleanup(func() { eventSink = nil })
+	SetEventSink(buf.add)
+	t.Cleanup(func() { SetEventSink(nil) })
 	return buf
 }
 

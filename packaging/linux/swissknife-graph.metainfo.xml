@@ -2,7 +2,7 @@
 <!-- AppStream metadata for the AppImage / Linux packages. @VERSION@ and @DATE@
      are filled in by packaging/linux/build-appimage.sh from the release tag. -->
 <component type="desktop-application">
-  <id>swissknife-graph</id>
+  <id>io.github.nemu_x.SwissKnifeGraph</id>
   <launchable type="desktop-id">swissknife-graph.desktop</launchable>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>

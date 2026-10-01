@@ -164,7 +164,9 @@ export function SecurityPage() {
 
   const pickRec = (r: GraphObject) => {
     setSelRec(r)
-    if (impacted[r.id]) return
+    // A stored error is not a result: the next click retries the fetch.
+    const cur = impacted[r.id]
+    if (cur && !(typeof cur === 'object' && !Array.isArray(cur) && 'error' in cur)) return
     setImpacted((m) => ({ ...m, [r.id]: 'loading' }))
     api.security.recommendationImpacted(r.id)
       .then((list) => setImpacted((m) => ({ ...m, [r.id]: list })))
@@ -321,6 +323,9 @@ export function SecurityPage() {
           <Button variant="primary" disabled={taking} onClick={takeSnapshot}>
             {taking ? <Spinner /> : <Camera size={15} />} {t('snapshot.take')}
           </Button>
+          {taking && (
+            <Button variant="ghost" onClick={() => api.snapshot.cancel().catch(() => {})}>{t('common.cancel')}</Button>
+          )}
           {taking && (
             <p className="text-xs text-[var(--accent2)]">
               {progress && progress.section

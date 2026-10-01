@@ -215,7 +215,7 @@ export function OffboardingPage() {
       busy={copying || previewing}
       busyLabel={copying ? job?.progress || t('offboarding.running') : t('offboarding.preview')}
       hasResult={(!!job && (job.log.length > 0 || job.running || !!report)) || mbxHasOutput}
-      onClearResult={() => clearJob('transfer')}
+      onClearResult={() => { clearJob('transfer'); if (!mailboxCopy.job?.running) clearJob('mailbox') }}
       result={resultPane}
     />
   )
