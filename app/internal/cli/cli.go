@@ -133,7 +133,8 @@ func connectProfile(ctx context.Context, p secrets.Profile, readOnly bool, stder
 	// first command, and the audit log never records a connect that did not work.
 	var org map[string]any
 	if err := gc.Get(ctx, "/organization", url.Values{"$select": {"id"}}, &org); err != nil {
-		sess.Record("session.connect", cr.TenantID, "mode="+cr.AuthMode+" via=cli", err)
+		// No client is attached on failure, so name the profile in the detail.
+		sess.Record("session.connect", cr.TenantID, "profile="+cr.Name+" mode="+cr.AuthMode+" via=cli", err)
 		return nil, fmt.Errorf("connect self-test (GET /organization) failed: %w", err)
 	}
 	// SetClient first: the audit entry carries the profile name from the session.

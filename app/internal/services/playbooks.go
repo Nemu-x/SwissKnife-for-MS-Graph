@@ -692,7 +692,11 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				return detail + " · playbook stopped, licenses and account kept", e
 			}
 			if len(res.Failed) > 0 {
-				return detail, fmt.Errorf("%d item(s) failed — see the mailbox copy log", len(res.Failed))
+				// Items that did not make it across are mail that would die with the
+				// license: stop before the license and account steps as well.
+				r.canceled = true
+				return detail + " · playbook stopped, licenses and account kept",
+					fmt.Errorf("%d item(s) failed — see the mailbox copy log", len(res.Failed))
 			}
 			return detail, nil
 		})
