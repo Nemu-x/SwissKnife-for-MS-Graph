@@ -72,6 +72,7 @@ for p in "${EMBEDDED[@]}"; do
   # -L: the multiarch directory is often a symlink to /usr/libexec; the AppDir
   # needs real files at the path WebKit will look up.
   ( cd "$APPDIR" && cp -rL --parents "$d" . )
+  rm -f "$APPDIR$d/MiniBrowser" # WebKit's demo browser ships in the same dir; not needed
   COPIED[$d]=1
 done
 [ "${#COPIED[@]}" -gt 0 ] || { echo "::error::none of the embedded WebKit paths exist on this host"; exit 1; }
@@ -84,9 +85,9 @@ done
 echo "WebKit helpers: ${HELPERS[*]#"$APPDIR"}"
 
 # --- 3. linuxdeploy + Tauri's GTK plugin: libraries, schemas, loaders, GIO ---
-curl -fsSL -o "$TOOLS/linuxdeploy" \
+curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 -o "$TOOLS/linuxdeploy" \
   "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$ARCH.AppImage"
-curl -fsSL -o "$TOOLS/linuxdeploy-plugin-gtk.sh" \
+curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 -o "$TOOLS/linuxdeploy-plugin-gtk.sh" \
   "https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh"
 chmod +x "$TOOLS/linuxdeploy" "$TOOLS/linuxdeploy-plugin-gtk.sh"
 DEPS_ARGS=()
@@ -156,7 +157,7 @@ while IFS= read -r rel; do
 done < <(perl -0777 -ne 'while (/(\.\/\.\/\/[\x21-\x7e]*?webkit2gtk-4\.1(?:\/[\x21-\x7e]*)?)\0/g) { print "$1\n" }' "$APPDIR"/usr/lib/libwebkit2gtk-4.1.so.0 | sort -u)
 
 # --- 5. Pack --------------------------------------------------------------
-curl -fsSL -o "$TOOLS/appimagetool" \
+curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 -o "$TOOLS/appimagetool" \
   "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$ARCH.AppImage"
 chmod +x "$TOOLS/appimagetool"
 OUT="$OUT_DIR/SwissKnifeGraph-$ARCH.AppImage" # no "linux" in the name: every AppImage is for Linux
