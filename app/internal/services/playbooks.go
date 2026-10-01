@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -665,11 +664,10 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				IncludeContacts: req.MailboxIncludeContacts, IncludeCalendar: req.MailboxIncludeCalendar,
 			}, nil)
 			if res == nil {
-				// Cancelled while resolving mailboxes or previewing: the child op
-				// is gone, the playbook must stop as well.
-				if errors.Is(e, context.Canceled) {
-					r.canceled = true
-				}
+				// No result at all (cancelled, or a failure while resolving the
+				// mailboxes, previewing or creating the root folder): nothing was
+				// copied, so the license and account steps below must not run.
+				r.canceled = true
 				return "", e
 			}
 			// A partial result (items copied before a fatal error) is still the

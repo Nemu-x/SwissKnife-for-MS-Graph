@@ -132,12 +132,13 @@ func connectProfile(ctx context.Context, p secrets.Profile, readOnly bool, stder
 	// Same self-test as the GUI Connect: bad credentials fail here, not on the
 	// first command, and the audit log never records a connect that did not work.
 	var org map[string]any
-	err = gc.Get(ctx, "/organization", url.Values{"$select": {"id"}}, &org)
-	sess.Record("session.connect", cr.TenantID, "mode="+cr.AuthMode+" via=cli", err)
-	if err != nil {
+	if err := gc.Get(ctx, "/organization", url.Values{"$select": {"id"}}, &org); err != nil {
+		sess.Record("session.connect", cr.TenantID, "mode="+cr.AuthMode+" via=cli", err)
 		return nil, fmt.Errorf("connect self-test (GET /organization) failed: %w", err)
 	}
+	// SetClient first: the audit entry carries the profile name from the session.
 	sess.SetClient(gc, cr.Name)
+	sess.Record("session.connect", cr.TenantID, "mode="+cr.AuthMode+" via=cli", nil)
 	return sess, nil
 }
 

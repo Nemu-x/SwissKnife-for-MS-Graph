@@ -4,9 +4,11 @@
 
 From October 2026 Microsoft starts disabling Exchange Web Services in Exchange
 Online in phases: tenants whose organization setting is still `EWSEnabled =
-Null` get it set to `False`, only the application IDs listed in
-`EWSAllowedAppIDs` keep working, and in April 2027 the protocol is removed for
-everyone. Earlier this year, on 8 April (for the Worldwide multi-tenant cloud;
+Null` get it set to `False`, which blocks EWS for every application. To keep
+specific applications working until retirement, a tenant has to set
+`EWSEnabled = True` and list their IDs in `EWSAllowedAppIDs`; the temporary
+hybrid rich-coexistence exception follows the same rule for the dedicated
+hybrid app. In April 2027 the protocol is removed for everyone. Earlier this year, on 8 April (for the Worldwide multi-tenant cloud;
 the government and sovereign clouds follow their own dates), the Reporting Web
 Service behind `Get-MessageTrace` / `Get-MessageTraceDetail` started its own
 deprecation, with message trace moving to Graph. Neither change is news, but together they mean

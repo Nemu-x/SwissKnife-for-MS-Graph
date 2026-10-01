@@ -277,7 +277,11 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 	doc.Meta.Tenant = x.s.ProfileName()
 	// The id is claimed by creating the file exclusively: two snapshots in the
 	// same second (or two app instances) can never overwrite each other.
-	id, err := writeSnapshotExclusive(dir, &doc, now, name)
+	// A cancel that arrived with the last progress event must not leave a file.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	id, err := writeSnapshotExclusive(ctx, dir, &doc, now, name)
 	doc.Meta.ID = id
 	x.s.Record("snapshot.take", doc.Meta.ID, fmt.Sprintf("%d sections, %d skipped", total, skipped), err)
 	if err != nil {
@@ -464,9 +468,12 @@ func (x *SnapshotService) load(id string) (*snapshotFile, error) {
 // writeSnapshotExclusive picks the first free id for this stamp and name and
 // creates the file with O_EXCL, re-marshalling the document with the id that
 // actually stuck.
-func writeSnapshotExclusive(dir string, doc *snapshotFile, now time.Time, name string) (string, error) {
+func writeSnapshotExclusive(ctx context.Context, dir string, doc *snapshotFile, now time.Time, name string) (string, error) {
 	base := now.Format("20060102-150405") + "-" + slugify(name)
 	for n := 1; n <= 1000; n++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		id := base
 		if n > 1 {
 			id = fmt.Sprintf("%s-%d", base, n)
@@ -486,6 +493,9 @@ func writeSnapshotExclusive(dir string, doc *snapshotFile, now time.Time, name s
 		_, werr := f.Write(b)
 		if cerr := f.Close(); werr == nil {
 			werr = cerr
+		}
+		if werr == nil {
+			werr = ctx.Err() // cancelled mid-write: do not keep a half-trusted file
 		}
 		if werr != nil {
 			_ = os.Remove(filepath.Join(dir, id+".json"))
