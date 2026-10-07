@@ -14,6 +14,18 @@ export function Catalog() {
   return window['go']['services']['ActionsService']['Catalog']();
 }
 
+export function InstallModule(arg1) {
+  return window['go']['services']['ActionsService']['InstallModule'](arg1);
+}
+
 export function Plan(arg1, arg2) {
   return window['go']['services']['ActionsService']['Plan'](arg1, arg2);
+}
+
+export function PowerShellStatus() {
+  return window['go']['services']['ActionsService']['PowerShellStatus']();
+}
+
+export function RefreshPowerShell() {
+  return window['go']['services']['ActionsService']['RefreshPowerShell']();
 }

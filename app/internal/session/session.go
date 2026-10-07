@@ -23,15 +23,16 @@ var ErrNotConnected = errors.New("not connected — connect to a tenant first")
 var ErrReadOnly = errors.New("read-only mode is enabled — writes are blocked")
 
 type Session struct {
-	mu          sync.RWMutex
-	ctx         context.Context
-	client      *graphapi.Client
-	tokens      TokenBroker
-	tenantID    string
-	appOnly     bool
-	profileName string
-	readOnly    bool
-	configDir   string
+	mu           sync.RWMutex
+	ctx          context.Context
+	client       *graphapi.Client
+	tokens       TokenBroker
+	tenantID     string
+	appOnly      bool
+	onDisconnect []func()
+	profileName  string
+	readOnly     bool
+	configDir    string
 
 	Audit   *auditlog.Log
 	Ops     *ops.Registry
@@ -119,8 +120,22 @@ func (s *Session) Tokens() TokenBroker {
 	return s.tokens
 }
 
+// OnDisconnect registers cleanup for when the tenant connection ends (e.g.
+// stopping signed-in PowerShell hosts).
+func (s *Session) OnDisconnect(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onDisconnect = append(s.onDisconnect, fn)
+}
+
 func (s *Session) Disconnect() {
 	s.mu.Lock()
+	hooks := append([]func(){}, s.onDisconnect...)
+	defer func() {
+		for _, fn := range hooks {
+			fn()
+		}
+	}()
 	defer s.mu.Unlock()
 	s.client = nil
 	s.tokens = nil

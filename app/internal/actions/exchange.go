@@ -26,7 +26,7 @@ func exchangeActions() []engine.Action {
 				},
 				Permissions: []string{"Exchange.ManageAsAppV2 + Recipient Management"},
 			},
-			Impls: []engine.Impl{exoSendOnBehalf{}},
+			Impls: []engine.Impl{exoSendOnBehalf{}, psSendOnBehalf{}},
 		},
 		{
 			Manifest: engine.Manifest{
@@ -40,7 +40,7 @@ func exchangeActions() []engine.Action {
 				},
 				Permissions: []string{"Exchange.ManageAsAppV2 + Recipient Management", "Calendars.Read", "Mail.ReadBasic.All"},
 			},
-			Impls: []engine.Impl{exoFolderPermission{}},
+			Impls: []engine.Impl{exoFolderPermission{}, psFolderPermission{}},
 		},
 	}
 }
@@ -192,7 +192,7 @@ func folderIdentity(env engine.Env, mailbox, folder string) (string, error) {
 // plain string or as an object depending on the service version.
 type permEntry struct {
 	User         json.RawMessage `json:"User"`
-	AccessRights []string        `json:"AccessRights"`
+	AccessRights json.RawMessage `json:"AccessRights"` // string or array
 }
 
 // names returns the row's address (when the service sent one) and its
@@ -261,6 +261,12 @@ func (exoFolderPermission) Plan(env engine.Env, in engine.Inputs) ([]engine.Chan
 	if err != nil {
 		return nil, err
 	}
+	return planFolderChange(items, grantee, identity, owner.UPN, in["access"]), nil
+}
+
+// planFolderChange turns the folder's permission rows into the change for
+// one grantee; shared by the Admin API and PowerShell implementations.
+func planFolderChange(items []json.RawMessage, grantee recipient, identity, mailbox, want string) []engine.Change {
 	rows := make([]permEntry, 0, len(items))
 	for _, raw := range items {
 		var e permEntry
@@ -270,11 +276,10 @@ func (exoFolderPermission) Plan(env engine.Env, in engine.Inputs) ([]engine.Chan
 	}
 	current := ""
 	if row, ok := findGrantee(rows, grantee); ok {
-		current = strings.Join(row.AccessRights, ",")
+		current = strings.Join(strs(row.AccessRights), ",")
 	}
-	want := in["access"]
 	ch := engine.Change{Target: grantee.UPN + " @ " + identity, Field: "folderAccess", Before: current,
-		Ref: map[string]string{"identity": identity, "mailbox": owner.UPN, "user": firstOf(grantee.Mail, grantee.UPN)}}
+		Ref: map[string]string{"identity": identity, "mailbox": mailbox, "user": firstOf(grantee.Mail, grantee.UPN)}}
 	switch {
 	case want == "none" && current == "":
 		ch.Op = "none"
@@ -287,7 +292,7 @@ func (exoFolderPermission) Plan(env engine.Env, in engine.Inputs) ([]engine.Chan
 	default:
 		ch.Op, ch.After = "set", want
 	}
-	return []engine.Change{ch}, nil
+	return []engine.Change{ch}
 }
 
 func (exoFolderPermission) Apply(env engine.Env, in engine.Inputs, ch engine.Change) error {

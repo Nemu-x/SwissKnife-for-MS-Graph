@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, Eye, Check, ArrowRight, Minus } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, Eye, Check, ArrowRight, Minus } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
@@ -32,12 +32,20 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
   'user.usageLocation': { label: 'actions.user.usageLocation.label', hint: 'actions.user.usageLocation.hint', notes: ['actions.user.usageLocation.note'], icon: <Globe size={16} /> },
   'mailbox.sendOnBehalf': { label: 'actions.mailbox.sendOnBehalf.label', hint: 'actions.mailbox.sendOnBehalf.hint', notes: ['actions.mailbox.sendOnBehalf.note'], icon: <Send size={16} /> },
   'mailbox.folderPermission': { label: 'actions.mailbox.folderPermission.label', hint: 'actions.mailbox.folderPermission.hint', notes: ['actions.mailbox.folderPermission.note'], icon: <FolderLock size={16} /> },
+  'mailbox.fullAccess': { label: 'actions.mailbox.fullAccess.label', hint: 'actions.mailbox.fullAccess.hint', notes: ['actions.mailbox.fullAccess.note'], icon: <KeySquare size={16} /> },
+  'mailbox.sendAs': { label: 'actions.mailbox.sendAs.label', hint: 'actions.mailbox.sendAs.hint', icon: <AtSign size={16} /> },
+  'mailbox.type': { label: 'actions.mailbox.type.label', hint: 'actions.mailbox.type.hint', warn: ['actions.mailbox.type.note'], icon: <Inbox size={16} /> },
+  'mailbox.forwarding': { label: 'actions.mailbox.forwarding.label', hint: 'actions.mailbox.forwarding.hint', notes: ['actions.mailbox.forwarding.note'], icon: <Forward size={16} /> },
+  'mailbox.address': { label: 'actions.mailbox.address.label', hint: 'actions.mailbox.address.hint', icon: <AtSign size={16} /> },
+  'mailbox.calendarProcessing': { label: 'actions.mailbox.calendarProcessing.label', hint: 'actions.mailbox.calendarProcessing.hint', notes: ['actions.mailbox.calendarProcessing.note'], icon: <CalendarCheck size={16} /> },
+  'distributionList.membership': { label: 'actions.distributionList.membership.label', hint: 'actions.distributionList.membership.hint', notes: ['actions.distributionList.membership.note'], icon: <ListPlus size={16} /> },
+  'transportRule.state': { label: 'actions.transportRule.state.label', hint: 'actions.transportRule.state.hint', warn: ['actions.transportRule.state.note'], icon: <ShieldOff size={16} /> },
   'group.membership': { label: 'groups.tileAdd', hint: 'groups.hintAdd', notes: ['groups.noteAdd'], icon: <UserPlus size={16} /> },
   'license.assign': { label: 'licensing.tileAssign', hint: 'licensing.hintAssign', notes: ['licensing.noteAssign'], warn: ['licensing.noteRemove'], icon: <Plus size={16} /> },
 }
 
 // Display tokens the backend puts into Change.before/after.
-const VALUE_TOKENS = new Set(['allowed', 'blocked', 'active', 'revoked'])
+const VALUE_TOKENS = new Set(['allowed', 'blocked', 'active', 'revoked', 'shared', 'regular', 'enabled', 'disabled'])
 
 // One fetch per connection (profile), shared by every page. A failed fetch is
 // not cached: the next page that mounts asks again.

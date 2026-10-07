@@ -158,7 +158,7 @@ func TestFolderPermissionRejectsCalendarRoleOnInbox(t *testing.T) {
 
 func TestFindGranteeNeedsAUniqueDisplayName(t *testing.T) {
 	bob := recipient{ID: "b1", UPN: "bob@contoso.com", Mail: "bob@contoso.com", Name: "Bob Smith"}
-	row := func(user string) permEntry { return permEntry{User: json.RawMessage(user), AccessRights: []string{"Reviewer"}} }
+	row := func(user string) permEntry { return permEntry{User: json.RawMessage(user), AccessRights: json.RawMessage(`["Reviewer"]`)} }
 	if _, ok := findGrantee([]permEntry{row(`"Bob Smith"`), row(`"Bob Smith"`)}, bob); ok {
 		t.Fatal("two rows with the same display name must not match")
 	}
@@ -167,9 +167,9 @@ func TestFindGranteeNeedsAUniqueDisplayName(t *testing.T) {
 	}
 	r, ok := findGrantee([]permEntry{
 		row(`{"DisplayName":"Bob Smith","ADRecipient":{"PrimarySmtpAddress":"other@contoso.com"}}`),
-		{User: json.RawMessage(`{"DisplayName":"Bob Smith","ADRecipient":{"PrimarySmtpAddress":"bob@contoso.com"}}`), AccessRights: []string{"Editor"}},
+		{User: json.RawMessage(`{"DisplayName":"Bob Smith","ADRecipient":{"PrimarySmtpAddress":"bob@contoso.com"}}`), AccessRights: json.RawMessage(`"Editor"`)},
 	}, bob)
-	if !ok || r.AccessRights[0] != "Editor" {
+	if !ok || strs(r.AccessRights)[0] != "Editor" {
 		t.Fatalf("address must win: %+v %v", r, ok)
 	}
 }
