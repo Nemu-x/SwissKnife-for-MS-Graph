@@ -16,6 +16,24 @@ async function stubWails(page: Page, opts: { connected?: boolean } = {}) {
       List: [],                 // JournalService.List — empty run history
       SignIns: [{ id: 's1', userDisplayName: 'Alice Smith', status: 'success' }],
       SignInsFiltered: [{ id: 's1', userDisplayName: 'Alice Smith', errorCode: 50126 }],
+      // ActionsService (ADR-008): the built-in catalog, one preview, one apply.
+      Catalog: connected ? [
+        { id: 'user.signIn', page: 'users', danger: 'write', available: true, backend: 'graph', fields: [
+          { name: 'user', kind: 'user', required: true },
+          { name: 'state', kind: 'choice', required: true, options: ['blocked', 'allowed'], default: 'blocked' }] },
+        { id: 'user.revokeSessions', page: 'users', danger: 'destructive', confirmField: 'user', available: true, backend: 'graph',
+          fields: [{ name: 'user', kind: 'user', required: true }] },
+        { id: 'group.membership', page: 'groups', danger: 'write', available: true, backend: 'graph', fields: [
+          { name: 'user', kind: 'user', required: true }, { name: 'group', kind: 'group', required: true }] },
+        { id: 'license.assign', page: 'licensing', danger: 'write', available: true, backend: 'graph', fields: [
+          { name: 'user', kind: 'user', required: true }, { name: 'sku', kind: 'sku', required: true }] },
+        { id: 'mailbox.fullAccess', page: 'users', danger: 'write', available: false,
+          reason: { key: 'backendMissing', params: { backend: 'pwsh' } }, fields: [] },
+      ] : [],
+      Plan: { id: 'p1', actionId: 'user.signIn', backend: 'graph', inputs: {}, changes: [
+        { target: 'ann@contoso.com', field: 'signIn', op: 'set', before: 'allowed', after: 'blocked' }] },
+      Apply: { opId: 'o1', applied: 1, skipped: 0, failed: 0, canceled: false, outcomes: [
+        { target: 'ann@contoso.com', field: 'signIn', op: 'set', ok: true, skipped: false }] },
     }
     const method = (name: string) => () => Promise.resolve(results[name] ?? null)
     const service = new Proxy({}, { get: (_t, m: string) => method(m) })
@@ -125,7 +143,7 @@ test('every migrated page renders its action tiles', async ({ page }) => {
     ['Users & Admin', 'Everything about one user'],
     ['Licensing', 'Assign or remove a license'],
     ['Admin roles', 'Grant or revoke a role'],
-    ['Groups', 'Add someone to a group'],
+    ['Groups', 'Add or remove group members'],
     ['App registrations', 'Secrets about to expire'],
     ['Chats', 'Who is in a chat'],
     ['Mail & Calendar', 'Send mail as a user'],
@@ -187,4 +205,27 @@ test('language switch to Russian localizes the UI', async ({ page }) => {
   // The language selector is the first <select> on the settings page.
   await page.locator('select').first().selectOption('ru')
   await expect(page.getByText('Настройки').first()).toBeVisible()
+})
+
+test('a catalog action previews its change before applying it', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Users & Admin' }).click()
+
+  // An action whose backend is missing stays visible and says why.
+  await expect(page.getByText('Needs the pwsh backend, which is not set up.')).toBeVisible()
+
+  await page.getByRole('button', { name: /Block or unblock sign-in/ }).click()
+  await page.getByRole('button', { name: 'User', exact: true }).click()
+  await page.getByPlaceholder('Search or paste', { exact: false }).fill('ann@contoso.com')
+  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Preview changes' }).click()
+
+  await expect(page.getByText('What will change')).toBeVisible()
+  await expect(page.getByText('allowed →', { exact: false })).toBeVisible()
+  await page.getByRole('button', { name: 'Apply', exact: true }).click()
+  await expect(page.getByText('Done: 1 changed, 0 already in place').first()).toBeVisible()
+  expect(errors).toEqual([])
 })

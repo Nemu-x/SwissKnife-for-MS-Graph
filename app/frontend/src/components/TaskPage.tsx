@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { X, LayoutGrid, Table2, Rows2, Lock, Eraser } from 'lucide-react'
 import { Spinner } from './ui'
 import { useStore } from '../lib/store'
+import { useCatalogTiles } from './CatalogAction'
 import type { PageId } from '../pages/registry'
 
 // Action-first layout: everything the page can do is a visible tile, the tile
@@ -23,6 +24,10 @@ export interface TaskAction {
   // Caveats and prerequisites, shown next to the form instead of cluttering it.
   note?: ReactNode
   onClick?: () => void
+  // Catalog action placeholder (see catalogTile); TaskPage renders the real tile.
+  catalog?: boolean
+  badge?: string // backend other than Graph, e.g. "Exchange"
+  disabledReason?: string // unavailable right now, and why
 }
 
 // What the last run of an action did, shown on its tile. Toasts vanish after a
@@ -41,10 +46,10 @@ export function TaskPage({
   title,
   subtitle,
   search,
-  actions,
+  actions: pageActions,
   result,
   hasResult,
-  status,
+  status: pageStatus,
   busy,
   busyLabel,
   onClearResult,
@@ -62,6 +67,8 @@ export function TaskPage({
   onClearResult?: () => void // drop the result and go back to the tiles
 }) {
   const { t, i18n } = useTranslation()
+  const { tiles: actions, status: catalogStatus, confirmElement, ready } = useCatalogTiles(pageId, pageActions)
+  const status = { ...pageStatus, ...catalogStatus }
   const { readOnly, access, pendingAction, requestAction } = useStore()
   const [openId, setOpenId] = useState<string | null>(null)
   const [view, setView] = useState<PageView>(
@@ -78,15 +85,18 @@ export function TaskPage({
   useEffect(() => {
     if (!pendingAction) return
     const a = actionsRef.current.find((x) => x.id === pendingAction)
+    // Catalog tiles arrive asynchronously: keep the request until they have.
+    if (!a && !ready) return
     // Clear the request either way: a request this page cannot honour must not
     // survive to fire on the next page that happens to use the same id.
     requestAction(null)
-    if (!a) return
+    if (!a || a.disabledReason) return
     if (a.panel) setOpenId(a.id)
     a.onClick?.()
-  }, [pendingAction, requestAction])
+  }, [pendingAction, requestAction, ready])
 
   const trigger = (a: TaskAction) => {
+    if (a.disabledReason) return
     if (a.panel) setOpenId((cur) => (cur === a.id ? null : a.id))
     a.onClick?.()
   }
@@ -115,6 +125,7 @@ export function TaskPage({
 
   return (
     <div className="flex h-full flex-col">
+      {confirmElement}
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-6 py-4">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold">{title}</h1>
@@ -181,17 +192,28 @@ export function TaskPage({
                   <div key={a.id} className="contents">
                     <button
                       onClick={() => trigger(a)}
+                      aria-disabled={!!a.disabledReason}
+                      aria-describedby={a.disabledReason ? `${pageId}-${a.id}-reason` : undefined}
                       className={`flex min-h-[86px] flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors
-                        ${isOpen
+                        ${a.disabledReason
+                          ? 'cursor-not-allowed border-dashed border-[var(--border)] bg-[var(--bg-elev)] opacity-70'
+                          : isOpen
                           ? 'border-[var(--accent)] bg-[var(--accent)]/10'
                           : 'border-[var(--border)] bg-[var(--bg-elev)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-elev-2)]'}`}
                     >
                       <span className="flex w-full items-start gap-2">
                         <span className={`mt-0.5 shrink-0 ${a.variant === 'danger' ? 'text-[var(--danger)]' : 'text-[var(--accent)]'}`}>{a.icon}</span>
                         <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-[var(--text)]">{a.label}</span>
+                        {a.badge && (
+                          <span className="shrink-0 rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-faint)]">
+                            {a.badge}
+                          </span>
+                        )}
                         {locked && <Lock size={12} className="mt-1 shrink-0 text-[var(--warn)]" />}
                       </span>
-                      {a.hint && <span className="text-xs leading-snug text-[var(--text-faint)]">{a.hint}</span>}
+                      {a.disabledReason
+                        ? <span id={`${pageId}-${a.id}-reason`} className="text-xs leading-snug text-[var(--warn)]">{a.disabledReason}</span>
+                        : a.hint && <span className="text-xs leading-snug text-[var(--text-faint)]">{a.hint}</span>}
                       {st && (
                         <span className={`mt-auto text-xs ${st.ok ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
                           {st.text} · {new Date(st.at).toLocaleTimeString(i18n.language)}

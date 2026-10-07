@@ -13,6 +13,12 @@ import (
 	"swissknife-app/internal/ops"
 )
 
+// TokenBroker issues access tokens for resources other than Graph (Exchange,
+// Teams) on behalf of the connected profile (ADR-008).
+type TokenBroker interface {
+	TokenFor(ctx context.Context, resource string) (string, error)
+}
+
 var ErrNotConnected = errors.New("not connected — connect to a tenant first")
 var ErrReadOnly = errors.New("read-only mode is enabled — writes are blocked")
 
@@ -20,6 +26,7 @@ type Session struct {
 	mu          sync.RWMutex
 	ctx         context.Context
 	client      *graphapi.Client
+	tokens      TokenBroker
 	profileName string
 	readOnly    bool
 	configDir   string
@@ -74,10 +81,25 @@ func (s *Session) SetClient(c *graphapi.Client, profileName string) {
 	s.profileName = profileName
 }
 
+// SetTokens attaches the token broker of the connected profile.
+func (s *Session) SetTokens(t TokenBroker) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tokens = t
+}
+
+// Tokens returns the broker for non-Graph resources, or nil when disconnected.
+func (s *Session) Tokens() TokenBroker {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.tokens
+}
+
 func (s *Session) Disconnect() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.client = nil
+	s.tokens = nil
 	s.profileName = ""
 }
 

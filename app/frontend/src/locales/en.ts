@@ -52,6 +52,7 @@ const en = {
     resumed: 'Resume finished — {{n}} item(s) copied',
     connectToResume: 'Connect to the same tenant to resume this copy.',
     summaryLine: 'Result: {{copied}} done · {{skipped}} skipped · {{failed}} failed',
+    kindAction: 'Action',
   },
   summary: {
     offboard: 'Offboarded {{upn}}: {{steps}} step(s), {{failed}} failed',
@@ -364,8 +365,8 @@ const en = {
     hintList: 'Every group, or matches for the search box above.',
     tileMembers: 'Who is in a group',
     hintMembers: 'Current members of one group.',
-    tileAdd: 'Add someone to a group',
-    hintAdd: 'As a member, or as an owner.',
+    tileAdd: 'Add or remove group members',
+    hintAdd: 'As a member or an owner; the preview shows what changes.',
     noteAdd: 'Dynamic groups take their membership from a rule — Graph rejects manual adds. Distribution lists and mail-enabled security groups are Exchange-managed and must be changed in the Exchange admin center.',
     tileCreate: 'Create a group',
     hintCreate: 'A Microsoft 365 group with an optional first owner.',
@@ -1151,10 +1152,43 @@ const en = {
     trimmed: 'Trimmed — {{n}} removed',
     trimFailures: '{{n}} file(s) failed — see the log',
   },
+  actions: {
+    preview: 'Preview changes',
+    apply: 'Apply',
+    planTitle: 'What will change',
+    nothingToDo: 'Nothing to change — already in this state.',
+    result: {
+      ok: 'Done: {{applied}} changed, {{skipped}} already in place',
+      failed: '{{failed}} of {{total}} change(s) failed',
+    },
+    op: { none: 'already so' },
+    fields: { user: 'User', group: 'Group', role: 'As', op: 'Action', sku: 'License', state: 'Sign-in' },
+    options: { blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
+    changeFields: {
+      signIn: 'sign-in',
+      sessions: 'sessions',
+      license: 'license',
+      group: { member: 'member of', owner: 'owner of' },
+    },
+    notes: { inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
+    values: { allowed: 'allowed', blocked: 'blocked', active: 'active', revoked: 'revoked' },
+    reasons: {
+      notConnected: 'Connect to a tenant first.',
+      backendMissing: 'Needs the {{backend}} backend, which is not set up.',
+    },
+    backends: { graph: 'Graph', 'exo-api': 'Exchange', pwsh: 'PowerShell', compliance: 'Compliance', ldap: 'AD', worker: 'Worker' },
+  },
   errors: {
     generic: 'Error',
     grantPermission: 'grant the {{p}} application permission in Entra and give admin consent.',
     missingPermission: 'the app registration is likely missing a Graph permission for this call. Add the required Application permission and grant admin consent.',
+    engine: {
+      planExpired: 'The preview has expired or was already applied — preview again.',
+      missingInput: 'Fill in all required fields.',
+      badInput: 'One of the fields has an invalid value.',
+      unavailable: 'This action is not available right now.',
+      unknownAction: 'Unknown action.',
+    },
   },
 } as const
 

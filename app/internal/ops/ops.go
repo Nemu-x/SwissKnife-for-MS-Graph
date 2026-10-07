@@ -28,6 +28,7 @@ const (
 	KindBulk     Kind = "bulk"
 	KindUpdate   Kind = "update"
 	KindSnapshot Kind = "snapshot" // tenant configuration snapshot
+	KindAction   Kind = "action"   // catalog action apply (internal/engine)
 )
 
 // AlreadyRunningError signals a single-flight violation the UI can explain.

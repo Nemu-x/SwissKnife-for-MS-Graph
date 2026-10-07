@@ -170,6 +170,7 @@ func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
 	}
 
 	c.s.SetClient(gc, name)
+	c.s.SetTokens(provider)
 	c.s.Record("session.connect", tenant, "mode="+mode, nil)
 
 	return &Status{
