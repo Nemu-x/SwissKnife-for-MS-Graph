@@ -6,10 +6,12 @@ package actions
 
 import (
 	"encoding/json"
+	"errors"
 	"net/url"
 	"strings"
 
 	"swissknife-app/internal/engine"
+	"swissknife-app/internal/graphapi"
 )
 
 // Builtin returns every built-in action, for Engine.Register.
@@ -34,6 +36,28 @@ func Builtin() []engine.Action {
 				Permissions:  []string{"User.ReadWrite.All"},
 			},
 			Impls: []engine.Impl{graphRevokeSessions{}},
+		},
+		{
+			Manifest: engine.Manifest{
+				ID: "user.manager", Page: "users", Danger: engine.Write,
+				Fields: []engine.Field{
+					{Name: "user", Kind: engine.FieldUser, Required: true},
+					{Name: "manager", Kind: engine.FieldUser, Required: true},
+				},
+				Permissions: []string{"User.ReadWrite.All"},
+			},
+			Impls: []engine.Impl{graphManager{}},
+		},
+		{
+			Manifest: engine.Manifest{
+				ID: "user.usageLocation", Page: "users", Danger: engine.Write,
+				Fields: []engine.Field{
+					{Name: "user", Kind: engine.FieldUser, Required: true},
+					{Name: "country", Kind: engine.FieldText, Required: true},
+				},
+				Permissions: []string{"User.ReadWrite.All"},
+			},
+			Impls: []engine.Impl{graphUsageLocation{}},
 		},
 		{
 			Manifest: engine.Manifest{
@@ -66,6 +90,7 @@ func Builtin() []engine.Action {
 type graphUser struct {
 	ID               string `json:"id"`
 	UPN              string `json:"userPrincipalName"`
+	UsageLocation    string `json:"usageLocation"`
 	AccountEnabled   *bool  `json:"accountEnabled"`
 	LicenseStates    []struct {
 		SkuID           string  `json:"skuId"`
@@ -270,4 +295,87 @@ func (graphLicense) Apply(env engine.Env, in engine.Inputs, ch engine.Change) er
 	}
 	return env.Graph.Post(env.Ctx, userPath(ch.Ref["id"])+"/assignLicense",
 		map[string]any{"addLicenses": add, "removeLicenses": remove}, nil)
+}
+
+// --- user.manager --------------------------------------------------------
+
+type graphManager struct{}
+
+func (graphManager) Backend() engine.Backend { return engine.BackendGraph }
+
+func (graphManager) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, error) {
+	u, err := getUser(env, in["user"], "id,userPrincipalName")
+	if err != nil {
+		return nil, err
+	}
+	m, err := getUser(env, in["manager"], "id,userPrincipalName")
+	if err != nil {
+		return nil, err
+	}
+	if m.ID == u.ID {
+		return nil, errors.New("a user cannot be their own manager")
+	}
+	// No manager answers 404; anything else is a real failure.
+	// The manager may be an organizational contact without a UPN.
+	var cur struct {
+		ID   string `json:"id"`
+		UPN  string `json:"userPrincipalName"`
+		Name string `json:"displayName"`
+	}
+	err = env.Graph.Get(env.Ctx, userPath(u.ID)+"/manager", url.Values{"$select": {"id,userPrincipalName,displayName"}}, &cur)
+	if err != nil && !isNotFound(err) {
+		return nil, err
+	}
+	ch := engine.Change{Target: u.UPN, Field: "manager", Op: "set", Before: firstOf(cur.UPN, cur.Name, cur.ID), After: m.UPN,
+		Ref: map[string]string{"id": u.ID, "manager": m.ID}}
+	if cur.ID == m.ID {
+		ch.Op = "none"
+	}
+	return []engine.Change{ch}, nil
+}
+
+func (graphManager) Apply(env engine.Env, in engine.Inputs, ch engine.Change) error {
+	body := map[string]any{"@odata.id": "https://graph.microsoft.com/v1.0/users/" + ch.Ref["manager"]}
+	return env.Graph.Put(env.Ctx, userPath(ch.Ref["id"])+"/manager/$ref", body, nil)
+}
+
+// --- user.usageLocation --------------------------------------------------
+
+type graphUsageLocation struct{}
+
+func (graphUsageLocation) Backend() engine.Backend { return engine.BackendGraph }
+
+func (graphUsageLocation) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, error) {
+	loc := strings.ToUpper(strings.TrimSpace(in["country"]))
+	if len(loc) != 2 || strings.Trim(loc, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") != "" {
+		return nil, errors.New("usage location must be a two-letter country code, e.g. US or DE")
+	}
+	u, err := getUser(env, in["user"], "id,userPrincipalName,usageLocation")
+	if err != nil {
+		return nil, err
+	}
+	ch := engine.Change{Target: u.UPN, Field: "usageLocation", Op: "set", Before: u.UsageLocation, After: loc,
+		Ref: map[string]string{"id": u.ID}}
+	if strings.EqualFold(u.UsageLocation, loc) {
+		ch.Op = "none"
+	}
+	return []engine.Change{ch}, nil
+}
+
+func (graphUsageLocation) Apply(env engine.Env, in engine.Inputs, ch engine.Change) error {
+	return env.Graph.Patch(env.Ctx, userPath(ch.Ref["id"]), map[string]any{"usageLocation": ch.After}, nil)
+}
+
+func isNotFound(err error) bool {
+	var ge *graphapi.GraphError
+	return errors.As(err, &ge) && ge.StatusCode == 404
+}
+
+func firstOf(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

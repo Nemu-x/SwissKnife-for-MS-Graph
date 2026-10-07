@@ -6,10 +6,6 @@ export function AddMember(arg1, arg2) {
   return window['go']['services']['GroupsService']['AddMember'](arg1, arg2);
 }
 
-export function AddOwner(arg1, arg2) {
-  return window['go']['services']['GroupsService']['AddOwner'](arg1, arg2);
-}
-
 export function CreateM365(arg1, arg2, arg3, arg4) {
   return window['go']['services']['GroupsService']['CreateM365'](arg1, arg2, arg3, arg4);
 }

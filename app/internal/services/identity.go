@@ -58,20 +58,6 @@ func (u *UsersService) Update(user, patchJSON string) error {
 	return err
 }
 
-// SetUsageLocation sets the ISO 3166-1 alpha-2 country code (prerequisite for licensing).
-func (u *UsersService) SetUsageLocation(user, location string) error {
-	if err := u.s.GuardWrite(); err != nil {
-		return err
-	}
-	c, err := u.s.Client()
-	if err != nil {
-		return err
-	}
-	err = c.Patch(u.s.Ctx(), "/users/"+url.PathEscape(user), map[string]any{"usageLocation": strings.ToUpper(location)}, nil)
-	u.s.Record("users.setUsageLocation", user, "loc="+location, err)
-	return err
-}
-
 // Delete removes a user (soft-delete — recoverable for 30 days). Destructive.
 func (u *UsersService) Delete(user, confirm string) error {
 	if err := u.s.GuardDestructive(user, confirm); err != nil {
@@ -83,37 +69,6 @@ func (u *UsersService) Delete(user, confirm string) error {
 	}
 	err = c.Delete(u.s.Ctx(), "/users/"+url.PathEscape(user))
 	u.s.Record("users.delete", user, "", err)
-	return err
-}
-
-func (u *UsersService) GetManager(user string) (json.RawMessage, error) {
-	c, err := u.s.Client()
-	if err != nil {
-		return nil, err
-	}
-	var out json.RawMessage
-	err = c.Get(u.s.Ctx(), "/users/"+url.PathEscape(user)+"/manager", nil, &out)
-	return out, err
-}
-
-// SetManager assigns manager (by UPN/id) to user.
-func (u *UsersService) SetManager(user, managerUpn string) error {
-	if err := u.s.GuardWrite(); err != nil {
-		return err
-	}
-	c, err := u.s.Client()
-	if err != nil {
-		return err
-	}
-	var mgr struct {
-		ID string `json:"id"`
-	}
-	if err := c.Get(u.s.Ctx(), "/users/"+url.PathEscape(managerUpn), url.Values{"$select": {"id"}}, &mgr); err != nil {
-		return err
-	}
-	body := map[string]any{"@odata.id": "https://graph.microsoft.com/v1.0/users/" + mgr.ID}
-	err = c.Put(u.s.Ctx(), "/users/"+url.PathEscape(user)+"/manager/$ref", body, nil)
-	u.s.Record("users.setManager", user, "manager="+managerUpn, err)
 	return err
 }
 
