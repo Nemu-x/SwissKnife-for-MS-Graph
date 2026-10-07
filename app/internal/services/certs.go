@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"swissknife-app/internal/auth"
@@ -44,7 +45,9 @@ func (c *ConnectService) GenerateCertificate(name string) (*CertInfo, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	base := filepath.Join(dir, safe+"-"+time.Now().Format("20060102-150405"))
+	// The random suffix keeps two certificates generated within a second from
+	// overwriting each other (a profile may still hold the first one).
+	base := filepath.Join(dir, safe+"-"+time.Now().Format("20060102-150405")+"-"+uuid.NewString()[:8])
 	if err := os.WriteFile(base+".pfx", g.PFX, 0o600); err != nil {
 		return nil, err
 	}

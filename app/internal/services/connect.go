@@ -46,12 +46,14 @@ func (c *ConnectService) SaveProfile(p secrets.Profile, secret string) (secrets.
 	// Switching the auth mode invalidates the stored secret unless a new one
 	// comes with the switch.
 	if p.ID != "" && secret == "" {
-		if list, err := c.store.List(); err == nil {
-			for _, old := range list {
-				if old.ID == p.ID && old.AuthMode != p.AuthMode {
-					if err := c.store.ClearSecret(p.ID); err != nil {
-						return secrets.Profile{}, err
-					}
+		list, err := c.store.List()
+		if err != nil {
+			return secrets.Profile{}, err
+		}
+		for _, old := range list {
+			if old.ID == p.ID && old.AuthMode != p.AuthMode {
+				if err := c.store.ClearSecret(p.ID); err != nil {
+					return secrets.Profile{}, err
 				}
 			}
 		}

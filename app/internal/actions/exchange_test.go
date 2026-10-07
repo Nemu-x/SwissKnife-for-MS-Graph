@@ -155,3 +155,21 @@ func TestFolderPermissionRejectsCalendarRoleOnInbox(t *testing.T) {
 		t.Fatal("calendar-only role on inbox must be rejected")
 	}
 }
+
+func TestFindGranteeNeedsAUniqueDisplayName(t *testing.T) {
+	bob := recipient{ID: "b1", UPN: "bob@contoso.com", Mail: "bob@contoso.com", Name: "Bob Smith"}
+	row := func(user string) permEntry { return permEntry{User: json.RawMessage(user), AccessRights: []string{"Reviewer"}} }
+	if _, ok := findGrantee([]permEntry{row(`"Bob Smith"`), row(`"Bob Smith"`)}, bob); ok {
+		t.Fatal("two rows with the same display name must not match")
+	}
+	if _, ok := findGrantee([]permEntry{row(`"Bob Smith"`)}, bob); !ok {
+		t.Fatal("a unique display name should match")
+	}
+	r, ok := findGrantee([]permEntry{
+		row(`{"DisplayName":"Bob Smith","ADRecipient":{"PrimarySmtpAddress":"other@contoso.com"}}`),
+		{User: json.RawMessage(`{"DisplayName":"Bob Smith","ADRecipient":{"PrimarySmtpAddress":"bob@contoso.com"}}`), AccessRights: []string{"Editor"}},
+	}, bob)
+	if !ok || r.AccessRights[0] != "Editor" {
+		t.Fatalf("address must win: %+v %v", r, ok)
+	}
+}

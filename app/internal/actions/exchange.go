@@ -195,12 +195,15 @@ type permEntry struct {
 	AccessRights []string        `json:"AccessRights"`
 }
 
-// matches prefers the entry's SMTP address (unique) and falls back to the
-// display name only when the service returned nothing better.
-func (p permEntry) matches(r recipient) bool {
+// names returns the row's address (when the service sent one) and its
+// display name. User arrives as a plain string or as an object.
+func (p permEntry) names() (address, display string) {
 	var s string
 	if json.Unmarshal(p.User, &s) == nil {
-		return r.is(s)
+		if strings.Contains(s, "@") {
+			return s, ""
+		}
+		return "", s
 	}
 	var o struct {
 		DisplayName string `json:"DisplayName"`
@@ -209,10 +212,28 @@ func (p permEntry) matches(r recipient) bool {
 		} `json:"ADRecipient"`
 	}
 	_ = json.Unmarshal(p.User, &o)
-	if o.Recipient.PrimarySmtpAddress != "" {
-		return r.isAddress(o.Recipient.PrimarySmtpAddress)
+	return o.Recipient.PrimarySmtpAddress, o.DisplayName
+}
+
+// findGrantee picks the grantee's row: an address match wins; a display
+// name counts only when exactly one row carries it, because two people can
+// share a name and the wrong row would plan the wrong change.
+func findGrantee(rows []permEntry, r recipient) (permEntry, bool) {
+	var byName []permEntry
+	for _, row := range rows {
+		addr, display := row.names()
+		if r.isAddress(addr) {
+			return row, true
+		}
+		// A row with a different address is someone else, whatever its name.
+		if addr == "" && display != "" && (r.isAddress(display) || strings.EqualFold(display, r.Name)) {
+			byName = append(byName, row)
+		}
 	}
-	return r.is(o.DisplayName)
+	if len(byName) == 1 {
+		return byName[0], true
+	}
+	return permEntry{}, false
 }
 
 func (exoFolderPermission) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, error) {
@@ -240,13 +261,16 @@ func (exoFolderPermission) Plan(env engine.Env, in engine.Inputs) ([]engine.Chan
 	if err != nil {
 		return nil, err
 	}
-	current := ""
+	rows := make([]permEntry, 0, len(items))
 	for _, raw := range items {
 		var e permEntry
-		if json.Unmarshal(raw, &e) == nil && e.matches(grantee) {
-			current = strings.Join(e.AccessRights, ",")
-			break
+		if json.Unmarshal(raw, &e) == nil {
+			rows = append(rows, e)
 		}
+	}
+	current := ""
+	if row, ok := findGrantee(rows, grantee); ok {
+		current = strings.Join(row.AccessRights, ",")
 	}
 	want := in["access"]
 	ch := engine.Change{Target: grantee.UPN + " @ " + identity, Field: "folderAccess", Before: current,

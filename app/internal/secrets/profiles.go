@@ -3,12 +3,15 @@
 package secrets
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/zalando/go-keyring"
@@ -119,7 +122,15 @@ func (s *Store) Save(p Profile, secret string) (Profile, error) {
 
 // pendingKey names the keychain entry of a generated certificate's password
 // before a profile owns it.
-func pendingKey(certPath string) string { return "pending-cert:" + filepath.Base(certPath) }
+// The key hashes the absolute path: two folders may hold equally named files.
+func pendingKey(certPath string) string {
+	abs, err := filepath.Abs(certPath)
+	if err != nil {
+		abs = certPath
+	}
+	sum := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(abs))))
+	return "pending-cert:" + hex.EncodeToString(sum[:12])
+}
 
 // SetPendingCertPassword parks a generated PFX password in the keychain until
 // a profile using that file is saved (the password never reaches the UI).
