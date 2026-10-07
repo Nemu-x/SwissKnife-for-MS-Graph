@@ -43,15 +43,16 @@ func (c *ConnectService) SaveProfile(p secrets.Profile, secret string) (secrets.
 	if p.AuthMode == string(auth.ModeClientCertificate) && p.CertPath == "" {
 		return secrets.Profile{}, errors.New("certificate profiles need a certificate file (.pfx)")
 	}
-	// Switching the auth mode invalidates the stored secret unless a new one
-	// comes with the switch.
+	// Switching the auth mode or the certificate file invalidates the stored
+	// secret unless a new one comes with the switch.
 	if p.ID != "" && secret == "" {
 		list, err := c.store.List()
 		if err != nil {
 			return secrets.Profile{}, err
 		}
 		for _, old := range list {
-			if old.ID == p.ID && old.AuthMode != p.AuthMode {
+			// A new auth mode or a different PFX makes the old secret meaningless.
+			if old.ID == p.ID && (old.AuthMode != p.AuthMode || old.CertPath != p.CertPath) {
 				if err := c.store.ClearSecret(p.ID); err != nil {
 					return secrets.Profile{}, err
 				}
