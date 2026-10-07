@@ -51,6 +51,7 @@ const ru: Dict<typeof en> = {
     resume: 'Продолжить копирование',
     resumed: 'Возобновление завершено — скопировано {{n}} элем.',
     connectToResume: 'Подключитесь к тому же тенанту, чтобы продолжить копирование.',
+    kindAction: 'Действие',
     summaryLine: 'Итог: {{copied}} готово · {{skipped}} пропущено · {{failed}} с ошибкой',
   },
   summary: {
@@ -364,8 +365,8 @@ const ru: Dict<typeof en> = {
     hintList: 'Все группы либо совпадения по строке поиска выше.',
     tileMembers: 'Кто в группе',
     hintMembers: 'Текущий состав одной группы.',
-    tileAdd: 'Добавить человека в группу',
-    hintAdd: 'Участником или владельцем.',
+    tileAdd: 'Добавить или убрать из группы',
+    hintAdd: 'Участником или владельцем; предпросмотр покажет, что изменится.',
     noteAdd: 'У динамических групп состав считается по правилу — Graph откажет в добавлении вручную. Списки рассылки и mail-enabled security группы живут в Exchange и меняются только в его админ-центре.',
     tileCreate: 'Создать группу',
     hintCreate: 'Группа Microsoft 365, при желании сразу с владельцем.',
@@ -1151,10 +1152,43 @@ const ru: Dict<typeof en> = {
     trimmed: 'Обрезано — удалено {{n}}',
     trimFailures: 'Не получилось у файлов: {{n}} — см. лог',
   },
+  actions: {
+    preview: 'Показать изменения',
+    apply: 'Применить',
+    planTitle: 'Что изменится',
+    nothingToDo: 'Менять нечего — уже в этом состоянии.',
+    result: {
+      ok: 'Готово: изменено {{applied}}, уже было {{skipped}}',
+      failed: 'Не удалось {{failed}} из {{total}}',
+    },
+    op: { none: 'уже так' },
+    fields: { user: 'Пользователь', group: 'Группа', role: 'Как', op: 'Действие', sku: 'Лицензия', state: 'Вход' },
+    options: { blocked: 'Заблокировать', allowed: 'Разрешить', member: 'Участник', owner: 'Владелец', add: 'Добавить', remove: 'Убрать' },
+    changeFields: {
+      signIn: 'вход',
+      sessions: 'сессии',
+      license: 'лицензия',
+      group: { member: 'участник', owner: 'владелец' },
+    },
+    notes: { inheritedLicense: 'Выдана через группу — уберите пользователя из группы (или лицензию у группы).' },
+    values: { allowed: 'разрешён', blocked: 'заблокирован', active: 'активны', revoked: 'отозваны' },
+    reasons: {
+      notConnected: 'Сначала подключитесь к тенанту.',
+      backendMissing: 'Нужен бэкенд {{backend}}, он не настроен.',
+    },
+    backends: { graph: 'Graph', 'exo-api': 'Exchange', pwsh: 'PowerShell', compliance: 'Compliance', ldap: 'AD', worker: 'Воркер' },
+  },
   errors: {
     generic: 'Ошибка',
     grantPermission: 'выдайте приложению право {{p}} (Application) в Entra и нажмите Grant admin consent.',
     missingPermission: 'скорее всего, у app registration нет нужного права Graph для этого вызова. Добавьте Application-право и выдайте admin consent.',
+    engine: {
+      planExpired: 'Предпросмотр устарел или уже применён — покажите изменения заново.',
+      missingInput: 'Заполните все обязательные поля.',
+      badInput: 'В одном из полей недопустимое значение.',
+      unavailable: 'Это действие сейчас недоступно.',
+      unknownAction: 'Неизвестное действие.',
+    },
   },
 }
 

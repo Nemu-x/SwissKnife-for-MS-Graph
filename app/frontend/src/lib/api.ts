@@ -31,7 +31,8 @@ import * as Update from '../../wailsjs/go/services/UpdateService'
 import * as Journal from '../../wailsjs/go/services/JournalService'
 import * as Notify from '../../wailsjs/go/services/NotifyService'
 import * as Snapshot from '../../wailsjs/go/services/SnapshotService'
-import type { journal, secrets, services } from '../../wailsjs/go/models'
+import * as Actions from '../../wailsjs/go/services/ActionsService'
+import type { engine, journal, secrets, services } from '../../wailsjs/go/models'
 import { parseErr, type ParsedError } from './graphError'
 import i18n from '../i18n'
 
@@ -272,6 +273,11 @@ export const api = {
     apply: (installerPath: string) => Update.Apply(installerPath) as Promise<void>,
     revealInstaller: (installerPath: string) => Update.RevealInstaller(installerPath) as Promise<void>,
   },
+  actions: {
+    catalog: () => Actions.Catalog().then((v) => v ?? []) as Promise<engine.CatalogEntry[]>,
+    plan: (id: string, inputs: Record<string, string>) => Actions.Plan(id, inputs) as Promise<engine.Plan>,
+    apply: (planId: string, confirm: string) => Actions.Apply(planId, confirm) as Promise<engine.Result>,
+  },
   journal: {
     list: (limit = 100) => Journal.List(limit) as Promise<journal.RunSummary[]>,
     get: (opId: string) => Journal.Get(opId) as Promise<journal.Run>,
@@ -294,6 +300,8 @@ export function errParsed(e: unknown): ParsedError {
 
 export function errMessage(e: unknown): string {
   const p = errParsed(e)
+  // Engine refusals (no HTTP status) carry a code with a translation.
+  if (p.code && !p.status && i18n.exists(`errors.engine.${p.code}`)) return i18n.t(`errors.engine.${p.code}`)
   let msg = p.message
   if (p.code && p.status) msg = `${p.status} ${p.code}: ${msg}`
   if (p.hint) {

@@ -147,6 +147,7 @@ func connectProfile(ctx context.Context, p secrets.Profile, readOnly bool, stder
 	}
 	// SetClient first: the audit entry carries the profile name from the session.
 	sess.SetClient(gc, cr.Name)
+	sess.SetTokens(provider)
 	sess.Record("session.connect", cr.TenantID, "mode="+cr.AuthMode+" via=cli", nil)
 	return sess, nil
 }

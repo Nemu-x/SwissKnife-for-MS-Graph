@@ -46,6 +46,225 @@ export namespace auditlog {
 
 }
 
+export namespace engine {
+	
+	export class Reason {
+	    key: string;
+	    params?: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new Reason(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.params = source["params"];
+	    }
+	}
+	export class Field {
+	    name: string;
+	    kind: string;
+	    required: boolean;
+	    options?: string[];
+	    default?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Field(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.kind = source["kind"];
+	        this.required = source["required"];
+	        this.options = source["options"];
+	        this.default = source["default"];
+	    }
+	}
+	export class CatalogEntry {
+	    id: string;
+	    page: string;
+	    danger: string;
+	    fields: Field[];
+	    confirmField?: string;
+	    permissions?: string[];
+	    available: boolean;
+	    backend?: string;
+	    reason?: Reason;
+	
+	    static createFrom(source: any = {}) {
+	        return new CatalogEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.page = source["page"];
+	        this.danger = source["danger"];
+	        this.fields = this.convertValues(source["fields"], Field);
+	        this.confirmField = source["confirmField"];
+	        this.permissions = source["permissions"];
+	        this.available = source["available"];
+	        this.backend = source["backend"];
+	        this.reason = this.convertValues(source["reason"], Reason);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Change {
+	    target: string;
+	    field: string;
+	    op: string;
+	    before?: string;
+	    after?: string;
+	    note?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Change(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.target = source["target"];
+	        this.field = source["field"];
+	        this.op = source["op"];
+	        this.before = source["before"];
+	        this.after = source["after"];
+	        this.note = source["note"];
+	    }
+	}
+	export class Outcome {
+	    target: string;
+	    field: string;
+	    op: string;
+	    before?: string;
+	    after?: string;
+	    note?: string;
+	    ok: boolean;
+	    skipped: boolean;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Outcome(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.target = source["target"];
+	        this.field = source["field"];
+	        this.op = source["op"];
+	        this.before = source["before"];
+	        this.after = source["after"];
+	        this.note = source["note"];
+	        this.ok = source["ok"];
+	        this.skipped = source["skipped"];
+	        this.error = source["error"];
+	    }
+	}
+	export class Plan {
+	    id: string;
+	    actionId: string;
+	    backend: string;
+	    inputs: Record<string, string>;
+	    changes: Change[];
+	    confirmTarget?: string;
+	    // Go type: time
+	    createdAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new Plan(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.actionId = source["actionId"];
+	        this.backend = source["backend"];
+	        this.inputs = source["inputs"];
+	        this.changes = this.convertValues(source["changes"], Change);
+	        this.confirmTarget = source["confirmTarget"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class Result {
+	    opId: string;
+	    outcomes: Outcome[];
+	    applied: number;
+	    skipped: number;
+	    failed: number;
+	    canceled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Result(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.opId = source["opId"];
+	        this.outcomes = this.convertValues(source["outcomes"], Outcome);
+	        this.applied = source["applied"];
+	        this.skipped = source["skipped"];
+	        this.failed = source["failed"];
+	        this.canceled = source["canceled"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace journal {
 	
 	export class Entry {

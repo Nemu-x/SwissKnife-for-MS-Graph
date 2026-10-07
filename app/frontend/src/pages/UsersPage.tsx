@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  UserCog, Ban, KeyRound, LogOut, UserPlus, Trash2, UserSquare, ShieldAlert,
+  UserCog, KeyRound, UserPlus, Trash2, UserSquare, ShieldAlert,
   ListRestart, RotateCcw, Ticket, MailPlus, Copy, FileJson, Search, ArrowLeftRight, CopyPlus,
 } from 'lucide-react'
+import { catalogTile } from '../components/CatalogAction'
 import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input, Textarea, Spinner } from '../components/ui'
@@ -256,35 +257,8 @@ export function UsersPage() {
         </TaskForm>
       ),
     },
-    {
-      id: 'block', label: t('users.tileBlock'), hint: t('users.hintBlock'), icon: <Ban size={16} />, write: true,
-      panel: (
-        <TaskForm>
-          {targetField}
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="primary" disabled={readOnly || !target} onClick={() => doWrite('block', () => api.users.block(target), t('users.block'))}>
-              <Ban size={15} /> {t('users.block')}
-            </Button>
-            <Button variant="subtle" disabled={readOnly || !target} onClick={() => doWrite('block', () => api.users.unblock(target), t('users.unblock'))}>
-              {t('users.unblock')}
-            </Button>
-          </div>
-        </TaskForm>
-      ),
-    },
-    {
-      id: 'sessions', label: t('users.tileSessions'), hint: t('users.hintSessions'), icon: <LogOut size={16} />, write: true,
-      note: <p>{t('users.noteSessions')}</p>,
-      panel: (
-        <TaskForm>
-          {targetField}
-          <Button variant="danger" disabled={readOnly || !target}
-            onClick={() => askConfirm(target, (c) => doWrite('sessions', () => api.users.revokeSessions(target, c), t('users.revokeSessions')))}>
-            <LogOut size={15} /> {t('users.revokeSessions')}
-          </Button>
-        </TaskForm>
-      ),
-    },
+    catalogTile('user.signIn'),
+    catalogTile('user.revokeSessions'),
     {
       id: 'password', label: t('users.tilePassword'), hint: t('users.hintPassword'), icon: <KeyRound size={16} />, write: true,
       panel: (
