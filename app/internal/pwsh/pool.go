@@ -56,7 +56,8 @@ func NewPool(det *Detector, allow map[string][]string) *Pool {
 }
 
 // Invoke implements engine.PSRunner. An authentication failure (the token
-// was revoked or expired early) signs the host in again and retries once.
+// was revoked or expired early) signs the host in again; a read (Get-*) is
+// then retried once, a write is not — repeating it could repeat a change.
 func (p *Pool) Invoke(env engine.Env, family, cmdlet string, params map[string]any, sel ...string) ([]json.RawMessage, error) {
 	for attempt := 0; ; attempt++ {
 		h, err := p.host(env, family)
@@ -67,9 +68,11 @@ func (p *Pool) Invoke(env engine.Env, family, cmdlet string, params map[string]a
 		if errors.Is(err, ErrHostExited) || !h.Alive() {
 			p.drop(family, h)
 		}
-		if attempt == 0 && isAuthError(err) {
+		if isAuthError(err) {
 			p.expire(family, h)
-			continue
+			if attempt == 0 && strings.HasPrefix(cmdlet, "Get-") {
+				continue
+			}
 		}
 		return out, err
 	}
@@ -80,9 +83,16 @@ func isAuthError(err error) bool {
 	if !errors.As(err, &pe) {
 		return false
 	}
+	if strings.EqualFold(pe.Category, "AuthenticationError") {
+		return true
+	}
 	m := strings.ToLower(pe.Message)
-	return strings.Contains(m, "401") || strings.Contains(m, "unauthorized") ||
-		strings.Contains(m, "token") && (strings.Contains(m, "expired") || strings.Contains(m, "invalid"))
+	for _, phrase := range []string{"401 unauthorized", "(401) unauthorized", "token has expired", "token is expired", "access token expired", "lifetime validation failed"} {
+		if strings.Contains(m, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 // expire forces the next call to sign the host in again.

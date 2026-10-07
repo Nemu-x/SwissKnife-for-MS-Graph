@@ -457,7 +457,9 @@ func (psTransportRule) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, 
 		return nil, fmt.Errorf("no transport rule named %q", in["rule"])
 	}
 	var r struct{ Name, State string }
-	_ = json.Unmarshal(rows[0], &r)
+	if err := json.Unmarshal(rows[0], &r); err != nil || r.State == "" {
+		return nil, fmt.Errorf("could not read the state of transport rule %q", in["rule"])
+	}
 	before := strings.ToLower(r.State)
 	ch := engine.Change{Target: firstOf(r.Name, in["rule"]), Field: "ruleState", Op: "set", Before: before, After: in["state"],
 		Ref: map[string]string{"rule": firstOf(r.Name, in["rule"])}}

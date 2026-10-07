@@ -258,3 +258,20 @@ func TestConnectionChangeInvalidatesPlan(t *testing.T) {
 		t.Fatalf("nothing may run: %v", applied)
 	}
 }
+
+func TestEditingTheReturnedPlanDoesNotChangeWhatRuns(t *testing.T) {
+	s := newSession(t)
+	var applied []string
+	e := New(s, GraphProvider{})
+	e.Register(Action{Manifest: Manifest{ID: "a", Danger: Write},
+		Impls: []Impl{fakeImpl{backend: BackendGraph, applied: &applied, changes: []Change{{Target: "x", Op: "set"}}}}})
+	p, _ := e.Plan("a", Inputs{})
+	p.Changes[0].Target = "tampered"
+	p.Inputs["extra"] = "y"
+	if _, err := e.Apply(p.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(applied) != 1 || applied[0] != "x" {
+		t.Fatalf("applied %v", applied)
+	}
+}

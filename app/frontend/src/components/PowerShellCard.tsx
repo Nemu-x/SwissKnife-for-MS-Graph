@@ -12,27 +12,37 @@ import type { services } from '../../wailsjs/go/models'
 // it runs when the card is shown, not at app start.
 export function PowerShellCard() {
   const { t } = useTranslation()
-  const { toast } = useStore()
+  const { toast, jobs, patchJob } = useStore()
   const [st, setSt] = useState<services.PowerShellStatus | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
+  // An install takes minutes: it lives in the store's job slot so leaving
+  // Settings and coming back neither loses it nor allows a second one.
+  const job = jobs.psInstall
+  const installing = job?.running ? job.progress : null
+  const busy = installing || (checking ? 'refresh' : null)
 
   useEffect(() => {
     let alive = true
     api.actions.powerShellStatus().then((s) => alive && setSt(s)).catch(() => {})
     return () => { alive = false }
-  }, [])
+  }, [job?.running])
 
   const refresh = async () => {
-    setBusy('refresh')
-    try { setSt(await api.actions.refreshPowerShell()) } finally { setBusy(null) }
+    setChecking(true)
+    try { setSt(await api.actions.refreshPowerShell()) } finally { setChecking(false) }
   }
 
   const install = async (name: string) => {
-    setBusy(name)
+    if (jobs.psInstall?.running) return
+    patchJob('psInstall', { running: true, progress: name, error: null, startedAt: Date.now() })
     try {
-      setSt(await api.actions.installModule(name))
+      await api.actions.installModule(name)
       toast('ok', t('powershell.installed', { name }))
-    } catch (e) { toast('err', errMessage(e)) } finally { setBusy(null) }
+    } catch (e) {
+      const m = errMessage(e)
+      patchJob('psInstall', { error: m })
+      toast('err', m)
+    } finally { patchJob('psInstall', { running: false, progress: '' }) }
   }
 
   return (
