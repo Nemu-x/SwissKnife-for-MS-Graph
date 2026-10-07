@@ -27,6 +27,8 @@ type Session struct {
 	ctx         context.Context
 	client      *graphapi.Client
 	tokens      TokenBroker
+	tenantID    string
+	appOnly     bool
 	profileName string
 	readOnly    bool
 	configDir   string
@@ -88,6 +90,28 @@ func (s *Session) SetTokens(t TokenBroker) {
 	s.tokens = t
 }
 
+// SetIdentity records who the connection is: the tenant id and whether it
+// signs in as the app (client credentials) or as a user (delegated).
+func (s *Session) SetIdentity(tenantID string, appOnly bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tenantID, s.appOnly = tenantID, appOnly
+}
+
+// TenantID is the connected tenant ("" when disconnected).
+func (s *Session) TenantID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.tenantID
+}
+
+// AppOnly reports an app-only (client credentials) connection.
+func (s *Session) AppOnly() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.appOnly
+}
+
 // Tokens returns the broker for non-Graph resources, or nil when disconnected.
 func (s *Session) Tokens() TokenBroker {
 	s.mu.RLock()
@@ -100,6 +124,7 @@ func (s *Session) Disconnect() {
 	defer s.mu.Unlock()
 	s.client = nil
 	s.tokens = nil
+	s.tenantID, s.appOnly = "", false
 	s.profileName = ""
 }
 

@@ -16,6 +16,10 @@ import (
 
 // Builtin returns every built-in action, for Engine.Register.
 func Builtin() []engine.Action {
+	return append(graphActions(), exchangeActions()...)
+}
+
+func graphActions() []engine.Action {
 	return []engine.Action{
 		{
 			Manifest: engine.Manifest{

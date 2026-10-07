@@ -22,7 +22,10 @@ type Profile struct {
 	Name     string `json:"name"`
 	TenantID string `json:"tenantId"`
 	ClientID string `json:"clientId"`
-	AuthMode string `json:"authMode"`  // client_secret | device_code
+	AuthMode string `json:"authMode"`  // client_secret | device_code | client_certificate
+	// CertPath is the PFX file of a client_certificate profile; its password
+	// lives in the keychain in place of the client secret.
+	CertPath string `json:"certPath,omitempty"`
 	HasSecret bool  `json:"hasSecret"` // whether a secret exists in the keychain
 }
 
@@ -41,6 +44,11 @@ func NewStore() (*Store, error) {
 		return nil, err
 	}
 	return &Store{dir: dir, path: filepath.Join(dir, "profiles.json")}, nil
+}
+
+// NewStoreAt opens a store rooted at dir (tests, portable setups).
+func NewStoreAt(dir string) *Store {
+	return &Store{dir: dir, path: filepath.Join(dir, "profiles.json")}
 }
 
 // Dir is the app data directory (also used by the audit log).
@@ -107,6 +115,48 @@ func (s *Store) Save(p Profile, secret string) (Profile, error) {
 		list = append(list, p)
 	}
 	return p, s.save(list)
+}
+
+// pendingKey names the keychain entry of a generated certificate's password
+// before a profile owns it.
+func pendingKey(certPath string) string { return "pending-cert:" + filepath.Base(certPath) }
+
+// SetPendingCertPassword parks a generated PFX password in the keychain until
+// a profile using that file is saved (the password never reaches the UI).
+func (s *Store) SetPendingCertPassword(certPath, password string) error {
+	return keyring.Set(keyringService, pendingKey(certPath), password)
+}
+
+// PendingCertPassword returns a parked password for the PFX file, if any.
+func (s *Store) PendingCertPassword(certPath string) (string, bool) {
+	if certPath == "" {
+		return "", false
+	}
+	v, err := keyring.Get(keyringService, pendingKey(certPath))
+	return v, err == nil
+}
+
+// DropPendingCertPassword removes a parked password once a profile owns it.
+func (s *Store) DropPendingCertPassword(certPath string) {
+	_ = keyring.Delete(keyringService, pendingKey(certPath))
+}
+
+// ClearSecret forgets a profile's stored secret (an auth-mode switch makes
+// the old one meaningless: a client secret is not a PFX password).
+func (s *Store) ClearSecret(profileID string) error {
+	list, err := s.load()
+	if err != nil {
+		return err
+	}
+	if err := keyring.Delete(keyringService, profileID); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		return err
+	}
+	for i := range list {
+		if list[i].ID == profileID {
+			list[i].HasSecret = false
+		}
+	}
+	return s.save(list)
 }
 
 // Secret returns the profile secret from the keychain.

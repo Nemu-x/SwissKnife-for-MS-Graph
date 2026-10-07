@@ -3,6 +3,8 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 
 	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -38,7 +40,31 @@ func (c *ConnectService) SaveProfile(p secrets.Profile, secret string) (secrets.
 	if p.AuthMode == "" {
 		p.AuthMode = string(auth.ModeClientSecret)
 	}
-	return c.store.Save(p, secret)
+	if p.AuthMode == string(auth.ModeClientCertificate) && p.CertPath == "" {
+		return secrets.Profile{}, errors.New("certificate profiles need a certificate file (.pfx)")
+	}
+	// Switching the auth mode invalidates the stored secret unless a new one
+	// comes with the switch.
+	if p.ID != "" && secret == "" {
+		if list, err := c.store.List(); err == nil {
+			for _, old := range list {
+				if old.ID == p.ID && old.AuthMode != p.AuthMode {
+					if err := c.store.ClearSecret(p.ID); err != nil {
+						return secrets.Profile{}, err
+					}
+				}
+			}
+		}
+	}
+	pending := false
+	if p.AuthMode == string(auth.ModeClientCertificate) && secret == "" {
+		secret, pending = c.store.PendingCertPassword(p.CertPath)
+	}
+	saved, err := c.store.Save(p, secret)
+	if err == nil && pending {
+		c.store.DropPendingCertPassword(p.CertPath)
+	}
+	return saved, err
 }
 
 func (c *ConnectService) DeleteProfile(profileID string) error {
@@ -52,7 +78,8 @@ type ConnectRequest struct {
 	TenantID   string `json:"tenantId"`
 	ClientID   string `json:"clientId"`
 	Secret     string `json:"secret"`
-	AuthMode   string `json:"authMode"` // client_secret | device_code
+	AuthMode   string `json:"authMode"` // client_secret | device_code | client_certificate
+	CertPath   string `json:"certPath"` // client_certificate: PFX file; Secret is its password
 	RememberAs string `json:"rememberAs"`
 }
 
@@ -70,7 +97,8 @@ type Credentials struct {
 	TenantID string
 	ClientID string
 	Secret   string
-	AuthMode string // client_secret | device_code
+	AuthMode string // client_secret | device_code | client_certificate
+	CertPath string // client_certificate: PFX file; Secret is its password
 	Name     string // profile name; empty for ad-hoc credentials
 }
 
@@ -84,8 +112,12 @@ func ResolveCredentials(store *secrets.Store, req ConnectRequest) (Credentials, 
 		ClientID: req.ClientID,
 		Secret:   req.Secret,
 		AuthMode: req.AuthMode,
+		CertPath: req.CertPath,
 	}
 	if req.ProfileID == "" {
+		if cr.AuthMode == string(auth.ModeClientCertificate) && cr.Secret == "" {
+			cr.Secret, _ = store.PendingCertPassword(cr.CertPath)
+		}
 		return cr, nil
 	}
 	profiles, err := store.List()
@@ -103,10 +135,20 @@ func ResolveCredentials(store *secrets.Store, req ConnectRequest) (Credentials, 
 		return Credentials{}, errors.New("profile not found")
 	}
 	cr.TenantID, cr.ClientID, cr.AuthMode, cr.Name = found.TenantID, found.ClientID, found.AuthMode, found.Name
-	if cr.AuthMode == string(auth.ModeClientSecret) {
+	cr.CertPath = found.CertPath
+	switch cr.AuthMode {
+	case string(auth.ModeClientSecret):
 		cr.Secret, err = store.Secret(found.ID)
 		if err != nil {
 			return Credentials{}, err
+		}
+	case string(auth.ModeClientCertificate):
+		// A PFX without a password is valid; a missing keychain entry is "".
+		if found.HasSecret {
+			cr.Secret, err = store.Secret(found.ID)
+			if err != nil {
+				return Credentials{}, err
+			}
 		}
 	}
 	return cr, nil
@@ -119,6 +161,15 @@ func NewTokenProvider(cr Credentials, prompt auth.DeviceCodePrompt) (*auth.Token
 	switch cr.AuthMode {
 	case string(auth.ModeDeviceCode):
 		return auth.NewDeviceCode(cr.TenantID, cr.ClientID, prompt)
+	case string(auth.ModeClientCertificate):
+		if cr.CertPath == "" {
+			return nil, errors.New("choose or generate a certificate file (.pfx) first")
+		}
+		pfx, err := os.ReadFile(cr.CertPath)
+		if err != nil {
+			return nil, fmt.Errorf("certificate file: %w", err)
+		}
+		return auth.NewClientCertificate(cr.TenantID, cr.ClientID, pfx, cr.Secret)
 	default:
 		if cr.Secret == "" {
 			return nil, errors.New("client secret is required")
@@ -163,14 +214,19 @@ func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
 			TenantID: tenant,
 			ClientID: client,
 			AuthMode: mode,
-		}, req.Secret); serr != nil {
+			CertPath: cr.CertPath,
+		}, cr.Secret); serr != nil {
 			return nil, serr
+		}
+		if mode == string(auth.ModeClientCertificate) {
+			c.store.DropPendingCertPassword(cr.CertPath)
 		}
 		name = req.RememberAs
 	}
 
 	c.s.SetClient(gc, name)
 	c.s.SetTokens(provider)
+	c.s.SetIdentity(tenant, mode != string(auth.ModeDeviceCode))
 	c.s.Record("session.connect", tenant, "mode="+mode, nil)
 
 	return &Status{

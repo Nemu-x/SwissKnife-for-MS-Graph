@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plug, Trash2, LogOut } from 'lucide-react'
+import { Plug, Trash2, LogOut, FolderOpen, KeyRound, FileCheck } from 'lucide-react'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { Page } from '../components/Layout'
 import { Button, Card, Field, Input, Select, Badge, ErrorNote, Spinner } from '../components/ui'
@@ -13,8 +13,11 @@ export function ConnectPage() {
 
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [form, setForm] = useState({
-    id: '', name: '', tenantId: '', clientId: '', secret: '', authMode: 'client_secret', remember: false,
+    id: '', name: '', tenantId: '', clientId: '', secret: '', authMode: 'client_secret', certPath: '', remember: false,
   })
+  // A certificate generated in this form: the .cer still has to be uploaded.
+  const [cert, setCert] = useState<{ cerPath: string; thumbprint: string; notAfter: string } | null>(null)
+  const [generating, setGenerating] = useState(false)
   const [wantDomains, setWantDomains] = useState(localStorage.getItem('loadDomains') === 'true')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -28,8 +31,10 @@ export function ConnectPage() {
     return () => off()
   }, [])
 
-  const selectProfile = (p: Profile) =>
-    setForm({ id: p.id, name: p.name, tenantId: p.tenantId, clientId: p.clientId, secret: '', authMode: p.authMode, remember: true })
+  const selectProfile = (p: Profile) => {
+    setCert(null)
+    setForm({ id: p.id, name: p.name, tenantId: p.tenantId, clientId: p.clientId, secret: '', authMode: p.authMode, certPath: p.certPath || '', remember: true })
+  }
 
   const connectProfile = async (p: Profile) => {
     setBusy(true); setError(null); setDevice(null)
@@ -45,7 +50,7 @@ export function ConnectPage() {
     try {
       const s = await api.connect.connect({
         tenantId: form.tenantId, clientId: form.clientId, secret: form.secret,
-        authMode: form.authMode, rememberAs: form.remember ? form.name : '',
+        authMode: form.authMode, certPath: form.certPath, rememberAs: form.remember ? form.name : '',
       })
       setStatus(s); toast('ok', t('common.connectedAs', { name: s.profileName })); loadProfiles()
       if (wantDomains) loadDomains()
@@ -55,7 +60,7 @@ export function ConnectPage() {
   const saveProfile = async () => {
     try {
       await api.connect.saveProfile(
-        { id: form.id, name: form.name, tenantId: form.tenantId, clientId: form.clientId, authMode: form.authMode },
+        { id: form.id, name: form.name, tenantId: form.tenantId, clientId: form.clientId, authMode: form.authMode, certPath: form.certPath },
         form.secret,
       )
       toast('ok', t('common.save')); loadProfiles()
@@ -64,6 +69,25 @@ export function ConnectPage() {
 
   const deleteProfile = async (p: Profile) => {
     try { await api.connect.deleteProfile(p.id); loadProfiles() } catch (e) { toast('err', errMessage(e)) }
+  }
+
+  const pickCert = async () => {
+    try {
+      const path = await api.connect.pickCertificate()
+      if (path) { setForm((f) => ({ ...f, certPath: path })); setCert(null) }
+    } catch (e) { toast('err', errMessage(e)) }
+  }
+
+  // The PFX password stays in the backend: the keychain holds it until the
+  // profile is saved, so the password field is left empty here.
+  const generateCert = async () => {
+    if (generating) return
+    setGenerating(true)
+    try {
+      const c = await api.connect.generateCertificate(form.name || form.clientId)
+      setForm((f) => ({ ...f, certPath: c.pfxPath, secret: '' }))
+      setCert({ cerPath: c.cerPath, thumbprint: c.thumbprint, notAfter: String(c.notAfter) })
+    } catch (e) { toast('err', errMessage(e)) } finally { setGenerating(false) }
   }
 
   const disconnect = async () => { await api.connect.disconnect(); refreshStatus() }
@@ -80,7 +104,7 @@ export function ConnectPage() {
                   <div className="truncate text-sm font-medium">{p.name}</div>
                   <div className="truncate text-xs text-[var(--text-faint)]">{p.tenantId}</div>
                 </div>
-                <Badge kind="neutral">{p.authMode === 'device_code' ? 'device' : 'app'}</Badge>
+                <Badge kind="neutral">{p.authMode === 'device_code' ? 'device' : p.authMode === 'client_certificate' ? 'cert' : 'app'}</Badge>
                 <Button variant="primary" onClick={() => connectProfile(p)} disabled={busy} className="!px-2 !py-1">
                   <Plug size={14} />
                 </Button>
@@ -108,6 +132,7 @@ export function ConnectPage() {
             <Field label={t('connect.authMode')}>
               <Select value={form.authMode} onChange={(e) => setForm({ ...form, authMode: e.target.value })} className="w-full">
                 <option value="client_secret">{t('connect.clientSecret')}</option>
+                <option value="client_certificate">{t('connect.clientCertificate')}</option>
                 <option value="device_code">{t('connect.deviceCode')}</option>
               </Select>
             </Field>
@@ -121,6 +146,33 @@ export function ConnectPage() {
               <Field label={t('connect.secret')} hint={form.id ? t('connect.secretKept') : t('connect.rememberHint')}>
                 <Input type="password" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} />
               </Field>
+            )}
+            {form.authMode === 'client_certificate' && (
+              <>
+                <Field label={t('connect.certFile')} hint={t('connect.certHint')}>
+                  <div className="flex gap-2">
+                    <Input value={form.certPath} onChange={(e) => setForm({ ...form, certPath: e.target.value })} placeholder="app.pfx" />
+                    <Button variant="subtle" onClick={pickCert} title={t('connect.certBrowse')} aria-label={t('connect.certBrowse')}><FolderOpen size={15} /></Button>
+                  </div>
+                </Field>
+                <Button variant="subtle" onClick={generateCert} disabled={generating}>
+                  {generating ? <Spinner /> : <KeyRound size={15} />} {t('connect.certGenerate')}
+                </Button>
+                <Field label={t('connect.certPassword')} hint={cert ? t('connect.certPasswordStored') : form.id ? t('connect.secretKept') : t('connect.rememberHint')}>
+                  <Input type="password" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} />
+                </Field>
+                {cert && (
+                  <div className="rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 p-3 text-xs leading-relaxed">
+                    <div className="mb-1 flex items-center gap-1.5 text-sm font-medium"><FileCheck size={15} /> {t('connect.certCreated')}</div>
+                    <p className="text-[var(--text-dim)]">{t('connect.certUpload')}</p>
+                    <p className="mt-1 font-mono">{t('connect.certThumbprint')}: {cert.thumbprint}</p>
+                    <p className="font-mono">{t('connect.certExpires')}: {new Date(cert.notAfter).toLocaleDateString()}</p>
+                    <Button variant="ghost" className="mt-2 !px-2 !py-1" onClick={() => api.connect.revealCertificate(cert.cerPath).catch((e) => toast('err', errMessage(e)))}>
+                      <FolderOpen size={14} /> {t('connect.certShow')}
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
             <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
               <input type="checkbox" checked={form.remember} onChange={(e) => setForm({ ...form, remember: e.target.checked })} />

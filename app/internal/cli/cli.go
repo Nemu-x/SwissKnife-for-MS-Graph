@@ -22,6 +22,7 @@ import (
 	"text/tabwriter"
 
 	"swissknife-app/internal/auditlog"
+	"swissknife-app/internal/auth"
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/journal"
 	"swissknife-app/internal/secrets"
@@ -148,6 +149,7 @@ func connectProfile(ctx context.Context, p secrets.Profile, readOnly bool, stder
 	// SetClient first: the audit entry carries the profile name from the session.
 	sess.SetClient(gc, cr.Name)
 	sess.SetTokens(provider)
+	sess.SetIdentity(cr.TenantID, cr.AuthMode != string(auth.ModeDeviceCode))
 	sess.Record("session.connect", cr.TenantID, "mode="+cr.AuthMode+" via=cli", nil)
 	return sess, nil
 }

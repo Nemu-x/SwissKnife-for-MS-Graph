@@ -11,6 +11,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -94,6 +95,19 @@ type Env struct {
 	Ctx    context.Context
 	Graph  *graphapi.Client
 	Tokens session.TokenBroker // non-Graph resources; nil before connect
+	// TenantID and AppOnly describe the connection (Exchange needs both:
+	// the tenant in its URLs, the sign-in kind for its routing hint).
+	TenantID string
+	AppOnly  bool
+	// PS runs PowerShell cmdlets for the PowerShell backends; nil when the
+	// engine has none.
+	PS PSRunner
+}
+
+// PSRunner runs one cmdlet in the PowerShell host of a module family
+// ("exo", "teams", "ipps"), connecting it for env's connection first.
+type PSRunner interface {
+	Invoke(env Env, family, cmdlet string, params map[string]any, sel ...string) ([]json.RawMessage, error)
 }
 
 // Impl is one way to run an action on one backend.
@@ -138,6 +152,8 @@ type Engine struct {
 	actions   map[string]Action
 	providers map[Backend]Provider
 	plans     *planStore
+	// PS is handed to implementations through Env.
+	PS PSRunner
 	// WrapErr converts implementation errors for display (services sets the
 	// operr envelope with permission hints); identity by default.
 	WrapErr func(error) error
@@ -216,7 +232,7 @@ func (e *Engine) resolve(a Action) (Impl, *Reason) {
 
 func (e *Engine) env(ctx context.Context) Env {
 	c, _ := e.s.Client()
-	return Env{Ctx: ctx, Graph: c, Tokens: e.s.Tokens()}
+	return Env{Ctx: ctx, Graph: c, Tokens: e.s.Tokens(), TenantID: e.s.TenantID(), AppOnly: e.s.AppOnly(), PS: e.PS}
 }
 
 func (e *Engine) lookup(id string) (Action, error) {

@@ -9,6 +9,7 @@ require (
 	github.com/wailsapp/wails/v2 v2.12.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/sys v0.45.0
+	software.sslmate.com/src/go-pkcs12 v0.7.3
 )
 
 require (

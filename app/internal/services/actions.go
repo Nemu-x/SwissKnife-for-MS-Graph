@@ -5,6 +5,7 @@ import (
 
 	"swissknife-app/internal/actions"
 	"swissknife-app/internal/engine"
+	"swissknife-app/internal/exoapi"
 	"swissknife-app/internal/session"
 )
 
@@ -17,7 +18,7 @@ type ActionsService struct {
 // NewEngine builds the session's engine with every built-in action; shared by
 // the GUI binding and the CLI.
 func NewEngine(s *session.Session) *engine.Engine {
-	e := engine.New(s, engine.GraphProvider{})
+	e := engine.New(s, engine.GraphProvider{}, exoapi.NewProvider())
 	e.WrapErr = wrapOpErr
 	e.Register(actions.Builtin()...)
 	return e

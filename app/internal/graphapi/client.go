@@ -76,7 +76,13 @@ func New(tokens TokenSource, opts ...Option) *Client {
 // Do performs a Graph request. path is relative ("/users") or an absolute URL
 // (e.g. @odata.nextLink). The response is decoded into out (if out != nil and a body exists).
 func (c *Client) Do(ctx context.Context, method, path string, params url.Values, body any, out any) error {
-	raw, _, err := c.doRaw(ctx, method, path, params, body)
+	return c.DoWithHeaders(ctx, method, path, params, nil, body, out)
+}
+
+// DoWithHeaders is Do with extra request headers — e.g. the X-AnchorMailbox
+// routing hint the Exchange Online Admin API needs on every call.
+func (c *Client) DoWithHeaders(ctx context.Context, method, path string, params url.Values, hdr http.Header, body any, out any) error {
+	raw, _, err := c.doRaw(ctx, method, path, params, hdr, body)
 	if err != nil {
 		return err
 	}
@@ -91,11 +97,11 @@ func (c *Client) Do(ctx context.Context, method, path string, params url.Values,
 // PostForLocation performs a POST and returns the Location header — Graph
 // replies 202 + a monitor URL for long-running operations (driveItem copy).
 func (c *Client) PostForLocation(ctx context.Context, path string, params url.Values, body any) (string, error) {
-	_, loc, err := c.doRaw(ctx, http.MethodPost, path, params, body)
+	_, loc, err := c.doRaw(ctx, http.MethodPost, path, params, nil, body)
 	return loc, err
 }
 
-func (c *Client) doRaw(ctx context.Context, method, path string, params url.Values, body any) ([]byte, string, error) {
+func (c *Client) doRaw(ctx context.Context, method, path string, params url.Values, hdr http.Header, body any) ([]byte, string, error) {
 	u := path
 	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
 		u = c.baseURL + "/" + strings.TrimLeft(path, "/")
@@ -124,7 +130,7 @@ func (c *Client) doRaw(ctx context.Context, method, path string, params url.Valu
 	err := c.withRetry(ctx, method, func() (time.Duration, error) {
 		var retryAfter time.Duration
 		var err error
-		raw, loc, retryAfter, err = c.once(ctx, method, u, payload)
+		raw, loc, retryAfter, err = c.once(ctx, method, u, hdr, payload)
 		return retryAfter, err
 	})
 	if err != nil {
@@ -183,7 +189,7 @@ func retryable(method string, err error) bool {
 	return false
 }
 
-func (c *Client) once(ctx context.Context, method, u string, payload []byte) ([]byte, string, time.Duration, error) {
+func (c *Client) once(ctx context.Context, method, u string, hdr http.Header, payload []byte) ([]byte, string, time.Duration, error) {
 	var bodyReader io.Reader
 	if payload != nil {
 		bodyReader = bytes.NewReader(payload)
@@ -196,6 +202,9 @@ func (c *Client) once(ctx context.Context, method, u string, payload []byte) ([]
 	token, err := c.tokens.Token(ctx)
 	if err != nil {
 		return nil, "", 0, fmt.Errorf("graph: acquire token: %w", err)
+	}
+	for k, v := range hdr {
+		req.Header[k] = v
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")

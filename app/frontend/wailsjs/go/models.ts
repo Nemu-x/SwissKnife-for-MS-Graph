@@ -405,6 +405,7 @@ export namespace secrets {
 	    tenantId: string;
 	    clientId: string;
 	    authMode: string;
+	    certPath?: string;
 	    hasSecret: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -418,6 +419,7 @@ export namespace secrets {
 	        this.tenantId = source["tenantId"];
 	        this.clientId = source["clientId"];
 	        this.authMode = source["authMode"];
+	        this.certPath = source["certPath"];
 	        this.hasSecret = source["hasSecret"];
 	    }
 	}
@@ -453,6 +455,43 @@ export namespace services {
 	        this.copyable = source["copyable"];
 	        this.reasonKey = source["reasonKey"];
 	    }
+	}
+	export class CertInfo {
+	    pfxPath: string;
+	    cerPath: string;
+	    thumbprint: string;
+	    // Go type: time
+	    notAfter: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new CertInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.pfxPath = source["pfxPath"];
+	        this.cerPath = source["cerPath"];
+	        this.thumbprint = source["thumbprint"];
+	        this.notAfter = this.convertValues(source["notAfter"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ChannelRef {
 	    teamId: string;
@@ -506,6 +545,7 @@ export namespace services {
 	    clientId: string;
 	    secret: string;
 	    authMode: string;
+	    certPath: string;
 	    rememberAs: string;
 	
 	    static createFrom(source: any = {}) {
@@ -519,6 +559,7 @@ export namespace services {
 	        this.clientId = source["clientId"];
 	        this.secret = source["secret"];
 	        this.authMode = source["authMode"];
+	        this.certPath = source["certPath"];
 	        this.rememberAs = source["rememberAs"];
 	    }
 	}

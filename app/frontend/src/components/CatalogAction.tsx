@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Eye, Check, ArrowRight, Minus } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, Eye, Check, ArrowRight, Minus } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
@@ -30,6 +30,8 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
   'user.revokeSessions': { label: 'users.tileSessions', hint: 'users.hintSessions', notes: ['users.noteSessions'], icon: <LogOut size={16} /> },
   'user.manager': { label: 'actions.user.manager.label', hint: 'actions.user.manager.hint', icon: <UserSquare size={16} /> },
   'user.usageLocation': { label: 'actions.user.usageLocation.label', hint: 'actions.user.usageLocation.hint', notes: ['actions.user.usageLocation.note'], icon: <Globe size={16} /> },
+  'mailbox.sendOnBehalf': { label: 'actions.mailbox.sendOnBehalf.label', hint: 'actions.mailbox.sendOnBehalf.hint', notes: ['actions.mailbox.sendOnBehalf.note'], icon: <Send size={16} /> },
+  'mailbox.folderPermission': { label: 'actions.mailbox.folderPermission.label', hint: 'actions.mailbox.folderPermission.hint', notes: ['actions.mailbox.folderPermission.note'], icon: <FolderLock size={16} /> },
   'group.membership': { label: 'groups.tileAdd', hint: 'groups.hintAdd', notes: ['groups.noteAdd'], icon: <UserPlus size={16} /> },
   'license.assign': { label: 'licensing.tileAssign', hint: 'licensing.hintAssign', notes: ['licensing.noteAssign'], warn: ['licensing.noteRemove'], icon: <Plus size={16} /> },
 }
