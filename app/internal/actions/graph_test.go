@@ -115,9 +115,12 @@ func TestGroupMembershipPlans(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := writes(*calls)
+	if len(w) != 1 {
+		t.Fatalf("writes = %+v", w)
+	}
 	var body map[string]string
 	_ = json.Unmarshal([]byte(w[0].body), &body)
-	if len(w) != 1 || w[0].path != "/groups/g1/members/$ref" || body["@odata.id"] != "https://graph.microsoft.com/v1.0/directoryObjects/u1" {
+	if w[0].path != "/groups/g1/members/$ref" || body["@odata.id"] != "https://graph.microsoft.com/v1.0/directoryObjects/u1" {
 		t.Fatalf("writes = %+v", w)
 	}
 
