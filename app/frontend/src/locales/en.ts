@@ -126,6 +126,7 @@ const en = {
     createTap: 'Issue a Temporary Access Pass',
     resetMfa: 'Reset MFA methods',
     setManager: 'Set a manager',
+    setUsageLocation: 'Set a usage location',
     inviteGuest: 'Invite an external guest',
     restoreUser: 'Restore a deleted user',
     onboard: 'Onboard a new employee (playbook)',

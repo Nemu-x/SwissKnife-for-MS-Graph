@@ -316,15 +316,17 @@ func (graphManager) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, err
 		return nil, errors.New("a user cannot be their own manager")
 	}
 	// No manager answers 404; anything else is a real failure.
+	// The manager may be an organizational contact without a UPN.
 	var cur struct {
-		ID  string `json:"id"`
-		UPN string `json:"userPrincipalName"`
+		ID   string `json:"id"`
+		UPN  string `json:"userPrincipalName"`
+		Name string `json:"displayName"`
 	}
-	err = env.Graph.Get(env.Ctx, userPath(u.ID)+"/manager", url.Values{"$select": {"id,userPrincipalName"}}, &cur)
+	err = env.Graph.Get(env.Ctx, userPath(u.ID)+"/manager", url.Values{"$select": {"id,userPrincipalName,displayName"}}, &cur)
 	if err != nil && !isNotFound(err) {
 		return nil, err
 	}
-	ch := engine.Change{Target: u.UPN, Field: "manager", Op: "set", Before: cur.UPN, After: m.UPN,
+	ch := engine.Change{Target: u.UPN, Field: "manager", Op: "set", Before: firstOf(cur.UPN, cur.Name, cur.ID), After: m.UPN,
 		Ref: map[string]string{"id": u.ID, "manager": m.ID}}
 	if cur.ID == m.ID {
 		ch.Op = "none"
@@ -367,4 +369,13 @@ func (graphUsageLocation) Apply(env engine.Env, in engine.Inputs, ch engine.Chan
 func isNotFound(err error) bool {
 	var ge *graphapi.GraphError
 	return errors.As(err, &ge) && ge.StatusCode == 404
+}
+
+func firstOf(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

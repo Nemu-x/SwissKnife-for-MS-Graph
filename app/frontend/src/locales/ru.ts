@@ -125,6 +125,7 @@ const ru: Dict<typeof en> = {
     revokeSessions: 'Выкинуть пользователя из всех сессий',
     createTap: 'Выдать временный пропуск (TAP)',
     resetMfa: 'Сбросить методы MFA',
+    setUsageLocation: 'Указать страну использования',
     setManager: 'Назначить руководителя',
     inviteGuest: 'Пригласить внешнего гостя',
     restoreUser: 'Восстановить удалённого пользователя',
