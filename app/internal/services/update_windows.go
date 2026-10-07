@@ -38,5 +38,10 @@ func launchElevated(exe string) error {
 
 // revealInFolder opens Explorer with the given file selected.
 func revealInFolder(path string) error {
-	return exec.Command("explorer.exe", "/select,"+path).Start()
+	cmd := exec.Command("explorer.exe", "/select,"+path)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }() // reap the child
+	return nil
 }

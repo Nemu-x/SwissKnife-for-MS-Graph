@@ -11,9 +11,15 @@ export function Disconnect():Promise<void>;
 
 export function Domains():Promise<Array<string>>;
 
+export function GenerateCertificate(arg1:string):Promise<services.CertInfo>;
+
 export function GetStatus():Promise<services.Status>;
 
+export function PickCertificate():Promise<string>;
+
 export function Profiles():Promise<Array<secrets.Profile>>;
+
+export function RevealCertificate(arg1:string):Promise<void>;
 
 export function SaveProfile(arg1:secrets.Profile,arg2:string):Promise<secrets.Profile>;
 

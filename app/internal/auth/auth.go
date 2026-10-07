@@ -26,6 +26,8 @@ type Mode string
 const (
 	ModeClientSecret Mode = "client_secret" // app-only
 	ModeDeviceCode   Mode = "device_code"   // delegated
+	// ModeClientCertificate is app-only with a certificate (PFX file).
+	ModeClientCertificate Mode = "client_certificate"
 )
 
 // DeviceCodePrompt is invoked when the user must enter a code at microsoft.com/devicelogin.

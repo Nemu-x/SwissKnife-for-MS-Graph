@@ -57,6 +57,9 @@ export const api = {
     status: () => Connect.GetStatus() as Promise<Status>,
     setReadOnly: (v: boolean) => Connect.SetReadOnly(v) as Promise<Status>,
     domains: () => Connect.Domains() as Promise<string[]>,
+    generateCertificate: (name: string) => Connect.GenerateCertificate(name) as Promise<services.CertInfo>,
+    pickCertificate: () => Connect.PickCertificate() as Promise<string>,
+    revealCertificate: (path: string) => Connect.RevealCertificate(path),
   },
   dashboard: {
     summary: () => Dashboard.Summary() as Promise<services.DashboardSummary>,
