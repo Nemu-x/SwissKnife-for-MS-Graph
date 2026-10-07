@@ -85,26 +85,6 @@ func (u *UsersService) Snapshot(user string) (map[string]any, error) {
 	}, nil
 }
 
-func (u *UsersService) setEnabled(user string, enabled bool) error {
-	action := "users.block"
-	if enabled {
-		action = "users.unblock"
-	}
-	if err := u.s.GuardWrite(); err != nil {
-		return err
-	}
-	c, err := u.s.Client()
-	if err != nil {
-		return err
-	}
-	err = c.Patch(u.s.Ctx(), "/users/"+url.PathEscape(user), map[string]any{"accountEnabled": enabled}, nil)
-	u.s.Record(action, user, "", err)
-	return err
-}
-
-func (u *UsersService) Block(user string) error   { return u.setEnabled(user, false) }
-func (u *UsersService) Unblock(user string) error { return u.setEnabled(user, true) }
-
 // ResetPassword is destructive: requires typed confirm (entering the target UPN).
 func (u *UsersService) ResetPassword(user, newPassword string, forceChange bool, confirm string) error {
 	if err := u.s.GuardDestructive(user, confirm); err != nil {
@@ -122,19 +102,6 @@ func (u *UsersService) ResetPassword(user, newPassword string, forceChange bool,
 	}
 	err = c.Patch(u.s.Ctx(), "/users/"+url.PathEscape(user), body, nil)
 	u.s.Record("users.resetPassword", user, "forceChange="+strconv.FormatBool(forceChange), err)
-	return err
-}
-
-func (u *UsersService) RevokeSessions(user, confirm string) error {
-	if err := u.s.GuardDestructive(user, confirm); err != nil {
-		return err
-	}
-	c, err := u.s.Client()
-	if err != nil {
-		return err
-	}
-	err = c.Post(u.s.Ctx(), "/users/"+url.PathEscape(user)+"/revokeSignInSessions", map[string]any{}, nil)
-	u.s.Record("users.revokeSessions", user, "", err)
 	return err
 }
 

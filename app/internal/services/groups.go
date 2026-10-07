@@ -64,10 +64,6 @@ func (g *GroupsService) addRef(groupID, upn, kind string) error {
 	return err
 }
 
-func (g *GroupsService) AddOwner(groupID, upn string) error {
-	return g.addRef(groupID, upn, "owners")
-}
-
 func (g *GroupsService) AddMember(groupID, upn string) error {
 	return g.addRef(groupID, upn, "members")
 }

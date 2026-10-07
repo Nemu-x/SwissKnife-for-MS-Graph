@@ -67,20 +67,14 @@ export const api = {
     memberOf: (u: string) => list(Users.MemberOf(u)),
     licenseDetails: (u: string) => list(Users.LicenseDetails(u)),
     snapshot: (u: string) => one(Users.Snapshot(u)),
-    block: (u: string) => Users.Block(u),
-    unblock: (u: string) => Users.Unblock(u),
     resetPassword: (u: string, pw: string, force: boolean, confirm: string) =>
       Users.ResetPassword(u, pw, force, confirm),
-    revokeSessions: (u: string, confirm: string) => Users.RevokeSessions(u, confirm),
     create: (name: string, upn: string, nick: string, pw: string, force: boolean, loc: string) =>
       one(Users.CreateUser(name, upn, nick, pw, force, loc)),
     inviteGuest: (email: string, name: string, redirectUrl: string, message: string, sendMail: boolean) =>
       Users.InviteGuest(email, name, redirectUrl, message, sendMail) as Promise<GraphObject>,
     update: (u: string, patchJSON: string) => Users.Update(u, patchJSON),
-    setUsageLocation: (u: string, loc: string) => Users.SetUsageLocation(u, loc),
     delete: (u: string, confirm: string) => Users.Delete(u, confirm),
-    getManager: (u: string) => one(Users.GetManager(u)),
-    setManager: (u: string, mgr: string) => Users.SetManager(u, mgr),
     listDeleted: (max: number) => list(Users.ListDeleted(max)),
     restoreDeleted: (id: string) => one(Users.RestoreDeleted(id)),
   },
@@ -104,7 +98,6 @@ export const api = {
     list: (search: string, max: number) => list(Groups.List(search, max)),
     get: (id: string) => one(Groups.Get(id)),
     members: (id: string) => list(Groups.Members(id)),
-    addOwner: (id: string, upn: string) => Groups.AddOwner(id, upn),
     addMember: (id: string, upn: string) => Groups.AddMember(id, upn),
     createM365: (name: string, desc: string, nick: string, owner: string) =>
       one(Groups.CreateM365(name, desc, nick, owner)),

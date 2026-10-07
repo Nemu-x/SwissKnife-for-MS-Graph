@@ -173,6 +173,7 @@ func init() {
 		{name: "get", args: "<graph path> [--top N] [--all]", summary: "raw Graph GET; prints the JSON response (--all follows @odata.nextLink)", setup: setupGet},
 		{name: "user", args: "<upn>", summary: "user snapshot: profile, group membership, licenses", setup: setupUser},
 		{name: "signins", args: "<upn> [--days 7] [--failed] [--top 50]", summary: "sign-in log for one user", setup: setupSignins},
+		{name: "action", args: "list | <id> field=value... [--apply] [--confirm <target>]", summary: "catalog actions: list them, preview a change, apply it with --apply", setup: setupAction},
 		{name: "offboard", args: "<upn> --confirm <upn> [actions...]", summary: "run the offboarding playbook (destructive; --confirm must repeat the UPN)", setup: setupOffboard},
 	}
 }

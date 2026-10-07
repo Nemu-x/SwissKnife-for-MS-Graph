@@ -4,8 +4,6 @@ import {json} from '../models';
 
 export function AddMember(arg1:string,arg2:string):Promise<void>;
 
-export function AddOwner(arg1:string,arg2:string):Promise<void>;
-
 export function CreateM365(arg1:string,arg2:string,arg3:string,arg4:string):Promise<json.RawMessage>;
 
 export function Get(arg1:string):Promise<json.RawMessage>;

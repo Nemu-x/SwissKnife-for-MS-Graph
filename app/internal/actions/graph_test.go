@@ -201,3 +201,57 @@ func TestLicenseInheritedFromGroupIsNotRemovable(t *testing.T) {
 		t.Fatalf("change = %+v", c)
 	}
 }
+
+func TestManagerPlanAndApply(t *testing.T) {
+	e, calls := harness(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/users/ann@contoso.com":
+			w.Write([]byte(`{"id":"u1","userPrincipalName":"ann@contoso.com"}`))
+		case "/users/boss@contoso.com":
+			w.Write([]byte(`{"id":"m1","userPrincipalName":"boss@contoso.com"}`))
+		case "/users/u1/manager":
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":{"code":"Request_ResourceNotFound","message":"no manager"}}`))
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})
+	p, err := e.Plan("user.manager", engine.Inputs{"user": "ann@contoso.com", "manager": "boss@contoso.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := p.Changes[0]; c.Op != "set" || c.Before != "" || c.After != "boss@contoso.com" {
+		t.Fatalf("change = %+v", c)
+	}
+	if _, err := e.Apply(p.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	w := writes(*calls)
+	if len(w) != 1 || w[0].method != "PUT" || w[0].path != "/users/u1/manager/$ref" {
+		t.Fatalf("writes = %+v", w)
+	}
+}
+
+func TestUsageLocationValidatesAndUppercases(t *testing.T) {
+	e, calls := harness(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			w.Write([]byte(`{"id":"u1","userPrincipalName":"ann@contoso.com","usageLocation":"US"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if _, err := e.Plan("user.usageLocation", engine.Inputs{"user": "ann@contoso.com", "country": "Germany"}); err == nil {
+		t.Fatal("a non-ISO value must be rejected")
+	}
+	p, _ := e.Plan("user.usageLocation", engine.Inputs{"user": "ann@contoso.com", "country": "us"})
+	if p.Changes[0].Op != "none" {
+		t.Fatalf("same country: %+v", p.Changes[0])
+	}
+	p, _ = e.Plan("user.usageLocation", engine.Inputs{"user": "ann@contoso.com", "country": "de"})
+	if _, err := e.Apply(p.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if w := writes(*calls); len(w) != 1 || w[0].body != `{"usageLocation":"DE"}` {
+		t.Fatalf("writes = %+v", w)
+	}
+}

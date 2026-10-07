@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, LogOut, UserPlus, Plus, Zap, Eye, Check, ArrowRight, Minus } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Eye, Check, ArrowRight, Minus } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
@@ -28,6 +28,8 @@ export const catalogTile = (id: string): TaskAction => ({ id, label: '', catalog
 const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?: string[]; icon: ReactNode }> = {
   'user.signIn': { label: 'users.tileBlock', hint: 'users.hintBlock', icon: <Ban size={16} /> },
   'user.revokeSessions': { label: 'users.tileSessions', hint: 'users.hintSessions', notes: ['users.noteSessions'], icon: <LogOut size={16} /> },
+  'user.manager': { label: 'actions.user.manager.label', hint: 'actions.user.manager.hint', icon: <UserSquare size={16} /> },
+  'user.usageLocation': { label: 'actions.user.usageLocation.label', hint: 'actions.user.usageLocation.hint', notes: ['actions.user.usageLocation.note'], icon: <Globe size={16} /> },
   'group.membership': { label: 'groups.tileAdd', hint: 'groups.hintAdd', notes: ['groups.noteAdd'], icon: <UserPlus size={16} /> },
   'license.assign': { label: 'licensing.tileAssign', hint: 'licensing.hintAssign', notes: ['licensing.noteAssign'], warn: ['licensing.noteRemove'], icon: <Plus size={16} /> },
 }
