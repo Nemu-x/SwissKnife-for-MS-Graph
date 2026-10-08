@@ -4,6 +4,7 @@ export type Dict<T> = { [K in keyof T]: T[K] extends string ? string : Dict<T[K]
 const en = {
   app: { name: 'SwissKnife for MS Graph' },
   nav: {
+    explorer: 'Explorer',
     connect: 'Connect',
     dashboard: 'Dashboard',
     playbooks: 'Playbooks',
@@ -29,6 +30,14 @@ const en = {
     activity: 'Activity',
     history: 'Run history',
     settings: 'Settings',
+  },
+  explorer: {
+    objects: 'Objects',
+    kinds: { users: 'Users', groups: 'Groups', teams: 'Teams' },
+    search: 'Search by name…',
+    pick: 'Pick an object',
+    actions: 'Actions for this object',
+    props: { userPrincipalName: 'Sign-in name', mail: 'Mail', jobTitle: 'Job title', department: 'Department', id: 'Object id' },
   },
   navGroups: {
     identity: 'Identity',
@@ -174,6 +183,7 @@ const en = {
     caPolicies: 'Review Conditional Access policies',
     appConsents: 'Review enterprise app permissions',
     runHistory: 'Look at past runs',
+    explorer: 'Browse objects and act on one',
     rawGraph: 'Call a raw Graph endpoint',
     dashboard: 'See the tenant overview',
     connectTenant: 'Connect to another tenant',

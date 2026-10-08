@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   Plug, LayoutDashboard, PlayCircle, Users, KeyRound, ShieldCheck, Boxes, MessagesSquare, MessageCircle, Mail,
   FolderOpen, UserMinus, Smartphone, MonitorSmartphone, AppWindow, BarChart3, Sparkles, HeartPulse,
-  ScrollText, TerminalSquare, Settings, Lock, Layers, ShieldAlert, History, ChevronDown, Search, ShieldHalf,
+  ScrollText, TerminalSquare, Settings, Lock, Layers, ShieldAlert, History, ChevronDown, Search, ShieldHalf, Compass,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import logo from '../assets/images/logo.png'
@@ -19,6 +19,7 @@ export const LOCAL_PAGES: PageId[] = ['connect', 'settings', 'history']
 const pinned: NavItem[] = [
   { id: 'connect', icon: <Plug size={17} />, key: 'nav.connect' },
   { id: 'dashboard', icon: <LayoutDashboard size={17} />, key: 'nav.dashboard' },
+  { id: 'explorer', icon: <Compass size={17} />, key: 'nav.explorer' },
 ]
 
 // Grouped navigation (nav-groups capability): collapsible sections, access

@@ -4,6 +4,7 @@ import type { Dict } from './en'
 const ru: Dict<typeof en> = {
   app: { name: 'SwissKnife для MS Graph' },
   nav: {
+    explorer: 'Обзор объектов',
     connect: 'Подключение',
     dashboard: 'Дашборд',
     playbooks: 'Плейбуки',
@@ -29,6 +30,14 @@ const ru: Dict<typeof en> = {
     activity: 'Действия',
     history: 'История запусков',
     settings: 'Настройки',
+  },
+  explorer: {
+    objects: 'Объекты',
+    kinds: { users: 'Пользователи', groups: 'Группы', teams: 'Команды' },
+    search: 'Поиск по имени…',
+    pick: 'Выберите объект',
+    actions: 'Действия для этого объекта',
+    props: { userPrincipalName: 'Имя для входа', mail: 'Почта', jobTitle: 'Должность', department: 'Отдел', id: 'Id объекта' },
   },
   navGroups: {
     identity: 'Учётные записи',
@@ -174,6 +183,7 @@ const ru: Dict<typeof en> = {
     caPolicies: 'Посмотреть политики условного доступа',
     appConsents: 'Посмотреть разрешения корпоративных приложений',
     runHistory: 'Посмотреть прошлые запуски',
+    explorer: 'Найти объект и выполнить действие с ним',
     rawGraph: 'Выполнить произвольный запрос к Graph',
     dashboard: 'Открыть обзор тенанта',
     connectTenant: 'Подключиться к другому тенанту',

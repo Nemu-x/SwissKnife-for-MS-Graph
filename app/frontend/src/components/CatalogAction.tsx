@@ -24,6 +24,14 @@ export type CatalogEntry = engine.CatalogEntry
 // Placeholder a page puts into its tile list; TaskPage swaps in the real tile.
 export const catalogTile = (id: string): TaskAction => ({ id, label: '', catalog: true })
 
+// Inputs handed over by another page (the object navigator): the action's
+// panel takes them once, when it opens next.
+const prefills = new Map<string, Record<string, string>>()
+export const prefillAction = (id: string, values: Record<string, string>) => { prefills.set(id, values) }
+
+// The i18n key of an action's label.
+export const catalogLabel = (id: string) => UI[id]?.label ?? id
+
 // Built-in actions reuse the wording of the tiles they replaced; anything else
 // falls back to actions.<id>.label / .hint.
 const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?: string[]; icon: ReactNode }> = {
@@ -152,7 +160,9 @@ function CatalogPanel({ entry, mark, askConfirm }: {
   // produced it, so leaving the page and coming back shows it again.
   const cacheKey = `catalog.read.${entry.id}`
   const cached = cache[cacheKey] as { values: Record<string, string>; result: engine.ReadResult } | undefined
+  const [prefill] = useState(() => { const p = prefills.get(entry.id); prefills.delete(entry.id); return p })
   const initial = () => {
+    if (prefill) return { ...Object.fromEntries(entry.fields.map((f) => [f.name, f.default ?? ''])), ...prefill }
     if (!cached?.values) return Object.fromEntries(entry.fields.map((f) => [f.name, f.default ?? '']))
     const { __across: _, ...v } = cached.values
     return v
@@ -160,7 +170,7 @@ function CatalogPanel({ entry, mark, askConfirm }: {
   const [values, setValues] = useState<Record<string, string>>(initial)
   const [plan, setPlan] = useState<engine.Plan | null>(null)
   const [result, setResult] = useState<engine.Result | null>(null)
-  const [rows, setRows] = useState<engine.ReadResult | null>(cached?.result ?? null)
+  const [rows, setRows] = useState<engine.ReadResult | null>(prefill ? null : cached?.result ?? null)
   const [busy, setBusy] = useState(false)
   const isRead = entry.danger === 'read'
   // Cross-tenant read: the chosen app-only profiles (empty = this tenant only).
