@@ -223,6 +223,22 @@ export namespace engine {
 		    return a;
 		}
 	}
+	export class ReadResult {
+	    columns: string[];
+	    rows: any[];
+	    backend: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReadResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.columns = source["columns"];
+	        this.rows = source["rows"];
+	        this.backend = source["backend"];
+	    }
+	}
 	
 	export class Result {
 	    opId: string;

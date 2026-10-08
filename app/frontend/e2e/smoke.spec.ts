@@ -27,11 +27,15 @@ async function stubWails(page: Page, opts: { connected?: boolean } = {}) {
           { name: 'user', kind: 'user', required: true }, { name: 'group', kind: 'group', required: true }] },
         { id: 'license.assign', page: 'licensing', danger: 'write', available: true, backend: 'graph', fields: [
           { name: 'user', kind: 'user', required: true }, { name: 'sku', kind: 'sku', required: true }] },
+        { id: 'teams.effectivePolicies', page: 'teams', danger: 'read', available: true, backend: 'teams-ps',
+          fields: [{ name: 'user', kind: 'user', required: true }] },
         { id: 'mailbox.fullAccess', page: 'users', danger: 'write', available: false,
           reason: { key: 'backendMissing', params: { backend: 'pwsh' } }, fields: [] },
       ] : [],
       Plan: { id: 'p1', actionId: 'user.signIn', backend: 'graph', inputs: {}, changes: [
         { target: 'ann@contoso.com', field: 'signIn', op: 'set', before: 'allowed', after: 'blocked' }] },
+      Run: { columns: ['policyType', 'policy'], backend: 'teams-ps', rows: [
+        { policyType: 'meeting', policy: 'NoRecording' }, { policyType: 'calling', policy: 'Global' }] },
       Apply: { opId: 'o1', applied: 1, skipped: 0, failed: 0, canceled: false, outcomes: [
         { target: 'ann@contoso.com', field: 'signIn', op: 'set', ok: true, skipped: false }] },
     }
@@ -227,5 +231,24 @@ test('a catalog action previews its change before applying it', async ({ page })
   await expect(page.getByText('allowed →', { exact: false })).toBeVisible()
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
   await expect(page.getByText('Done: 1 changed, 0 already in place').first()).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('a read action shows its rows in the tile', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Teams', exact: true }).click()
+
+  const tile = page.getByRole('button', { name: /Which Teams policies apply to a person/ })
+  await expect(tile).toContainText('Teams PS') // backend badge
+  await tile.click()
+  await page.getByRole('button', { name: 'User', exact: true }).click()
+  await page.getByPlaceholder('Search or paste', { exact: false }).fill('bob@contoso.com')
+  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Show', exact: true }).click()
+  await expect(page.getByRole('cell', { name: 'NoRecording' })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'Meetings' })).toBeVisible() // translated value
   expect(errors).toEqual([])
 })

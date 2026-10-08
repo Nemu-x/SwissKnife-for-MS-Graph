@@ -320,3 +320,32 @@ func TestCatalogReportsMissingGraphPermissions(t *testing.T) {
 		t.Fatalf("unknown grants must not warn: %v", got)
 	}
 }
+
+type fakeReader struct{}
+
+func (fakeReader) Backend() Backend { return BackendGraph }
+func (fakeReader) Read(Env, Inputs) (*ReadResult, error) {
+	return &ReadResult{Columns: []string{"a"}, Rows: []Row{{"a": "1"}}}, nil
+}
+
+func TestReadActionsRunButDoNotPlan(t *testing.T) {
+	s := newSession(t)
+	e := New(s, GraphProvider{})
+	e.Register(Action{Manifest: Manifest{ID: "r", Danger: Read}, Impls: []Impl{ReadImpl(fakeReader{})}},
+		Action{Manifest: Manifest{ID: "w", Danger: Write}, Impls: []Impl{fakeImpl{backend: BackendGraph}}})
+	res, err := e.Run(context.Background(), "r", Inputs{})
+	if err != nil || len(res.Rows) != 1 || res.Backend != BackendGraph {
+		t.Fatalf("run: %+v %v", res, err)
+	}
+	if _, err := e.Plan("r", Inputs{}); err == nil {
+		t.Fatal("a read action has nothing to preview")
+	}
+	if _, err := e.Run(context.Background(), "w", Inputs{}); err == nil {
+		t.Fatal("a write action must not run without a preview")
+	}
+	// Reads run in read-only mode.
+	s.SetReadOnly(true)
+	if _, err := e.Run(context.Background(), "r", Inputs{}); err != nil {
+		t.Fatal(err)
+	}
+}

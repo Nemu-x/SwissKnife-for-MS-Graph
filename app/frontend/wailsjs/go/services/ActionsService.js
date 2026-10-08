@@ -29,3 +29,7 @@ export function PowerShellStatus() {
 export function RefreshPowerShell() {
   return window['go']['services']['ActionsService']['RefreshPowerShell']();
 }
+
+export function Run(arg1, arg2) {
+  return window['go']['services']['ActionsService']['Run'](arg1, arg2);
+}
