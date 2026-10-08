@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"swissknife-app/internal/engine"
 	"swissknife-app/internal/packs"
@@ -21,23 +22,26 @@ import (
 // to the catalog, run as trusted scripts in the PowerShell host.
 
 var (
-	packMu sync.Mutex
-	loaded []packs.Pack // the packs as last loaded
+	packMu  sync.Mutex
+	loaded  = map[*session.Session][]packs.Pack{} // the packs as last loaded, per session
+	trustMu sync.Mutex                            // packs.json read-modify-write
 )
 
 func packsRoot(s *session.Session) string { return filepath.Join(s.ConfigDir(), "actions") }
 func trustFile(s *session.Session) string { return filepath.Join(s.ConfigDir(), "packs.json") }
 
-// trustedScriptHashes are the scripts the PowerShell host may run.
-func trustedScriptHashes() []string {
-	packMu.Lock()
-	defer packMu.Unlock()
-	return scriptHashesLocked()
+// trustedScriptHashes are the scripts the session's pack hosts may run.
+func trustedScriptHashes(s *session.Session) func() []string {
+	return func() []string {
+		packMu.Lock()
+		defer packMu.Unlock()
+		return scriptHashesLocked(s)
+	}
 }
 
-func scriptHashesLocked() []string {
+func scriptHashesLocked(s *session.Session) []string {
 	var out []string
-	for _, p := range loaded {
+	for _, p := range loaded[s] {
 		if !p.Usable() {
 			continue
 		}
@@ -60,12 +64,12 @@ func reloadPacks(s *session.Session, e *engine.Engine) []packs.Pack {
 	packMu.Lock()
 	defer packMu.Unlock()
 	list := packs.Load(packsRoot(s), packs.LoadTrust(trustFile(s)))
-	before := strings.Join(scriptHashesLocked(), ",")
-	loaded = list
+	before := strings.Join(scriptHashesLocked(s), ",")
+	loaded[s] = list
 	e.SetPacks(packActions(s, list))
 	// Pack hosts know their trusted scripts from the start: replace them
 	// (at their next use) only when that set changed.
-	if pool, ok := e.PS.(*pwsh.Pool); ok && strings.Join(scriptHashesLocked(), ",") != before {
+	if pool, ok := e.PS.(*pwsh.Pool); ok && strings.Join(scriptHashesLocked(s), ",") != before {
 		pool.ResetPacks()
 	}
 	return list
@@ -78,7 +82,13 @@ func packActions(s *session.Session, list []packs.Pack) []engine.Action {
 			continue
 		}
 		status := p.Status
+		check := folderCheck(p.Dir, p.Digest)
 		gate := func() *engine.Reason {
+			// A trusted folder edited since the load counts as changed, even
+			// before the next reload (what runs is the loaded, trusted text).
+			if (status == packs.Signed || status == packs.Trusted) && !check() {
+				return &engine.Reason{Key: "packChanged"}
+			}
 			switch status {
 			case packs.Untrusted:
 				return &engine.Reason{Key: "packUntrusted"}
@@ -310,6 +320,8 @@ func (x *PacksService) List() ([]PackInfo, error) {
 // Trust pins a pack's exact contents. digest is what the operator reviewed:
 // if the folder changed since, nothing is trusted.
 func (x *PacksService) Trust(name, digest string) ([]PackInfo, error) {
+	trustMu.Lock()
+	defer trustMu.Unlock()
 	list := packs.Load(packsRoot(x.s), packs.LoadTrust(trustFile(x.s)))
 	for _, p := range list {
 		if p.Manifest.Name != name || p.Status == packs.Invalid {
@@ -335,6 +347,8 @@ func (x *PacksService) Disable(name string) ([]PackInfo, error) { return x.setDi
 func (x *PacksService) Enable(name string) ([]PackInfo, error) { return x.setDisabled(name, false) }
 
 func (x *PacksService) setDisabled(name string, off bool) ([]PackInfo, error) {
+	trustMu.Lock()
+	defer trustMu.Unlock()
 	t := packs.LoadTrust(trustFile(x.s))
 	kept := []string{}
 	for _, n := range t.Disabled {
@@ -355,6 +369,8 @@ func (x *PacksService) setDisabled(name string, off bool) ([]PackInfo, error) {
 
 // Untrust removes a pack's pin.
 func (x *PacksService) Untrust(name string) ([]PackInfo, error) {
+	trustMu.Lock()
+	defer trustMu.Unlock()
 	t := packs.LoadTrust(trustFile(x.s))
 	delete(t.Pinned, name)
 	if err := packs.SaveTrust(trustFile(x.s), t); err != nil {
@@ -375,6 +391,8 @@ func (x *PacksService) Keys() []string {
 
 // AddKey trusts an author's minisign public key (the base64 line).
 func (x *PacksService) AddKey(key string) ([]string, error) {
+	trustMu.Lock()
+	defer trustMu.Unlock()
 	key = strings.TrimSpace(key)
 	if i := strings.LastIndex(key, "\n"); i >= 0 { // a whole .pub file was pasted
 		key = strings.TrimSpace(key[i+1:])
@@ -399,6 +417,8 @@ func (x *PacksService) AddKey(key string) ([]string, error) {
 
 // RemoveKey stops trusting a signing key.
 func (x *PacksService) RemoveKey(key string) ([]string, error) {
+	trustMu.Lock()
+	defer trustMu.Unlock()
 	t := packs.LoadTrust(trustFile(x.s))
 	kept := []string{}
 	for _, k := range t.Keys {
@@ -425,4 +445,21 @@ func (x *PacksService) OpenFolder() error {
 		return err
 	}
 	return revealInFolder(dir)
+}
+
+// folderCheck reports whether a pack folder still has the digest it was
+// loaded with; the answer is reused for a moment (the catalog asks per action).
+func folderCheck(dir, digest string) func() bool {
+	var mu sync.Mutex
+	var at time.Time
+	var same bool
+	return func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		if time.Since(at) > 2*time.Second {
+			d, err := packs.Digest(dir)
+			same, at = err == nil && d == digest, time.Now()
+		}
+		return same
+	}
 }

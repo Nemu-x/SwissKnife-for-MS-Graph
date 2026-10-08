@@ -47,7 +47,7 @@ func NewEngine(s *session.Session) *engine.Engine {
 		engine.LDAPProvider{Get: dir}, engine.LDAPProvider{Get: dir, Secure: true})
 	e.LDAP = dir
 	e.PS = pool
-	pool.Scripts = trustedScriptHashes
+	pool.Scripts = trustedScriptHashes(s)
 	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr
 	// A cross-tenant read belongs to the connection that started it.

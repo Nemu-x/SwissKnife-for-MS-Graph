@@ -29,7 +29,7 @@ export function PacksCard() {
   const changed = (l: unknown) => { setList((l ?? []) as Pack[]); setCache('catalog.rev', Date.now()) }
 
   const load = () => {
-    api.packs.list().then((l) => setList((l ?? []) as Pack[])).catch((e) => toast('err', errMessage(e)))
+    api.packs.list().then(changed).catch((e) => toast('err', errMessage(e)))
     api.packs.keys().then((k) => setKeys(k ?? [])).catch(() => {})
   }
   useEffect(load, [])
