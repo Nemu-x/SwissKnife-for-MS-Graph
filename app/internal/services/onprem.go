@@ -168,11 +168,13 @@ func (o *OnPremService) DeleteConnection(id string) error {
 			out = append(out, c)
 		}
 	}
+	if err := o.save(out); err != nil {
+		return err
+	}
 	if cur := directoryFor(o.s); cur != nil && cur.Config().ID == id {
 		directories.Delete(o.s)
 	}
-	_ = secrets.SetNamedSecret(onpremKey(id), "")
-	return o.save(out)
+	return secrets.SetNamedSecret(onpremKey(id), "")
 }
 
 func (o *OnPremService) client(id string) (*ldapx.Client, error) {

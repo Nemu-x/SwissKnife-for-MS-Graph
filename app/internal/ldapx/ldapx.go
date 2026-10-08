@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf16"
 
@@ -116,7 +117,7 @@ func (c *Client) tlsConfig() (*tls.Config, error) {
 }
 
 // dial connects and binds.
-func (c *Client) dial(ctx context.Context) (*ldap.Conn, error) {
+func (c *Client) dial(ctx context.Context) (*watched, error) {
 	addr := net.JoinHostPort(c.cfg.Host, strconv.Itoa(c.cfg.port()))
 	tlsCfg, err := c.tlsConfig()
 	if err != nil {
@@ -141,13 +142,44 @@ func (c *Client) dial(ctx context.Context) (*ldap.Conn, error) {
 	}
 	conn.SetTimeout(30 * time.Second)
 	if dl, ok := ctx.Deadline(); ok {
-		conn.SetTimeout(time.Until(dl))
+		left := time.Until(dl)
+		if left <= 0 {
+			_ = conn.Close()
+			return nil, ctx.Err()
+		}
+		if left < 30*time.Second {
+			conn.SetTimeout(left)
+		}
 	}
-	if err := conn.Bind(c.cfg.BindDN, c.password); err != nil {
-		_ = conn.Close()
+	w := &watched{Conn: conn, stop: make(chan struct{})}
+	// Cancel closes the connection, which ends a request in flight.
+	if done := ctx.Done(); done != nil {
+		go func() {
+			select {
+			case <-done:
+				_ = conn.Close()
+			case <-w.stop:
+			}
+		}()
+	}
+	if err := w.Bind(c.cfg.BindDN, c.password); err != nil {
+		_ = w.Close()
 		return nil, fmt.Errorf("bind: %w", err)
 	}
-	return conn, nil
+	return w, nil
+}
+
+// watched is a connection whose operations end when the caller's context
+// is cancelled.
+type watched struct {
+	*ldap.Conn
+	stop chan struct{}
+	once sync.Once
+}
+
+func (w *watched) Close() error {
+	w.once.Do(func() { close(w.stop) })
+	return w.Conn.Close()
 }
 
 // Test connects and binds.
@@ -214,7 +246,7 @@ func (c *Client) Search(ctx context.Context, filter string, attrs []string, limi
 
 // UserAttrs are read for every user.
 var UserAttrs = []string{"distinguishedName", "sAMAccountName", "userPrincipalName", "displayName", "mail",
-	"userAccountControl", "lockoutTime", "pwdLastSet", "lastLogonTimestamp", "memberOf"}
+	"userAccountControl", "lockoutTime", "pwdLastSet", "lastLogonTimestamp", "primaryGroupID"}
 
 // FindUser resolves a sAMAccountName, UPN, mail or DN to exactly one user.
 func (c *Client) FindUser(ctx context.Context, q string) (Entry, error) {
@@ -235,7 +267,25 @@ func (c *Client) FindGroup(ctx context.Context, q string) (Entry, error) {
 	}
 	v := ldap.EscapeFilter(q)
 	filter := fmt.Sprintf("(&(objectClass=group)(|(cn=%s)(sAMAccountName=%s)(distinguishedName=%s)))", v, v, v)
-	return c.one(ctx, filter, []string{"distinguishedName", "cn", "sAMAccountName", "member", "groupType"}, "group", q)
+	// Not "member": a large group returns it in ranges (member;range=0-1499).
+	return c.one(ctx, filter, []string{"distinguishedName", "cn", "sAMAccountName", "groupType", "primaryGroupToken"}, "group", q)
+}
+
+// IsMember reports direct membership through the group's member attribute,
+// asked as a base search so groups of any size answer.
+func (c *Client) IsMember(ctx context.Context, groupDN, userDN string) (bool, error) {
+	conn, err := c.dial(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = conn.Close() }()
+	req := ldap.NewSearchRequest(groupDN, ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 30, false,
+		"(member="+ldap.EscapeFilter(userDN)+")", []string{"distinguishedName"}, nil)
+	res, err := conn.Search(req)
+	if err != nil {
+		return false, err
+	}
+	return len(res.Entries) > 0, nil
 }
 
 func (c *Client) one(ctx context.Context, filter string, attrs []string, kind, q string) (Entry, error) {
@@ -311,7 +361,8 @@ func UnicodePwd(pw string) string {
 
 // userAccountControl flags.
 const (
-	UACDisabled = 0x2
+	UACDisabled           = 0x2
+	UACDontExpirePassword = 0x10000
 )
 
 // UAC returns the user's userAccountControl value.

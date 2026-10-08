@@ -137,13 +137,21 @@ func (adUserState) Apply(env engine.Env, in engine.Inputs, ch engine.Change) err
 	if err != nil {
 		return err
 	}
-	uac := ldapx.UAC(u)
+	old := ldapx.UAC(u)
+	uac := old
 	if ch.After == "disabled" {
 		uac |= ldapx.UACDisabled
 	} else {
 		uac &^= ldapx.UACDisabled
 	}
-	return c.Modify(env.Ctx, u.DN, ldapx.Mod{Op: "replace", Attr: "userAccountControl", Values: []string{strconv.Itoa(uac)}})
+	if uac == old {
+		return nil
+	}
+	// Delete the value read, add the new one: if anyone changed the flags
+	// meanwhile the delete fails instead of overwriting their change.
+	return c.Modify(env.Ctx, u.DN,
+		ldapx.Mod{Op: "delete", Attr: "userAccountControl", Values: []string{strconv.Itoa(old)}},
+		ldapx.Mod{Op: "add", Attr: "userAccountControl", Values: []string{strconv.Itoa(uac)}})
 }
 
 // --- ad.unlock -----------------------------------------------------------
@@ -196,6 +204,10 @@ func (adResetPassword) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, 
 	// The password itself never goes into the plan, journal or audit.
 	after := "newPassword"
 	if in["mustChange"] == "yes" {
+		// AD accepts pwdLastSet=0 here but never asks for a change.
+		if ldapx.UAC(u)&ldapx.UACDontExpirePassword != 0 {
+			return nil, errors.New("this account's password never expires, so it cannot be made to change at sign-in — choose \"no\" or clear that setting first")
+		}
 		after = "newPasswordMustChange"
 	}
 	return []engine.Change{{Target: adName(u), Field: "adPassword", Op: "set", After: after, Ref: map[string]string{"dn": u.DN}}}, nil
@@ -228,13 +240,15 @@ func (adGroupMembership) Plan(env engine.Env, in engine.Inputs) ([]engine.Change
 	if err != nil {
 		return nil, err
 	}
+	// The primary group (usually Domain Users) is not in member: it is set
+	// through primaryGroupID and cannot be added or removed here.
+	if tok := g.Get("primaryGroupToken"); tok != "" && tok == u.Get("primaryGroupID") {
+		return nil, fmt.Errorf("%s is %s's primary group; change the primary group in AD first", g.Get("cn"), adName(u))
+	}
 	// Direct membership only, as in the group's member attribute.
-	has := false
-	for _, m := range g.All("member") {
-		if strings.EqualFold(m, u.DN) {
-			has = true
-			break
-		}
+	has, err := c.IsMember(env.Ctx, g.DN, u.DN)
+	if err != nil {
+		return nil, err
 	}
 	name := g.Get("cn")
 	if name == "" {

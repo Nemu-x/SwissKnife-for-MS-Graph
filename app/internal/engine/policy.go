@@ -24,6 +24,9 @@ func dangerAllowed(d Danger, max string) bool {
 // be planned: the danger ceiling, then (for changes) the group scope of
 // every user and group the inputs name.
 func (e *Engine) checkPolicy(env Env, a Action, in Inputs) error {
+	if onDirectory(a) {
+		return nil // tenant profile limits do not govern the on-prem directory
+	}
 	pol := e.s.Policy()
 	if !dangerAllowed(a.Danger, pol.MaxDanger) {
 		return &Error{Code: "policyDanger", Msg: fmt.Sprintf("this connection profile allows %s actions at most", pol.MaxDanger)}

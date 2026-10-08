@@ -240,7 +240,7 @@ func (e *Engine) Catalog() []CatalogEntry {
 		entry := CatalogEntry{Manifest: a.Manifest, FanOut: graphReader(a) != nil}
 		impl, reason := e.resolve(a)
 		switch {
-		case !dangerAllowed(a.Danger, e.s.Policy().MaxDanger):
+		case !onDirectory(a) && !dangerAllowed(a.Danger, e.s.Policy().MaxDanger):
 			entry.Reason = &Reason{Key: "policy"}
 		case impl != nil:
 			entry.Available, entry.Backend = true, impl.Backend()
@@ -433,12 +433,18 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 	if err := e.checkPolicy(e.env(e.s.Ctx()), a, p.Inputs); err != nil {
 		return nil, err
 	}
-	switch a.Danger {
-	case Destructive:
+	switch {
+	case usesLDAP(p.Backend):
+		// A tenant profile's limits say nothing about the on-prem directory:
+		// only the read-only switch and the typed confirmation apply.
+		if err := e.s.GuardDirectory(a.Danger == Destructive, p.ConfirmTarget, confirm); err != nil {
+			return nil, err
+		}
+	case a.Danger == Destructive:
 		if err := e.s.GuardDestructiveChecked(p.ConfirmTarget, confirm); err != nil {
 			return nil, err
 		}
-	case Write:
+	case a.Danger == Write:
 		if err := e.s.GuardWriteChecked(); err != nil {
 			return nil, err
 		}
@@ -502,9 +508,12 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 			"failed": res.Failed, "canceled": res.Canceled,
 		})
 	}
-	e.s.Record("action."+a.ID, target,
-		fmt.Sprintf("backend=%s applied=%d skipped=%d failed=%d %s", p.Backend, res.Applied, res.Skipped, res.Failed, describe(p.Changes)),
-		firstErr)
+	detail := fmt.Sprintf("backend=%s applied=%d skipped=%d failed=%d %s", p.Backend, res.Applied, res.Skipped, res.Failed, describe(p.Changes))
+	if usesLDAP(p.Backend) && env.LDAP != nil {
+		// The session's profile is a tenant's; name the directory too.
+		detail = "directory=" + env.LDAP.Config().Name + " " + detail
+	}
+	e.s.Record("action."+a.ID, target, detail, firstErr)
 	return res, nil
 }
 
@@ -619,4 +628,14 @@ func connOf(b Backend, env Env) any {
 		return env.LDAP
 	}
 	return env.Graph
+}
+
+// onDirectory reports an action that runs only against the on-prem directory.
+func onDirectory(a Action) bool {
+	for _, impl := range a.Impls {
+		if !usesLDAP(impl.Backend()) {
+			return false
+		}
+	}
+	return len(a.Impls) > 0
 }

@@ -101,7 +101,7 @@ export function OnPremPage() {
           <Field label={t('onprem.baseDn')}><Input value={form.baseDn} onChange={(e) => setForm({ ...form, baseDn: e.target.value })} placeholder="DC=corp,DC=example" /></Field>
           <Field label={t('onprem.bindDn')} hint={t('onprem.bindHint')}><Input value={form.bindDn} onChange={(e) => setForm({ ...form, bindDn: e.target.value })} placeholder="svc-swissknife@corp.example" /></Field>
           <Field label={t('onprem.password')} hint={form.id ? t('onprem.passwordKept') : t('onprem.passwordHint')}>
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </Field>
           {form.tls !== 'none' && (
             <Field label={t('onprem.caFile')} hint={t('onprem.caHint')}>

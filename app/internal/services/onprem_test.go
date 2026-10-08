@@ -147,3 +147,39 @@ func keyringGet(k string) (string, bool) {
 	v, err := keyring.Get("SwissKnifeGraph", k)
 	return v, err == nil
 }
+
+// A tenant profile's limits (here: read only, scoped) do not govern the
+// on-prem directory; the read-only switch does.
+func TestTenantLimitsDoNotGovernTheDirectory(t *testing.T) {
+	dirSrv := ldaptest.Start(t, adBind, "s3cret", true, map[string]map[string][]string{
+		adAnn: {"objectClass": {"user"}, "sAMAccountName": {"ann"}, "userAccountControl": {"66048"}, "lockoutTime": {"5"}, "primaryGroupID": {"513"}},
+		"cn=Domain Users,ou=groups,dc=corp,dc=example": {"objectClass": {"group"}, "cn": {"Domain Users"}, "primaryGroupToken": {"513"}},
+	})
+	sess := session.New(auditlog.New(t.TempDir()))
+	sess.SetPolicy("p1", session.Policy{MaxDanger: "read", AllowedGroups: []string{"g1"}})
+	c := ldapx.New(ldapx.Config{Name: "CORP", Host: dirSrv.Host, Port: dirSrv.Port, TLS: ldapx.LDAPS, BaseDN: adBase, BindDN: adBind}, "s3cret")
+	c.TLSConfig = dirSrv.Client
+	directories.Store(sess, c)
+	t.Cleanup(func() { directories.Delete(sess) })
+	e := NewEngine(sess)
+
+	p, err := e.Plan("ad.unlock", engine.Inputs{"adUser": "ann"})
+	if err != nil {
+		t.Fatalf("tenant limits must not block AD: %v", err)
+	}
+	if _, err := e.Apply(p.ID, ""); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, err := e.Plan("ad.groupMembership", engine.Inputs{"adUser": "ann", "adGroup": "Domain Users", "op": "remove"}); err == nil || !strings.Contains(err.Error(), "primary group") {
+		t.Fatalf("primary group: %v", err)
+	}
+	// 66048 = normal account + password never expires.
+	if _, err := e.Plan("ad.resetPassword", engine.Inputs{"adUser": "ann", "newPassword": "x", "mustChange": "yes"}); err == nil || !strings.Contains(err.Error(), "never expires") {
+		t.Fatalf("must-change on a never-expiring password: %v", err)
+	}
+	sess.SetReadOnly(true)
+	p, _ = e.Plan("ad.userState", engine.Inputs{"adUser": "ann", "adState": "disable"})
+	if _, err := e.Apply(p.ID, ""); err == nil {
+		t.Fatal("the read-only switch covers the directory")
+	}
+}
