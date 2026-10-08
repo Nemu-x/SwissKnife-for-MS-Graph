@@ -169,6 +169,8 @@ function CatalogPanel({ entry, mark, askConfirm }: {
   useEffect(() => {
     if (entry.fanOut) api.actions.fanOutProfiles().then(setFanProfiles).catch(() => {})
   }, [entry.fanOut])
+  // Only profiles that still exist count, and only while the choice is shown.
+  const acrossActive = fanProfiles.length > 1 ? across.filter((id) => fanProfiles.some((p) => p.id === id)) : []
   const toggleAcross = (id: string) => {
     setAcross((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]))
     setRows(null)
@@ -194,12 +196,12 @@ function CatalogPanel({ entry, mark, askConfirm }: {
     const seq = ++runSeq.current
     setBusy(true)
     try {
-      const r = across.length > 0
-        ? await api.actions.runAcross(entry.id, values, across)
+      const r = acrossActive.length > 0
+        ? await api.actions.runAcross(entry.id, values, acrossActive)
         : await api.actions.run(entry.id, values)
       if (seq !== runSeq.current) return
       setRows(r)
-      setCache(cacheKey, { values: { ...values, __across: across.join(',') }, result: r })
+      setCache(cacheKey, { values: { ...values, __across: acrossActive.join(',') }, result: r })
       mark(entry.id, true, t('actions.rows', { count: r.rows?.length ?? 0 }))
     } catch (e) {
       const m = errMessage(e)
@@ -289,7 +291,7 @@ function CatalogPanel({ entry, mark, askConfirm }: {
         : <Field key={f.name} label={t(`actions.fields.${f.name}`, { defaultValue: f.name })}>{field(f)}</Field>)}
 
       {isRead && entry.fanOut && fanProfiles.length > 1 && (
-        <details className="text-xs text-[var(--text-dim)]" open={across.length > 0}>
+        <details className="text-xs text-[var(--text-dim)]" open={acrossActive.length > 0}>
           <summary className="cursor-pointer select-none">{t('actions.across.title')}</summary>
           <p className="mt-1 text-[var(--text-faint)]">{t('actions.across.hint')}</p>
           <div className="mt-1 flex flex-col gap-1">
@@ -306,6 +308,9 @@ function CatalogPanel({ entry, mark, askConfirm }: {
         <Button variant="primary" disabled={busy || !ready} onClick={run}>
           {busy ? <Spinner /> : <Play size={15} />} {t('actions.run')}
         </Button>
+      )}
+      {isRead && busy && acrossActive.length > 0 && (
+        <Button variant="subtle" onClick={() => api.actions.cancelAcross()}>{t('common.cancel')}</Button>
       )}
       {isRead && rows && <RowsView result={rows} />}
 
@@ -352,7 +357,14 @@ function RowsView({ result }: { result: engine.ReadResult }) {
     return t(`actions.why.${k}`, { value: i < 0 ? '' : tok.slice(i + 1), defaultValue: tok })
   }).join('; ')
   const show = (c: string, v: string) => (c === 'why' ? why(v) : word(v))
-  const note = result.note && <p className="text-xs text-[var(--text-faint)]">{t(`actions.readNotes.${result.note.key}`, { ...result.note.params, defaultValue: result.note.key })}</p>
+  const note = (result.note || result.tenantNotes?.length) ? (
+    <div className="flex flex-col gap-0.5 text-xs text-[var(--text-faint)]">
+      {result.note && <p>{t(`actions.readNotes.${result.note.key}`, { ...result.note.params, defaultValue: result.note.key })}</p>}
+      {result.tenantNotes?.map((n, i) => (
+        <p key={i}>{n.tenant}: {t(`actions.readNotes.${n.note.key}`, { ...n.note.params, defaultValue: n.note.key })}</p>
+      ))}
+    </div>
+  ) : null
   if (!result.rows?.length) return <><p className="text-sm text-[var(--text-dim)]">{t('actions.noRows')}</p>{note}</>
   return (
     <>

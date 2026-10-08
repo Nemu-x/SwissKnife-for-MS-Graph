@@ -225,11 +225,44 @@ export namespace engine {
 		    return a;
 		}
 	}
+	export class TenantNote {
+	    tenant: string;
+	    note: Reason;
+	
+	    static createFrom(source: any = {}) {
+	        return new TenantNote(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tenant = source["tenant"];
+	        this.note = this.convertValues(source["note"], Reason);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ReadResult {
 	    columns: string[];
 	    rows: any[];
 	    backend: string;
 	    note?: Reason;
+	    tenantNotes?: TenantNote[];
 	
 	    static createFrom(source: any = {}) {
 	        return new ReadResult(source);
@@ -241,6 +274,7 @@ export namespace engine {
 	        this.rows = source["rows"];
 	        this.backend = source["backend"];
 	        this.note = this.convertValues(source["note"], Reason);
+	        this.tenantNotes = this.convertValues(source["tenantNotes"], TenantNote);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

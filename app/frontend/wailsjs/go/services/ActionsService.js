@@ -10,6 +10,10 @@ export function Cancel(arg1) {
   return window['go']['services']['ActionsService']['Cancel'](arg1);
 }
 
+export function CancelAcross() {
+  return window['go']['services']['ActionsService']['CancelAcross']();
+}
+
 export function Catalog() {
   return window['go']['services']['ActionsService']['Catalog']();
 }

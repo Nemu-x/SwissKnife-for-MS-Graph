@@ -176,7 +176,7 @@ func defaultProbe(ctx context.Context, env engine.Env) error {
 	// The routing key comes from Graph; a failure there is not an Exchange
 	// verdict, so it is reported as transient.
 	var anchor string
-	if env.AppOnly {
+	if env.AppOnly || env.DelegatedOrg != "" { // GDAP partners have no mailbox there
 		domain, err := graphapi.InitialDomain(ctx, env.Graph)
 		if err != nil {
 			return transient{err}

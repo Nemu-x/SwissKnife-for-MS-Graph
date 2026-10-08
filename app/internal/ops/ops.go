@@ -29,6 +29,7 @@ const (
 	KindUpdate   Kind = "update"
 	KindSnapshot Kind = "snapshot" // tenant configuration snapshot
 	KindDrift    Kind = "drift"    // background drift check against a baseline
+	KindFanOut   Kind = "fanout"   // read action across several tenants
 	KindAction   Kind = "action"   // catalog action apply (internal/engine)
 )
 

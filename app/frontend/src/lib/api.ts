@@ -284,6 +284,7 @@ export const api = {
     runAcross: (id: string, inputs: Record<string, string>, profileIds: string[]) =>
       Actions.RunAcross(id, inputs, profileIds) as Promise<engine.ReadResult>,
     fanOutProfiles: () => Actions.FanOutProfiles() as Promise<Profile[]>,
+    cancelAcross: () => Actions.CancelAcross(),
     powerShellStatus: () => Actions.PowerShellStatus() as Promise<services.PowerShellStatus>,
     refreshPowerShell: () => Actions.RefreshPowerShell() as Promise<services.PowerShellStatus>,
     installModule: (name: string) => Actions.InstallModule(name) as Promise<services.PowerShellStatus>,

@@ -39,6 +39,9 @@ func TestRunAcrossTagsRowsAndNamesFailedTenants(t *testing.T) {
 	if res.Note == nil || !strings.Contains(res.Note.Params["list"], "Contoso") {
 		t.Fatalf("the failed tenant must be named: %+v", res.Note)
 	}
+	if _, err := a.RunAcross("report.guests", nil, []string{"broken"}); err == nil || !strings.Contains(err.Error(), "no tenant answered") {
+		t.Fatalf("all tenants failing is an error: %v", err)
+	}
 	if _, err := a.RunAcross("group.membership", nil, []string{"a"}); err == nil {
 		t.Fatal("a write action cannot fan out")
 	}

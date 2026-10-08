@@ -192,7 +192,7 @@ const en = {
   },
   connect: {
     delegatedOrg: 'Customer tenant (GDAP, optional)',
-    delegatedOrgHint: 'Partners: the customer tenant id or domain you manage through granular delegated admin. Sign-in, Graph and Exchange then work in that tenant. Save the profile to use it.',
+    delegatedOrgHint: 'Partners: the customer tenant id or domain you manage through granular delegated admin (GDAP). Sign-in, Graph and Exchange then work in that tenant. The app registration must be multi-tenant and consented in the customer tenant. Save the profile to use it.',
     limits: {
       title: 'Limits',
       hint: 'Guard rails for this profile: what it may do once connected. They narrow the app, not the app registration: an ad-hoc connection with the same app has no limits. Limits of the profile you are connected with can be changed after disconnecting.',

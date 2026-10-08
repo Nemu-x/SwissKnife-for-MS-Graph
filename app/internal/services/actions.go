@@ -12,6 +12,7 @@ import (
 	"swissknife-app/internal/actions"
 	"swissknife-app/internal/auth"
 	"swissknife-app/internal/engine"
+	"swissknife-app/internal/ops"
 	"swissknife-app/internal/secrets"
 	"swissknife-app/internal/exoapi"
 	"swissknife-app/internal/graphapi"
@@ -44,6 +45,8 @@ func NewEngine(s *session.Session) *engine.Engine {
 	e.PS = pool
 	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr
+	// A cross-tenant read belongs to the connection that started it.
+	s.OnDisconnect(func(*graphapi.Client) { s.Ops.CancelKind(ops.KindFanOut) })
 	// Service writes outside the catalog check their targets through the
 	// session guards; the engine does the lookup.
 	s.SetScopeCheck(func(t session.Target) error {
