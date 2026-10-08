@@ -84,6 +84,7 @@ func main() {
 			services.NewActionsService(sess, store),
 			services.NewOnPremService(sess),
 			services.NewPacksService(sess),
+			services.NewWorkerService(sess),
 			updateSvc,
 		},
 	})

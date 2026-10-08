@@ -4,6 +4,7 @@ import { Moon, Sun, Lock, RefreshCw, Download, Heart, Copy, FolderOpen } from 'l
 import { Page } from '../components/Layout'
 import { PowerShellCard } from '../components/PowerShellCard'
 import { PacksCard } from '../components/PacksCard'
+import { WorkerCard } from '../components/WorkerCard'
 import { Card, Select, Button, Badge, Spinner } from '../components/ui'
 import { useStore } from '../lib/store'
 import { ACCENT_PRESETS, isHex } from '../lib/color'
@@ -218,6 +219,7 @@ export function SettingsPage() {
         </Card>
 
         <PowerShellCard />
+        <WorkerCard />
         <PacksCard />
 
         <Card title={t('settings.support')}>
