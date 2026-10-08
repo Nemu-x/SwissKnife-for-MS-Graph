@@ -29,7 +29,11 @@ export function PowerShellCard() {
       const s = await api.actions.installPowerShell()
       setSt(s)
       toast('ok', t('powershell.pwshInstalled'))
-    } catch (e) { toast('err', errMessage(e)) } finally { patchJob('pwshInstall', { running: false, progress: '' }) }
+    } catch (e) {
+      // A failed installer may still have changed the system: look again.
+      api.actions.refreshPowerShell().then(setSt).catch(() => {})
+      toast('err', errMessage(e))
+    } finally { patchJob('pwshInstall', { running: false, progress: '' }) }
   }
   // An install takes minutes: it lives in the store's job slot so leaving
   // Settings and coming back neither loses it nor allows a second one.
