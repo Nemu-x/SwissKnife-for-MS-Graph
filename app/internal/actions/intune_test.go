@@ -12,6 +12,8 @@ import (
 
 // intuneGraph serves two configuration policies, one compliance policy, an
 // assigned app and an empty settings catalog.
+var denyApps bool
+
 func intuneGraph(t *testing.T, posted *[]map[string]any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
@@ -26,12 +28,14 @@ func intuneGraph(t *testing.T, posted *[]map[string]any) http.HandlerFunc {
 			w.Write([]byte(`{"value":[{"id":"g1","displayName":"Sales"},{"id":"g2","displayName":"Contractors"}]}`))
 		case p == "/groups/g1":
 			w.Write([]byte(`{"id":"g1","displayName":"Sales"}`))
+		case p == "/groups/g2":
+			w.Write([]byte(`{"id":"g2","displayName":"Contractors"}`))
 		case p == "/deviceManagement/deviceConfigurations":
 			w.Write([]byte(`{"value":[
 				{"id":"c1","displayName":"Wi-Fi","assignments":[
 					{"target":{"@odata.type":"#microsoft.graph.groupAssignmentTarget","groupId":"g1"}},
 					{"target":{"@odata.type":"#microsoft.graph.exclusionGroupAssignmentTarget","groupId":"g2"}},
-					{"target":{"@odata.type":"#microsoft.graph.allDevicesAssignmentTarget"}}]},
+					{"target":{"@odata.type":"#microsoft.graph.allDevicesAssignmentTarget","deviceAndAppManagementAssignmentFilterId":"f-corp","deviceAndAppManagementAssignmentFilterType":"include"}}]},
 				{"id":"c2","displayName":"Old VPN","lastModifiedDateTime":"2024-01-01T00:00:00Z","assignments":[]}]}`))
 		case p == "/deviceManagement/deviceConfigurations/c1/deviceStatuses":
 			w.Write([]byte(`{"value":[{"deviceDisplayName":"LAPTOP-1","userPrincipalName":"ann@contoso.com","status":"conflict"}]}`))
@@ -40,6 +44,9 @@ func intuneGraph(t *testing.T, posted *[]map[string]any) http.HandlerFunc {
 				{"target":{"@odata.type":"#microsoft.graph.allLicensedUsersAssignmentTarget"}}]}]}`))
 		case strings.HasSuffix(p, "/deviceStatuses"):
 			w.Write([]byte(`{"value":[]}`))
+		case p == "/deviceAppManagement/mobileApps" && denyApps:
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":{"code":"Forbidden","message":"no"}}`))
 		case p == "/deviceAppManagement/mobileApps":
 			w.Write([]byte(`{"value":[{"id":"a1","displayName":"Teams","assignments":[
 				{"intent":"required","target":{"@odata.type":"#microsoft.graph.groupAssignmentTarget","groupId":"g1"}}]},
@@ -111,9 +118,35 @@ func TestIntuneAssignKeepsTheOtherAssignments(t *testing.T) {
 			if _, has := target["groupId"]; has {
 				t.Fatalf("an all-devices target must not carry a group id: %+v", target)
 			}
+			// The assignment filter must survive the rebuilt list.
+			if target["deviceAndAppManagementAssignmentFilterId"] != "f-corp" || target["deviceAndAppManagementAssignmentFilterType"] != "include" {
+				t.Fatalf("assignment filter lost: %+v", target)
+			}
 		}
 		if target["groupId"] == "g1" {
 			t.Fatalf("Sales must be gone: %+v", list)
 		}
+	}
+}
+
+func TestIntuneAddingAnExcludedGroupIsRefused(t *testing.T) {
+	var posted []map[string]any
+	e := securityHarness(t, intuneGraph(t, &posted), nil)
+	if _, err := e.Plan("intune.assign", engine.Inputs{"policy": "Wi-Fi", "group": "g2"}); err == nil {
+		t.Fatal("including a group that is excluded must be refused")
+	}
+}
+
+func TestIntuneReportsSayWhatTheyCouldNotRead(t *testing.T) {
+	denyApps = true
+	t.Cleanup(func() { denyApps = false })
+	var posted []map[string]any
+	e := securityHarness(t, intuneGraph(t, &posted), nil)
+	res, err := e.Run(t.Context(), "intune.assignedTo", engine.Inputs{"group": "g1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Note == nil || res.Note.Key != "intuneDenied" || !strings.Contains(res.Note.Params["kinds"], "app") {
+		t.Fatalf("note %+v", res.Note)
 	}
 }

@@ -1187,7 +1187,7 @@ const en = {
     run: 'Show',
     rows: '{{count}} row(s)',
     why: { externalForward: 'forwards outside the company to {{value}}', deletes: 'deletes messages', hides: 'moves messages away and marks them read' },
-    readNotes: { neverSignedInExcluded: 'Accounts that never signed in are not listed (Microsoft records no date for them).', rulesScanned: '{{scanned}} mailbox(es) scanned, {{unreadable}} could not be read' },
+    readNotes: { intuneDenied: 'Incomplete: no permission to read {{kinds}}.', intuneUserGroupsOnly: 'Assignments through the user’s groups; device groups of their devices are not followed.', neverSignedInExcluded: 'Accounts that never signed in are not listed (Microsoft records no date for them).', rulesScanned: '{{scanned}} mailbox(es) scanned, {{unreadable}} could not be read' },
     exportCsv: 'Export CSV',
     noRows: 'Nothing found.',
     columns: { via: 'Through', effect: 'Effect', lastModified: 'Last changed', device: 'Device', lastSignIn: 'Last sign-in', licenses: 'Licenses', guest: 'Guest', name: 'Name', invited: 'Invited', state: 'State', admin: 'Admin', methods: 'Methods', role: 'Role', member: 'Member', kind: 'Kind', mailbox: 'Mailbox', used: 'Used', full: 'Full', items: 'Items', lastActivity: 'Last activity', forwardsTo: 'Forwards to', keepsCopy: 'Keeps a copy', metric: 'Metric', value: 'Value', user: 'User', rule: 'Rule', enabled: 'On', why: 'Why it looks suspicious', received: 'Received', sender: 'Sender', recipient: 'Recipient', subject: 'Subject', type: 'Type', status: 'Status', identity: 'Identity', policy: 'Policy', description: 'Description', policyType: 'Type' },
@@ -1215,7 +1215,7 @@ const en = {
     intune: {
       assignedTo: { label: 'What lands on a person or group', hint: 'Configuration, compliance, settings-catalog policies and apps — and through which group, or excluded where.' },
       unassigned: { label: 'Policies assigned to nobody', hint: 'Configuration, compliance and settings-catalog policies with no assignment — clutter or forgotten work.' },
-      conflicts: { label: 'Policy conflicts on devices', hint: 'Devices where Intune itself reports a conflict between configuration or compliance policies.' },
+      conflicts: { label: 'Policy conflicts on devices', hint: 'Devices where Intune itself reports a conflict between configuration or compliance policies (settings catalog and endpoint security have no such report).' },
       assign: { label: 'Assign a policy to a group', hint: 'Add or remove a group on a configuration or compliance policy, by the policy’s exact name.', note: 'The other assignments of the policy stay as they are — the preview shows the change.' },
     },
     report: {
