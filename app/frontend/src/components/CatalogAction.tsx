@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, Eye, Check, ArrowRight, Minus } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Eye, Check, ArrowRight, Minus } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
@@ -44,6 +44,7 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
   'teams.groupPolicy': { label: 'actions.teams.groupPolicy.label', hint: 'actions.teams.groupPolicy.hint', notes: ['actions.teams.groupPolicy.note'], icon: <UsersRound size={16} /> },
   'teams.policies': { label: 'actions.teams.policies.label', hint: 'actions.teams.policies.hint', icon: <ListChecks size={16} /> },
   'teams.effectivePolicies': { label: 'actions.teams.effectivePolicies.label', hint: 'actions.teams.effectivePolicies.hint', icon: <BadgeCheck size={16} /> },
+  'mail.purge': { label: 'actions.mail.purge.label', hint: 'actions.mail.purge.hint', notes: ['actions.mail.purge.note'], warn: ['actions.mail.purge.warn'], icon: <MailX size={16} /> },
   'group.membership': { label: 'groups.tileAdd', hint: 'groups.hintAdd', notes: ['groups.noteAdd'], icon: <UserPlus size={16} /> },
   'license.assign': { label: 'licensing.tileAssign', hint: 'licensing.hintAssign', notes: ['licensing.noteAssign'], warn: ['licensing.noteRemove'], icon: <Plus size={16} /> },
 }

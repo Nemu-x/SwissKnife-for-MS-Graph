@@ -1189,6 +1189,9 @@ const en = {
       address: { label: 'Add or remove an email address', hint: 'Extra addresses (aliases) the mailbox receives mail at.' },
       calendarProcessing: { label: 'Room booking behaviour', hint: 'Whether a room or equipment mailbox accepts meeting requests on its own.', note: 'Auto-accept books the room by itself; None leaves requests for a delegate.' },
     },
+    mail: {
+      purge: { label: 'Find and delete a phishing email', hint: 'Search every mailbox for a message by sender, subject and date, see how many match, then remove them.', note: 'The preview runs an eDiscovery search and estimate — it takes a minute or two. The case it creates stays in Purview as the record of the clean-up.', warn: 'Microsoft removes at most 100 messages per mailbox per run. “Recoverable” moves them to Recoverable Items (an admin can restore them); “permanent” cannot be undone and needs the Search And Purge role.' },
+    },
     teams: {
       userPolicy: { label: 'Assign a Teams policy to a person', hint: 'Meeting, messaging, calling or app policy — or back to the org default.', note: 'Type the policy name exactly as in the Teams admin center; "Global" returns the person to the org-wide default.' },
       groupPolicy: { label: 'Assign a Teams policy to a group', hint: 'Everyone in the group gets the policy, unless they have one of their own.', note: 'Direct assignments win over group ones. A new group assignment gets the lowest priority; "Global" removes the group assignment.' },
@@ -1201,13 +1204,14 @@ const en = {
     transportRule: {
       state: { label: 'Turn a mail flow rule on or off', hint: 'Enable or disable a transport rule by its name.', note: 'Mail flow rules act on every message in the tenant — check the rule name twice.' },
     },
-    fields: { policyType: 'Policy type', policy: 'Policy name', type: 'Convert to', forwardTo: 'Forward to', keepCopy: 'Keep a copy in the mailbox', address: 'Email address', automate: 'Meeting requests', rule: 'Rule name', mailbox: 'Mailbox', delegate: 'Delegate', folder: 'Folder', access: 'Access', user: 'User', group: 'Group', role: 'As', op: 'Action', sku: 'License', state: 'Sign-in', manager: 'Manager', country: 'Country code (e.g. US, DE)' },
+    fields: { sender: 'Sender (address or domain)', subject: 'Subject contains', since: 'Received since (YYYY-MM-DD)', purgeType: 'How to delete', policyType: 'Policy type', policy: 'Policy name', type: 'Convert to', forwardTo: 'Forward to', keepCopy: 'Keep a copy in the mailbox', address: 'Email address', automate: 'Meeting requests', rule: 'Rule name', mailbox: 'Mailbox', delegate: 'Delegate', folder: 'Folder', access: 'Access', user: 'User', group: 'Group', role: 'As', op: 'Action', sku: 'License', state: 'Sign-in', manager: 'Manager', country: 'Country code (e.g. US, DE)' },
     user: {
       manager: { label: 'Set a manager', hint: 'Who they report to — the preview shows the current one.' },
       usageLocation: { label: 'Set usage location', hint: 'The country that decides which licenses can be assigned.', note: 'Two-letter ISO code. License assignment fails while it is empty.' },
     },
-    options: { meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
+    options: { recoverable: 'Recoverable', permanent: 'Permanently', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
     changeFields: {
+      messagesInMailboxes: 'messages / mailboxes',
       teamsPolicy: { meeting: 'meeting policy', messaging: 'messaging policy', calling: 'calling policy', appSetup: 'app setup policy', appPermission: 'app permission policy' },
       signIn: 'sign-in',
       sessions: 'sessions',
@@ -1226,7 +1230,7 @@ const en = {
       usageLocation: 'usage location',
       group: { member: 'member of', owner: 'owner of' },
     },
-    notes: { forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
+    notes: { purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
     values: { meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', Global: 'Global (org default)', shared: 'shared', regular: 'user mailbox', enabled: 'on', disabled: 'off', allowed: 'allowed', blocked: 'blocked', active: 'active', revoked: 'revoked' },
     reasons: {
       pwshMissing: 'Needs PowerShell 7 — install it, then recheck in Settings → PowerShell.',

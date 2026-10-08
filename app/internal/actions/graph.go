@@ -18,7 +18,8 @@ import (
 func Builtin() []engine.Action {
 	out := append(graphActions(), exchangeActions()...)
 	out = append(out, exchangePSActions()...)
-	return append(out, teamsActions()...)
+	out = append(out, teamsActions()...)
+	return append(out, complianceActions()...)
 }
 
 func graphActions() []engine.Action {
