@@ -25,14 +25,17 @@ import (
 
 // InvokeRequest is one cmdlet call for a client's tenant.
 type InvokeRequest struct {
-	Family       string            `json:"family"`
-	Cmdlet       string            `json:"cmdlet"`
-	Params       map[string]any    `json:"params,omitempty"`
-	Select       []string          `json:"select,omitempty"`
-	TenantID     string            `json:"tenantId"`
-	AppOnly      bool              `json:"appOnly"`
-	DelegatedOrg string            `json:"delegatedOrg,omitempty"`
-	Tokens       map[string]string `json:"tokens"` // resource → access token
+	Family       string         `json:"family"`
+	Cmdlet       string         `json:"cmdlet"`
+	Params       map[string]any `json:"params,omitempty"`
+	Select       []string       `json:"select,omitempty"`
+	TenantID     string         `json:"tenantId"`
+	AppOnly      bool           `json:"appOnly"`
+	DelegatedOrg string         `json:"delegatedOrg,omitempty"`
+	// ExchangeOrg / ExchangeUPN let Exchange sign in without a Graph token.
+	ExchangeOrg string            `json:"exchangeOrg,omitempty"`
+	ExchangeUPN string            `json:"exchangeUpn,omitempty"`
+	Tokens      map[string]string `json:"tokens"` // resource → access token
 }
 
 // InvokeResponse carries the objects or the PowerShell error.
@@ -61,7 +64,10 @@ type Server struct {
 	Dir      string // clients.json lives here
 	Name     string
 	Version  string
-	Runner   engine.PSRunner
+	// NewRunner makes the PowerShell runner of one client connection: each
+	// gets its own hosts, so clients and tenants never share (or kill) a
+	// signed-in process.
+	NewRunner func() engine.PSRunner
 	// Families the operator enabled; Available narrows them to the modules
 	// actually installed (nil = all enabled ones).
 	Families  map[string]bool
@@ -70,18 +76,35 @@ type Server struct {
 	Audit     *auditlog.Log
 	Logf      func(format string, a ...any)
 
-	mu      sync.Mutex
-	clients map[string]PairedClient
-	pair    *pairing
-	conns   map[string]*conn
+	mu        sync.Mutex
+	clients   map[string]PairedClient
+	clientsAt time.Time // modification time of the loaded clients file
+	pair      *pairing
+	conns     map[string]*conn
 }
+
+// Limits on what one paired client can make the worker hold.
+const (
+	maxConnsPerClient = 4
+	maxConns          = 16
+)
 
 // conn is one client's tenant connection: a stable Graph client (the pool
 // keys signed-in hosts by it) whose tokens each call refreshes.
 type conn struct {
-	graph *graphapi.Client
-	toks  *tokens
-	used  time.Time
+	client string // client fingerprint
+	graph  *graphapi.Client
+	toks   *tokens
+	runner engine.PSRunner
+	used   time.Time
+}
+
+// close stops the connection's hosts and forgets its tokens.
+func (c *conn) close() {
+	c.toks.set(nil)
+	if cl, ok := c.runner.(interface{ Close() }); ok {
+		cl.Close()
+	}
 }
 
 type tokens struct {
@@ -104,7 +127,9 @@ func (t *tokens) TokenFor(_ context.Context, resource string) (string, error) {
 	return "", fmt.Errorf("the client sent no token for %s", resource)
 }
 
-func (t *tokens) Token(ctx context.Context) (string, error) { return t.TokenFor(ctx, auth.ResourceGraph) }
+func (t *tokens) Token(ctx context.Context) (string, error) {
+	return t.TokenFor(ctx, auth.ResourceGraph)
+}
 
 func (s *Server) clientsPath() string { return filepath.Join(s.Dir, "worker-clients.json") }
 
@@ -137,14 +162,28 @@ func (s *Server) Revoke(fp string) error {
 		return errors.New("no single paired client has that fingerprint")
 	}
 	delete(s.clients, hit[0])
-	return s.saveLocked()
+	s.dropUnpairedLocked(nil)
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.clientsAt = time.Time{} // re-read our own write next time
+	return nil
 }
 
+// loadLocked (re)reads the clients file when it changed on disk — a
+// "worker revoke" from another process takes effect at the next call.
 func (s *Server) loadLocked() {
-	if s.clients != nil {
+	st, err := os.Stat(s.clientsPath())
+	if s.clients != nil && (err != nil && s.clientsAt.IsZero() || err == nil && st.ModTime().Equal(s.clientsAt)) {
 		return
 	}
+	prev := s.clients
 	s.clients = map[string]PairedClient{}
+	s.clientsAt = time.Time{}
+	if err == nil {
+		s.clientsAt = st.ModTime()
+	}
+	defer s.dropUnpairedLocked(prev)
 	if b, err := os.ReadFile(s.clientsPath()); err == nil {
 		var list []PairedClient
 		if json.Unmarshal(b, &list) == nil {
@@ -153,6 +192,17 @@ func (s *Server) loadLocked() {
 			}
 		}
 	}
+}
+
+// dropUnpairedLocked closes the connections of clients no longer paired.
+func (s *Server) dropUnpairedLocked(prev map[string]PairedClient) {
+	for k, c := range s.conns {
+		if _, ok := s.clients[c.client]; !ok {
+			c.close()
+			delete(s.conns, k)
+		}
+	}
+	_ = prev
 }
 
 func (s *Server) saveLocked() error {
@@ -165,7 +215,13 @@ func (s *Server) saveLocked() error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.clientsPath())
+	if err := os.Rename(tmp, s.clientsPath()); err != nil {
+		return err
+	}
+	if st, err := os.Stat(s.clientsPath()); err == nil {
+		s.clientsAt = st.ModTime()
+	}
+	return nil
 }
 
 func (s *Server) isPaired(fp string) bool {
@@ -195,9 +251,12 @@ func (s *Server) pairingActive() bool {
 // TLSConfig is TLS 1.3 with a client certificate always required; outside
 // pairing an unpaired certificate fails the handshake itself.
 func (s *Server) TLSConfig() *tls.Config {
-	base := &tls.Config{Certificates: []tls.Certificate{s.Identity.Cert}, MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAnyClientCert}
+	// No session tickets: a resumed session skips certificate verification.
+	base := &tls.Config{Certificates: []tls.Certificate{s.Identity.Cert}, MinVersion: tls.VersionTLS13,
+		ClientAuth: tls.RequireAnyClientCert, SessionTicketsDisabled: true}
 	return &tls.Config{
-		MinVersion: tls.VersionTLS13,
+		MinVersion:             tls.VersionTLS13,
+		SessionTicketsDisabled: true,
 		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
 			c := base.Clone()
 			if !s.pairingActive() {
@@ -221,6 +280,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /pair", s.handlePair)
 	mux.HandleFunc("GET /health", s.paired(s.handleHealth))
 	mux.HandleFunc("POST /invoke", s.paired(s.handleInvoke))
+	mux.HandleFunc("POST /unpair", s.paired(s.handleUnpair))
 	return mux
 }
 
@@ -253,7 +313,8 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "pairing is not open — start the worker with --pair", http.StatusForbidden)
 		return
 	}
-	answer, ok := p.check(fp, s.Identity.Fingerprint, req.Proof)
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	answer, ok := p.check(ip, fp, s.Identity.Fingerprint, req.Proof)
 	if !ok {
 		s.log("pairing attempt refused from %s", r.RemoteAddr)
 		http.Error(w, "wrong code", http.StatusForbidden)
@@ -275,6 +336,24 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	s.audit("worker.pair", name, "client="+fp[:16], nil)
 	s.log("paired with %q (%s)", name, fp[:16])
 	_ = json.NewEncoder(w).Encode(map[string]string{"proof": answer, "name": s.Name})
+}
+
+// handleUnpair lets a client remove itself.
+func (s *Server) handleUnpair(w http.ResponseWriter, r *http.Request) {
+	fp := peerFP(r)
+	s.mu.Lock()
+	s.loadLocked()
+	name := s.clients[fp].Name
+	delete(s.clients, fp)
+	s.dropUnpairedLocked(nil)
+	err := s.saveLocked()
+	s.mu.Unlock()
+	s.audit("worker.unpair", name, "client="+fp[:16], err)
+	if err != nil {
+		http.Error(w, "cannot save", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) families() []string {
@@ -323,8 +402,9 @@ func (s *Server) handleInvoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := s.conn(fp, req)
-	env := engine.Env{Ctx: r.Context(), Graph: c.graph, Tokens: c.toks, TenantID: req.TenantID, AppOnly: req.AppOnly, DelegatedOrg: req.DelegatedOrg}
-	data, err := s.Runner.Invoke(env, req.Family, req.Cmdlet, req.Params, req.Select...)
+	env := engine.Env{Ctx: r.Context(), Graph: c.graph, Tokens: c.toks, TenantID: req.TenantID, AppOnly: req.AppOnly,
+		DelegatedOrg: req.DelegatedOrg, ExchangeOrg: req.ExchangeOrg, ExchangeUPN: req.ExchangeUPN}
+	data, err := c.runner.Invoke(env, req.Family, req.Cmdlet, req.Params, req.Select...)
 	s.audit("worker.invoke", req.Cmdlet, "client="+fp[:16]+" tenant="+req.TenantID, err)
 	if err != nil {
 		var pe *pwsh.Error
@@ -350,8 +430,9 @@ func (s *Server) conn(fp string, req InvokeRequest) *conn {
 	}
 	c := s.conns[key]
 	if c == nil {
+		s.evictLocked(fp)
 		t := &tokens{}
-		c = &conn{graph: graphapi.New(t), toks: t}
+		c = &conn{client: fp, graph: graphapi.New(t), toks: t, runner: s.NewRunner()}
 		s.conns[key] = c
 	}
 	c.toks.set(req.Tokens)
@@ -359,21 +440,38 @@ func (s *Server) conn(fp string, req InvokeRequest) *conn {
 	return c
 }
 
-// idle drops connections unused for a while, so their signed-in hosts (and
-// the tokens they hold) do not linger.
+// evictLocked makes room for a new connection of client fp: the least
+// recently used one goes when the client or the worker is at its limit.
+func (s *Server) evictLocked(fp string) {
+	for {
+		mine, all := 0, len(s.conns)
+		var oldestKey string
+		var oldest time.Time
+		for k, c := range s.conns {
+			if c.client == fp {
+				mine++
+			}
+			if (all >= maxConns || c.client == fp) && (oldestKey == "" || c.used.Before(oldest)) {
+				oldestKey, oldest = k, c.used
+			}
+		}
+		if mine < maxConnsPerClient && all < maxConns || oldestKey == "" {
+			return
+		}
+		s.conns[oldestKey].close()
+		delete(s.conns, oldestKey)
+	}
+}
+
+// idle drops connections unused for a while: their PowerShell hosts stop
+// and their tokens are forgotten.
 func (s *Server) idle(max time.Duration) {
 	s.mu.Lock()
-	var drop []*graphapi.Client
+	defer s.mu.Unlock()
 	for k, c := range s.conns {
 		if time.Since(c.used) > max {
-			drop = append(drop, c.graph)
+			c.close()
 			delete(s.conns, k)
-		}
-	}
-	s.mu.Unlock()
-	if closer, ok := s.Runner.(interface{ CloseFor(*graphapi.Client) }); ok {
-		for _, g := range drop {
-			closer.CloseFor(g)
 		}
 	}
 }
@@ -389,7 +487,9 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 
 // ServeListener serves on l (tests pass their own).
 func (s *Server) ServeListener(ctx context.Context, l net.Listener) error {
-	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, TLSConfig: s.TLSConfig()}
+	// No write timeout: a cmdlet may run for minutes.
+	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: time.Minute,
+		IdleTimeout: 2 * time.Minute, TLSConfig: s.TLSConfig()}
 	go func() {
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()
@@ -397,6 +497,12 @@ func (s *Server) ServeListener(ctx context.Context, l net.Listener) error {
 			select {
 			case <-ctx.Done():
 				_ = srv.Close()
+				s.mu.Lock()
+				for k, c := range s.conns {
+					c.close()
+					delete(s.conns, k)
+				}
+				s.mu.Unlock()
 				return
 			case <-t.C:
 				s.idle(15 * time.Minute)

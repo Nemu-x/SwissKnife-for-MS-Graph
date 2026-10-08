@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"swissknife-app/internal/auth"
 	"swissknife-app/internal/engine"
+	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/pwsh"
 	"swissknife-app/internal/session"
 	"swissknife-app/internal/worker"
@@ -73,6 +76,9 @@ func clientIdentity(s *session.Session) (*worker.Identity, error) {
 	return worker.LoadOrCreateIdentity(s.ConfigDir(), "worker-client")
 }
 
+// remotes caches one client per worker, so calls reuse their connections.
+var remotes = map[string]*worker.Remote{}
+
 // remoteFor returns the paired worker's client and info, or nil.
 func remoteFor(s *session.Session) (*worker.Remote, *WorkerInfo) {
 	workerMu.Lock()
@@ -81,11 +87,17 @@ func remoteFor(s *session.Session) (*worker.Remote, *WorkerInfo) {
 	if w == nil {
 		return nil, nil
 	}
+	key := w.Addr + "|" + w.Fingerprint
+	if r := remotes[key]; r != nil {
+		return r, w
+	}
 	id, err := clientIdentity(s)
 	if err != nil {
 		return nil, nil
 	}
-	return worker.NewRemote(w.Addr, w.Fingerprint, id), w
+	r := worker.NewRemote(w.Addr, w.Fingerprint, id)
+	remotes[key] = r
+	return r, w
 }
 
 func familyModule(family string) string {
@@ -135,11 +147,18 @@ func (d *psDispatch) Invoke(env engine.Env, family, cmdlet string, params map[st
 	if env.Tokens == nil {
 		return nil, session.ErrNotConnected
 	}
-	toks := map[string]string{}
-	resources := []string{auth.ResourceGraph, auth.ResourceExchange}
-	if family == pwsh.FamilyTeams {
-		resources = []string{auth.ResourceGraph, auth.ResourceTeams}
+	req := worker.InvokeRequest{Family: family, Cmdlet: cmdlet, Params: params, Select: sel,
+		TenantID: env.TenantID, AppOnly: env.AppOnly, DelegatedOrg: env.DelegatedOrg}
+	// Teams signs in with a Graph token too; Exchange only needs the org or
+	// the admin's UPN, found here, so the worker never gets a Graph token.
+	resources := []string{auth.ResourceGraph, auth.ResourceTeams}
+	if family != pwsh.FamilyTeams {
+		resources = []string{auth.ResourceExchange}
+		if err := exchangeSignIn(env, &req); err != nil {
+			return nil, err
+		}
 	}
+	toks := map[string]string{}
 	for _, res := range resources {
 		t, err := env.Tokens.TokenFor(env.Ctx, res)
 		if err != nil {
@@ -147,10 +166,37 @@ func (d *psDispatch) Invoke(env engine.Env, family, cmdlet string, params map[st
 		}
 		toks[res] = t
 	}
-	out, err := r.Invoke(env.Ctx, worker.InvokeRequest{Family: family, Cmdlet: cmdlet, Params: params, Select: sel,
-		TenantID: env.TenantID, AppOnly: env.AppOnly, DelegatedOrg: env.DelegatedOrg, Tokens: toks})
+	req.Tokens = toks
+	out, err := r.Invoke(env.Ctx, req)
 	d.s.Record("worker.invoke", cmdlet, "worker="+w.Name+" ("+w.Addr+")", err)
 	return out, err
+}
+
+// exchangeSignIn fills what Exchange PowerShell signs in with: the
+// tenant's initial domain (app-only), the customer org (GDAP) or the
+// admin's UPN (delegated). Looked up once per connection.
+func exchangeSignIn(env engine.Env, req *worker.InvokeRequest) error {
+	if env.Graph == nil {
+		return session.ErrNotConnected
+	}
+	switch {
+	case env.AppOnly:
+		org, err := graphapi.InitialDomain(env.Ctx, env.Graph)
+		if err != nil {
+			return err
+		}
+		req.ExchangeOrg = org
+	case env.DelegatedOrg != "":
+	default:
+		var me struct {
+			UPN string `json:"userPrincipalName"`
+		}
+		if err := env.Graph.Get(env.Ctx, "/me", url.Values{"$select": {"userPrincipalName"}}, &me); err != nil {
+			return err
+		}
+		req.ExchangeUPN = me.UPN
+	}
+	return nil
 }
 
 func (d *psDispatch) RunScript(env engine.Env, family, script string, params map[string]any) ([]json.RawMessage, error) {
@@ -199,8 +245,8 @@ func (x *WorkerService) Pair(addr, code string) (*WorkerInfo, error) {
 	if addr == "" || strings.TrimSpace(code) == "" {
 		return nil, errors.New("enter the worker's address and its pairing code")
 	}
-	if !strings.Contains(addr, ":") {
-		addr += ":8743"
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		addr = net.JoinHostPort(strings.Trim(addr, "[]"), "8743")
 	}
 	id, err := clientIdentity(x.s)
 	if err != nil {
@@ -242,11 +288,22 @@ func (x *WorkerService) Check() (*WorkerInfo, error) {
 	return w, saveWorker(x.s, w)
 }
 
-// Unpair forgets the worker (revoke this client on the worker too).
+// Unpair forgets the worker and asks it to forget this app (best effort:
+// an unreachable worker is forgotten here anyway — revoke it there).
 func (x *WorkerService) Unpair() error {
+	var remoteErr error
+	if r, _ := remoteFor(x.s); r != nil {
+		ctx, cancel := context.WithTimeout(x.s.Ctx(), 10*time.Second)
+		remoteErr = r.Unpair(ctx)
+		cancel()
+		r.Close()
+	}
 	workerMu.Lock()
 	defer workerMu.Unlock()
-	x.s.Record("worker.unpair", "", "", nil)
+	for k := range remotes {
+		delete(remotes, k)
+	}
+	x.s.Record("worker.unpair", "", "", remoteErr)
 	return saveWorker(x.s, nil)
 }
 

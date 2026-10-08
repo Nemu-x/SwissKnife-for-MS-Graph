@@ -33,7 +33,7 @@ func NewRemote(addr, workerFP string, id *Identity) *Remote {
 		VerifyPeerCertificate: pinned(func(fp string) bool { return fp == workerFP }),
 	}
 	return &Remote{Addr: addr, WorkerFP: workerFP, http: &http.Client{
-		Transport: &http.Transport{TLSClientConfig: cfg, ForceAttemptHTTP2: true},
+		Transport: &http.Transport{TLSClientConfig: cfg, ForceAttemptHTTP2: true, IdleConnTimeout: 90 * time.Second},
 		Timeout:   10 * time.Minute, // a mailbox search can take a while
 	}}
 }
@@ -80,6 +80,23 @@ func (r *Remote) Invoke(ctx context.Context, in InvokeRequest) ([]json.RawMessag
 	return out.Data, nil
 }
 
+// Unpair asks the worker to forget this client.
+func (r *Remote) Unpair(ctx context.Context) error {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, r.url("/unpair"), nil)
+	resp, err := r.http.Do(req)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("worker: %s", resp.Status)
+	}
+	return nil
+}
+
+// Close releases idle connections.
+func (r *Remote) Close() { r.http.CloseIdleConnections() }
+
 // Pair connects with a one-time code and returns the worker's fingerprint
 // to pin, plus its name.
 func Pair(ctx context.Context, addr, code, name string, id *Identity) (fp, workerName string, err error) {
@@ -89,11 +106,17 @@ func Pair(ctx context.Context, addr, code, name string, id *Identity) (fp, worke
 		MinVersion:   tls.VersionTLS13,
 		// Not trusted yet: the code proves both sides below.
 		InsecureSkipVerify: true, //nolint:gosec // bound by the pairing proofs
+		// The first handshake learns the fingerprint; any later connection
+		// must show the same certificate before the proof is sent on it.
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if len(cs.PeerCertificates) == 0 {
 				return errors.New("no worker certificate")
 			}
-			seen = Fingerprint(cs.PeerCertificates[0].Raw)
+			fp := Fingerprint(cs.PeerCertificates[0].Raw)
+			if seen != "" && fp != seen {
+				return errors.New("the worker's certificate changed during pairing")
+			}
+			seen = fp
 			return nil
 		},
 	}
@@ -112,9 +135,6 @@ func Pair(ctx context.Context, addr, code, name string, id *Identity) (fp, worke
 		return "", "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if seen != first {
-		return "", "", errors.New("the worker's certificate changed during pairing")
-	}
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return "", "", fmt.Errorf("pairing refused: %s", strings.TrimSpace(string(b)))

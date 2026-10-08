@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"swissknife-app/internal/auditlog"
 	"swissknife-app/internal/auth"
@@ -39,7 +41,7 @@ func startWorker(t *testing.T) (*Server, string, *fakeRunner) {
 		t.Fatal(err)
 	}
 	r := &fakeRunner{}
-	s := &Server{Identity: id, Dir: dir, Name: "SRV01", Version: "test", Runner: r,
+	s := &Server{Identity: id, Dir: dir, Name: "SRV01", Version: "test", NewRunner: func() engine.PSRunner { return r },
 		Families: map[string]bool{"exo": true}, Allow: map[string][]string{"exo": {"Get-Mailbox", "Get-Fails"}, "ipps": {"Get-ComplianceSearch"}},
 		Audit: auditlog.New(dir)}
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -128,4 +130,62 @@ func TestPairThenInvokeOverPinnedMTLS(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+func TestRevokeFromAnotherProcessAndPerConnectionRunners(t *testing.T) {
+	dir := t.TempDir()
+	id, _ := LoadOrCreateIdentity(dir, "worker")
+	var made atomic.Int32
+	s := &Server{Identity: id, Dir: dir, Name: "SRV", Families: map[string]bool{"exo": true},
+		Allow: map[string][]string{"exo": {"Get-Mailbox"}},
+		NewRunner: func() engine.PSRunner { made.Add(1); return &fakeRunner{} }}
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = s.ServeListener(ctx, l) }()
+	addr := l.Addr().String()
+	client, _ := LoadOrCreateIdentity(t.TempDir(), "client")
+	fp, _, err := Pair(ctx, addr, s.StartPairing(), "c", client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewRemote(addr, fp, client)
+	for _, tenant := range []string{"t1", "t2", "t1"} {
+		if _, err := r.Invoke(ctx, InvokeRequest{Family: "exo", Cmdlet: "Get-Mailbox", TenantID: tenant, Tokens: map[string]string{}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if made.Load() != 2 {
+		t.Fatalf("each tenant connection gets its own runner: %d", made.Load())
+	}
+
+	// "worker revoke" runs as another process: it only rewrites the file.
+	other := &Server{Identity: id, Dir: dir}
+	time.Sleep(20 * time.Millisecond) // a distinct modification time
+	if err := other.Revoke(client.Fingerprint[:16]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Invoke(ctx, InvokeRequest{Family: "exo", Cmdlet: "Get-Mailbox", TenantID: "t1"}); err == nil {
+		t.Fatal("a client revoked by another process must be refused by the running worker")
+	}
+	s.mu.Lock()
+	left := len(s.conns)
+	s.mu.Unlock()
+	if left != 0 {
+		t.Fatalf("a revoked client's connections (and tokens) must be dropped: %d", left)
+	}
+
+	// A client can unpair itself.
+	client2, _ := LoadOrCreateIdentity(t.TempDir(), "client")
+	fp2, _, err := Pair(ctx, addr, s.StartPairing(), "c2", client2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2 := NewRemote(addr, fp2, client2)
+	if err := r2.Unpair(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r2.Health(ctx); err == nil {
+		t.Fatal("unpaired")
+	}
 }

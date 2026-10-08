@@ -126,8 +126,13 @@ type Env struct {
 	// DelegatedOrg is the customer tenant a partner (GDAP) profile manages.
 	DelegatedOrg string
 	// LDAP is the active on-prem directory connection (nil if none).
-	LDAP    *ldapx.Client
-	AppOnly bool
+	LDAP *ldapx.Client
+	// ExchangeOrg / ExchangeUPN, when set, are what Exchange PowerShell
+	// signs in with, so no Graph call is needed to find them (a remote
+	// worker gets them from the client instead of a Graph token).
+	ExchangeOrg string
+	ExchangeUPN string
+	AppOnly     bool
 	// PS runs PowerShell cmdlets for the PowerShell backends; nil when the
 	// engine has none.
 	PS PSRunner

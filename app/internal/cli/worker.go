@@ -11,6 +11,7 @@ import (
 
 	"swissknife-app/internal/actions"
 	"swissknife-app/internal/auditlog"
+	"swissknife-app/internal/engine"
 	"swissknife-app/internal/pwsh"
 	"swissknife-app/internal/worker"
 )
@@ -52,9 +53,8 @@ func setupWorker(fs *flag.FlagSet) func(*env, *globals, []string) int {
 				fam[f] = true
 			}
 		}
-		pool := pwsh.NewPool(det, allow)
-		defer pool.Close()
-		srv := &worker.Server{Identity: id, Dir: dir, Version: e.version, Runner: pool, Families: fam, Allow: allow,
+		srv := &worker.Server{Identity: id, Dir: dir, Version: e.version, Families: fam, Allow: allow,
+			NewRunner: func() engine.PSRunner { return pwsh.NewPool(det, allow) },
 			Audit: auditlog.New(dir), Logf: func(f string, a ...any) { _, _ = fmt.Fprintf(e.stderr, f+"\n", a...) }}
 		srv.Name, _ = os.Hostname()
 		srv.Available = func() map[string]bool {

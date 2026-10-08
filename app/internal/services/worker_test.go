@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -16,10 +18,14 @@ import (
 	"swissknife-app/internal/worker"
 )
 
-type echoRunner struct{ token string }
+type echoRunner struct {
+	token, graphToken, org string
+}
 
 func (r *echoRunner) Invoke(env engine.Env, family, cmdlet string, params map[string]any, _ ...string) ([]json.RawMessage, error) {
 	r.token, _ = env.Tokens.TokenFor(env.Ctx, auth.ResourceExchange)
+	r.graphToken, _ = env.Tokens.TokenFor(env.Ctx, auth.ResourceGraph)
+	r.org = env.ExchangeOrg
 	b, _ := json.Marshal(map[string]any{"ran": cmdlet, "on": "worker", "tenant": env.TenantID})
 	return []json.RawMessage{b}, nil
 }
@@ -34,7 +40,7 @@ func TestCmdletsGoToThePairedWorkerWhenThisMachineCannot(t *testing.T) {
 	wdir := t.TempDir()
 	wid, _ := worker.LoadOrCreateIdentity(wdir, "worker")
 	runner := &echoRunner{}
-	srv := &worker.Server{Identity: wid, Dir: wdir, Name: "SRV01", Runner: runner,
+	srv := &worker.Server{Identity: wid, Dir: wdir, Name: "SRV01", NewRunner: func() engine.PSRunner { return runner },
 		Families: map[string]bool{"exo": true}, Allow: map[string][]string{"exo": {"Get-Mailbox"}}, Audit: auditlog.New(wdir)}
 	l, _ := net.Listen("tcp", "127.0.0.1:0")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -54,10 +60,19 @@ func TestCmdletsGoToThePairedWorkerWhenThisMachineCannot(t *testing.T) {
 	}
 
 	d := &psDispatch{s: sess, local: pwsh.NewPool(pwsh.NewDetector(), nil), can: func(string) bool { return false }}
-	env := engine.Env{Ctx: context.Background(), Tokens: tokenBroker{}, TenantID: "tenant-1", AppOnly: true}
+	graph := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"value":[{"verifiedDomains":[{"name":"contoso.onmicrosoft.com","isInitial":true}]}]}`))
+	}))
+	t.Cleanup(graph.Close)
+	gc := graphapi.New(graphapi.StaticToken("t"), graphapi.WithBaseURL(graph.URL))
+	env := engine.Env{Ctx: context.Background(), Graph: gc, Tokens: tokenBroker{}, TenantID: "tenant-1", AppOnly: true}
 	out, err := d.Invoke(env, pwsh.FamilyExchange, "Get-Mailbox", map[string]any{"Identity": "ann"})
 	if err != nil || len(out) != 1 || !strings.Contains(string(out[0]), `"worker"`) || runner.token != "tok-"+auth.ResourceExchange {
 		t.Fatalf("remote call: %s %v token %q", out, err, runner.token)
+	}
+	// Exchange signs in with the org found here: the worker gets no Graph token.
+	if runner.org != "contoso.onmicrosoft.com" || runner.graphToken != "" {
+		t.Fatalf("org %q graph token %q", runner.org, runner.graphToken)
 	}
 
 	// The provider counts the worker's families as available here.

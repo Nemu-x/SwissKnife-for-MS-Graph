@@ -17,18 +17,19 @@ import (
 
 const (
 	codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no 0/O, 1/I
-	codeLength   = 10
+	codeLength   = 16 // 80 bits
 	codeTTL      = 10 * time.Minute
-	maxAttempts  = 5
+	maxAttempts  = 5  // per address
+	maxTotal     = 20 // all addresses together
 )
 
-// NewCode returns a pairing code like "K7QX-M2PA-9D".
+// NewCode returns a pairing code like "K7QX-M2PA-9DHT-R4WE".
 func NewCode() string {
 	b := make([]byte, codeLength)
 	_, _ = rand.Read(b)
 	out := make([]byte, 0, codeLength+2)
 	for i, v := range b {
-		if i == 4 || i == 8 {
+		if i > 0 && i%4 == 0 {
 			out = append(out, '-')
 		}
 		out = append(out, codeAlphabet[int(v)%len(codeAlphabet)])
@@ -62,12 +63,13 @@ type pairing struct {
 	mu       sync.Mutex
 	code     string
 	expires  time.Time
-	attempts int
+	attempts int            // all addresses
+	perIP    map[string]int // a noisy neighbour cannot use up the code for others
 	used     bool
 }
 
 func newPairing(code string) *pairing {
-	return &pairing{code: code, expires: time.Now().Add(codeTTL)}
+	return &pairing{code: code, expires: time.Now().Add(codeTTL), perIP: map[string]int{}}
 }
 
 // active reports whether the code can still be used.
@@ -77,17 +79,18 @@ func (p *pairing) active() bool {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return !p.used && p.attempts < maxAttempts && time.Now().Before(p.expires)
+	return !p.used && p.attempts < maxTotal && time.Now().Before(p.expires)
 }
 
 // check consumes an attempt; a match uses the code up.
-func (p *pairing) check(clientFP, workerFP, got string) (string, bool) {
+func (p *pairing) check(ip, clientFP, workerFP, got string) (string, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.used || p.attempts >= maxAttempts || time.Now().After(p.expires) {
+	if p.used || p.attempts >= maxTotal || p.perIP[ip] >= maxAttempts || time.Now().After(p.expires) {
 		return "", false
 	}
 	p.attempts++
+	p.perIP[ip]++
 	if !hmac.Equal([]byte(got), []byte(ClientProof(p.code, clientFP, workerFP))) {
 		return "", false
 	}
