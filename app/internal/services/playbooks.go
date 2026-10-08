@@ -208,8 +208,25 @@ type OnboardRequest struct {
 // Onboard creates the user, then (best-effort) sets usage location, assigns
 // licenses, and adds the user to groups and teams.
 func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
-	if err := p.s.GuardWrite(); err != nil {
+	if err := p.s.GuardWriteChecked(); err != nil {
 		return nil, err
+	}
+	// A new user is not a member of anything yet: under a group scope the
+	// playbook must put them into allowed groups only, and into one at least.
+	if p.s.Policy().Scoped() {
+		if len(req.GroupIDs) == 0 {
+			return nil, &OpError{Code: "policyNeedsGroup", Message: "this connection profile may only create users in its allowed groups — pick one"}
+		}
+		groups := append([]string{}, req.GroupIDs...)
+		groups = append(groups, req.TeamIDs...)
+		for _, ch := range req.ChannelRefs {
+			groups = append(groups, ch.TeamID)
+		}
+		for _, g := range groups {
+			if err := targetInScope(p.s, engine.FieldGroup, g); err != nil {
+				return nil, err
+			}
+		}
 	}
 	c, err := p.s.Client()
 	if err != nil {
@@ -363,8 +380,14 @@ func alreadyExists(err error) bool {
 // Offboard runs the offboarding sequence. Destructive: requires typed confirm
 // on the UPN. Steps are best-effort and reported individually.
 func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error) {
-	if err := p.s.GuardDestructive(req.Upn, req.Confirm); err != nil {
+	if err := p.s.GuardDestructiveChecked(req.Upn, req.Confirm); err != nil {
 		return nil, err
+	}
+	// Every user the run names is checked before anything changes.
+	for _, u := range []string{req.Upn, req.ForwardTo, req.CalendarTo, req.BackupToUser, req.MailboxToUser, req.FullAccessTo, req.TransferOwnershipTo} {
+		if err := targetInScope(p.s, engine.FieldUser, u); err != nil {
+			return nil, err
+		}
 	}
 	c, err := p.s.Client()
 	if err != nil {

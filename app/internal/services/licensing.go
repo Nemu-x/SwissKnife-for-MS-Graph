@@ -23,7 +23,7 @@ func (l *LicensingService) Skus() ([]json.RawMessage, error) {
 }
 
 func (l *LicensingService) Assign(user string, addSkuIDs, removeSkuIDs []string) (json.RawMessage, error) {
-	if err := l.s.GuardWrite(); err != nil {
+	if err := l.s.GuardWriteOn(session.User(user)); err != nil {
 		return nil, err
 	}
 	c, err := l.s.Client()

@@ -85,7 +85,10 @@ func tempPassword() (string, error) {
 
 // Compromised runs the compromised-account response.
 func (p *PlaybookService) Compromised(req CompromisedRequest) (*CompromisedResult, error) {
-	if err := p.s.GuardDestructive(req.Upn, req.Confirm); err != nil {
+	if err := p.s.GuardDestructiveChecked(req.Upn, req.Confirm); err != nil {
+		return nil, err
+	}
+	if err := targetInScope(p.s, engine.FieldUser, req.Upn); err != nil {
 		return nil, err
 	}
 	c, err := p.s.Client()

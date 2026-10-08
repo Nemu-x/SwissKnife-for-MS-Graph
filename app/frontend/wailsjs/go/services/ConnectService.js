@@ -42,6 +42,10 @@ export function SaveProfile(arg1, arg2) {
   return window['go']['services']['ConnectService']['SaveProfile'](arg1, arg2);
 }
 
+export function SetProfilePolicy(arg1, arg2) {
+  return window['go']['services']['ConnectService']['SetProfilePolicy'](arg1, arg2);
+}
+
 export function SetReadOnly(arg1) {
   return window['go']['services']['ConnectService']['SetReadOnly'](arg1);
 }

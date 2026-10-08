@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	wrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -59,6 +60,13 @@ func (c *ConnectService) SaveProfile(p secrets.Profile, secret string) (secrets.
 			}
 		}
 	}
+	if p.ID != "" {
+		if old, ok := c.findProfile(p.ID); ok {
+			p.Policy = old.Policy
+		}
+	} else {
+		p.Policy = nil
+	}
 	pending := false
 	if p.AuthMode == string(auth.ModeClientCertificate) && secret == "" {
 		secret, pending = c.store.PendingCertPassword(p.CertPath)
@@ -68,6 +76,72 @@ func (c *ConnectService) SaveProfile(p secrets.Profile, secret string) (secrets.
 		c.store.DropPendingCertPassword(p.CertPath)
 	}
 	return saved, err
+}
+
+func (c *ConnectService) findProfile(id string) (secrets.Profile, bool) {
+	list, err := c.store.List()
+	if err != nil {
+		return secrets.Profile{}, false
+	}
+	for _, p := range list {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return secrets.Profile{}, false
+}
+
+// SetProfilePolicy changes a profile's policy; the connected profile gets it
+// at once. maxDanger is "" (no limit), read, write or destructive;
+// allowedGroups are group ids (empty = any target).
+func (c *ConnectService) SetProfilePolicy(profileID string, p session.Policy) (secrets.Profile, error) {
+	switch p.MaxDanger {
+	case "", "read", "write", "destructive":
+	default:
+		return secrets.Profile{}, errors.New("maxDanger must be read, write or destructive")
+	}
+	prof, ok := c.findProfile(profileID)
+	if !ok {
+		return secrets.Profile{}, errors.New("profile not found")
+	}
+	// Limits cannot be lifted from inside the session they limit.
+	live := c.s.Connected() && c.s.ProfileID() == prof.ID
+	if live {
+		if cur := c.s.Policy(); cur.MaxDanger != "" || cur.Scoped() {
+			return secrets.Profile{}, &OpError{Code: "policyLive", Message: "disconnect before changing the limits of the profile you are connected with"}
+		}
+	}
+	clean := []string{}
+	seen := map[string]bool{}
+	for _, g := range p.AllowedGroups {
+		g = strings.TrimSpace(g)
+		if g != "" && !seen[g] {
+			seen[g] = true
+			clean = append(clean, g)
+		}
+	}
+	p.AllowedGroups = clean
+	labels := map[string]string{}
+	for _, g := range clean {
+		if l := strings.TrimSpace(p.GroupLabels[g]); l != "" {
+			labels[g] = l
+		}
+	}
+	p.GroupLabels = labels
+	if p.MaxDanger == "" && len(clean) == 0 {
+		prof.Policy = nil
+	} else {
+		prof.Policy = &p
+	}
+	saved, err := c.store.Save(prof, "")
+	if err != nil {
+		return secrets.Profile{}, err
+	}
+	if live {
+		c.s.SetPolicy(prof.ID, p)
+	}
+	c.s.Record("profile.policy", prof.Name, fmt.Sprintf("maxDanger=%s allowedGroups=%d", p.MaxDanger, len(clean)), nil)
+	return saved, nil
 }
 
 func (c *ConnectService) DeleteProfile(profileID string) error {
@@ -91,6 +165,8 @@ type Status struct {
 	Connected   bool            `json:"connected"`
 	ProfileName string          `json:"profileName"`
 	ReadOnly    bool            `json:"readOnly"`
+	Policy      session.Policy  `json:"policy"`
+	ProfileID   string          `json:"profileId,omitempty"`
 	Org         json.RawMessage `json:"org,omitempty"`
 }
 
@@ -103,6 +179,9 @@ type Credentials struct {
 	AuthMode string // client_secret | device_code | client_certificate
 	CertPath string // client_certificate: PFX file; Secret is its password
 	Name     string // profile name; empty for ad-hoc credentials
+	// ProfileID and Policy come from a saved profile (empty when ad hoc).
+	ProfileID string
+	Policy    session.Policy
 }
 
 // ResolveCredentials turns a ConnectRequest into concrete credentials. A
@@ -138,7 +217,10 @@ func ResolveCredentials(store *secrets.Store, req ConnectRequest) (Credentials, 
 		return Credentials{}, errors.New("profile not found")
 	}
 	cr.TenantID, cr.ClientID, cr.AuthMode, cr.Name = found.TenantID, found.ClientID, found.AuthMode, found.Name
-	cr.CertPath = found.CertPath
+	cr.CertPath, cr.ProfileID = found.CertPath, found.ID
+	if found.Policy != nil {
+		cr.Policy = *found.Policy
+	}
 	switch cr.AuthMode {
 	case string(auth.ModeClientSecret):
 		cr.Secret, err = store.Secret(found.ID)
@@ -227,17 +309,16 @@ func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
 		name = req.RememberAs
 	}
 
+	// The policy goes in before the client, so no write runs unlimited.
+	c.s.SetPolicy(cr.ProfileID, cr.Policy)
 	c.s.SetClient(gc, name)
 	c.s.SetTokens(provider)
 	c.s.SetIdentity(tenant, mode != string(auth.ModeDeviceCode))
 	c.s.Record("session.connect", tenant, "mode="+mode, nil)
 
-	return &Status{
-		Connected:   true,
-		ProfileName: name,
-		ReadOnly:    c.s.ReadOnly(),
-		Org:         org,
-	}, nil
+	st := c.GetStatus()
+	st.Org = org
+	return st, nil
 }
 
 // Domains returns the tenant's verified domain names (for UPN autocomplete).
@@ -281,6 +362,8 @@ func (c *ConnectService) GetStatus() *Status {
 		Connected:   c.s.Connected(),
 		ProfileName: c.s.ProfileName(),
 		ReadOnly:    c.s.ReadOnly(),
+		Policy:      c.s.Policy(),
+		ProfileID:   c.s.ProfileID(),
 	}
 }
 

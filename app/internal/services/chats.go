@@ -156,7 +156,7 @@ func (ch *ChatsService) BackupUserChats(sourceUser, targetUser, destFolder strin
 }
 
 func (ch *ChatsService) backupUserChatsCtx(parent context.Context, sourceUser, targetUser, destFolder string) (*ChatBackupResult, error) {
-	if err := ch.s.GuardWrite(); err != nil {
+	if err := ch.s.GuardWriteOn(session.User(sourceUser), session.User(targetUser)); err != nil {
 		return nil, err
 	}
 	c, err := ch.s.Client()
@@ -277,7 +277,7 @@ func (ch *ChatsService) backupUserChatsCtx(parent context.Context, sourceUser, t
 
 // CreateGroupChat creates a group chat with a topic and members (at least 2 UPNs).
 func (ch *ChatsService) CreateGroupChat(topic string, memberUpns []string) (json.RawMessage, error) {
-	if err := ch.s.GuardWrite(); err != nil {
+	if err := ch.s.GuardWriteOn(userTargets(memberUpns)...); err != nil {
 		return nil, err
 	}
 	c, err := ch.s.Client()

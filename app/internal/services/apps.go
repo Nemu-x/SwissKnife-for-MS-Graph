@@ -35,7 +35,7 @@ func (a *AppsService) List(search string, maxItems int) ([]json.RawMessage, erro
 // objectID is the application OBJECT id, not the appId. The secret text is
 // returned once and never stored anywhere.
 func (a *AppsService) AddSecret(objectID, displayName string, months int) (map[string]any, error) {
-	if err := a.s.GuardWrite(); err != nil {
+	if err := a.s.GuardDangerous(); err != nil {
 		return nil, err
 	}
 	c, err := a.s.Client()

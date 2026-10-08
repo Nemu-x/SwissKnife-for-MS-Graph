@@ -37,7 +37,7 @@ func (m *MailService) List(user, folder string, top int) ([]json.RawMessage, err
 
 // Send is destructive (sending as any user): typed confirm on the UPN.
 func (m *MailService) Send(user, subject, bodyText string, to []string, confirm string) error {
-	if err := m.s.GuardDestructive(user, confirm); err != nil {
+	if err := m.s.GuardDestructiveOn(user, confirm, session.User(user)); err != nil {
 		return err
 	}
 	c, err := m.s.Client()
@@ -84,7 +84,7 @@ func (cal *CalendarService) List(user string, top int) ([]json.RawMessage, error
 }
 
 func (cal *CalendarService) CreateEvent(user, subject, bodyText, startISO, endISO, timezone string, attendees []string) (json.RawMessage, error) {
-	if err := cal.s.GuardWrite(); err != nil {
+	if err := cal.s.GuardWriteOn(session.User(user)); err != nil {
 		return nil, err
 	}
 	c, err := cal.s.Client()

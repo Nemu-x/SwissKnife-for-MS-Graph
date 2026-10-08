@@ -75,7 +75,7 @@ func conversationMember(upn string, asOwner bool) map[string]any {
 }
 
 func (t *TeamsService) AddTeamMember(teamID, upn string, asOwner bool) (json.RawMessage, error) {
-	if err := t.s.GuardWrite(); err != nil {
+	if err := t.s.GuardWriteOn(session.Group(teamID), session.User(upn)); err != nil {
 		return nil, err
 	}
 	c, err := t.s.Client()
@@ -89,7 +89,7 @@ func (t *TeamsService) AddTeamMember(teamID, upn string, asOwner bool) (json.Raw
 }
 
 func (t *TeamsService) AddChannelMember(teamID, channelID, upn string, asOwner bool) (json.RawMessage, error) {
-	if err := t.s.GuardWrite(); err != nil {
+	if err := t.s.GuardWriteOn(session.Group(teamID), session.User(upn)); err != nil {
 		return nil, err
 	}
 	c, err := t.s.Client()
@@ -120,7 +120,7 @@ func findMembershipID(items []json.RawMessage, upn string) (string, error) {
 }
 
 func (t *TeamsService) RemoveTeamMember(teamID, upn string) error {
-	if err := t.s.GuardWrite(); err != nil {
+	if err := t.s.GuardWriteOn(session.Group(teamID), session.User(upn)); err != nil {
 		return err
 	}
 	c, err := t.s.Client()
@@ -141,7 +141,7 @@ func (t *TeamsService) RemoveTeamMember(teamID, upn string) error {
 }
 
 func (t *TeamsService) RemoveChannelMember(teamID, channelID, upn string) error {
-	if err := t.s.GuardWrite(); err != nil {
+	if err := t.s.GuardWriteOn(session.Group(teamID), session.User(upn)); err != nil {
 		return err
 	}
 	c, err := t.s.Client()
@@ -163,7 +163,7 @@ func (t *TeamsService) RemoveChannelMember(teamID, channelID, upn string) error 
 
 // Teamify converts an M365 group into a Team.
 func (t *TeamsService) Teamify(groupID string) (json.RawMessage, error) {
-	if err := t.s.GuardWrite(); err != nil {
+	if err := t.s.GuardWriteOn(session.Group(groupID)); err != nil {
 		return nil, err
 	}
 	c, err := t.s.Client()
@@ -183,7 +183,7 @@ func (t *TeamsService) Teamify(groupID string) (json.RawMessage, error) {
 
 // CreateChannel: standard | private | shared; private/shared require ownerUpn.
 func (t *TeamsService) CreateChannel(teamID, displayName, description, channelType, ownerUpn string) (json.RawMessage, error) {
-	if err := t.s.GuardWrite(); err != nil {
+	if err := t.s.GuardWriteOn(session.Group(teamID)); err != nil {
 		return nil, err
 	}
 	c, err := t.s.Client()

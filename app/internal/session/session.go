@@ -32,6 +32,9 @@ type Session struct {
 	onDisconnect []func(prev *graphapi.Client)
 	profileName  string
 	readOnly     bool
+	policy       Policy
+	profileID    string
+	scope        ScopeFunc
 	configDir    string
 
 	Audit   *auditlog.Log
@@ -143,6 +146,7 @@ func (s *Session) Disconnect() {
 	s.tokens = nil
 	s.tenantID, s.appOnly = "", false
 	s.profileName = ""
+	s.policy, s.profileID = Policy{}, ""
 }
 
 func (s *Session) Client() (*graphapi.Client, error) {
@@ -178,20 +182,28 @@ func (s *Session) ReadOnly() bool {
 	return s.readOnly
 }
 
-// GuardWrite is called before any write operation.
+// GuardWrite is called before any write that does not name a user or group
+// (under a group-scoped profile it is refused; see GuardWriteOn).
 func (s *Session) GuardWrite() error {
-	if s.ReadOnly() {
-		return ErrReadOnly
+	if err := s.ceiling(false); err != nil {
+		return err
 	}
-	return nil
+	return s.inScope(nil)
 }
 
 // GuardDestructive is a write guard plus typed confirm: the user must type
 // the target identifier; the backend re-verifies it (we do not trust the UI alone).
 func (s *Session) GuardDestructive(target, confirm string) error {
-	if err := s.GuardWrite(); err != nil {
+	if err := s.ceiling(true); err != nil {
 		return err
 	}
+	if err := s.inScope(nil); err != nil {
+		return err
+	}
+	return s.confirm(target, confirm)
+}
+
+func (s *Session) confirm(target, confirm string) error {
 	if confirm != target {
 		return errors.New("confirmation text does not match the target — operation cancelled")
 	}

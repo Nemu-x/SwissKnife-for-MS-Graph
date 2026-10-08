@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plug, Trash2, LogOut, FolderOpen, KeyRound, FileCheck } from 'lucide-react'
+import { Plug, Trash2, LogOut, FolderOpen, KeyRound, FileCheck, ShieldHalf } from 'lucide-react'
+import { ProfileLimits } from '../components/ProfileLimits'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { Page } from '../components/Layout'
 import { Button, Card, Field, Input, Select, Badge, ErrorNote, Spinner } from '../components/ui'
@@ -12,6 +13,7 @@ export function ConnectPage() {
   const { status, setStatus, refreshStatus, connected, toast, loadDomains } = useStore()
 
   const [profiles, setProfiles] = useState<Profile[]>([])
+  const [limitsFor, setLimitsFor] = useState<string | null>(null)
   const [form, setForm] = useState({
     id: '', name: '', tenantId: '', clientId: '', secret: '', authMode: 'client_secret', certPath: '', remember: false,
   })
@@ -99,7 +101,8 @@ export function ConnectPage() {
           {profiles.length === 0 && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}
           <div className="flex flex-col gap-2">
             {profiles.map((p) => (
-              <div key={p.id} className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+              <div key={p.id} className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
                 <div className="min-w-0 flex-1 cursor-pointer" onClick={() => selectProfile(p)}>
                   <div className="truncate text-sm font-medium">{p.name}</div>
                   <div className="truncate text-xs text-[var(--text-faint)]">{p.tenantId}</div>
@@ -108,9 +111,15 @@ export function ConnectPage() {
                 <Button variant="primary" onClick={() => connectProfile(p)} disabled={busy} className="!px-2 !py-1">
                   <Plug size={14} />
                 </Button>
+                <Button variant="ghost" onClick={() => setLimitsFor(limitsFor === p.id ? null : p.id)} className="!px-2 !py-1"
+                  title={t('connect.limits.title')}>
+                  <ShieldHalf size={14} className={(p as any).policy ? 'text-[var(--warn)]' : ''} />
+                </Button>
                 <Button variant="ghost" onClick={() => deleteProfile(p)} className="!px-2 !py-1">
                   <Trash2 size={14} />
                 </Button>
+              </div>
+              {limitsFor === p.id && <ProfileLimits profile={p} onSaved={loadProfiles} />}
               </div>
             ))}
           </div>

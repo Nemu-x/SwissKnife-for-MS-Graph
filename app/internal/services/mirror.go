@@ -351,11 +351,11 @@ func (m *MirrorService) compareWith(ctx context.Context, op *ops.Operation, src,
 // selected kinds. Every item is its own step, so a partial failure is visible
 // and the rest still runs.
 func (m *MirrorService) Copy(req MirrorRequest) (*PlaybookResult, error) {
-	if err := m.s.GuardWrite(); err != nil {
+	if err := m.s.GuardWriteOn(session.User(req.Source), session.User(req.Target)); err != nil {
 		return nil, err
 	}
 	// Granting somebody else's access wholesale deserves the typed confirmation.
-	if err := m.s.GuardDestructive(req.Target, req.Confirm); err != nil {
+	if err := m.s.GuardDestructiveOn(req.Target, req.Confirm, session.User(req.Source), session.User(req.Target)); err != nil {
 		return nil, err
 	}
 	c, err := m.s.Client()
