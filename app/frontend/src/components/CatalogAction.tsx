@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Eye, Check, ArrowRight, Minus } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, Eye, Check, ArrowRight, Minus } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
@@ -45,6 +45,11 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
   'teams.policies': { label: 'actions.teams.policies.label', hint: 'actions.teams.policies.hint', icon: <ListChecks size={16} /> },
   'teams.effectivePolicies': { label: 'actions.teams.effectivePolicies.label', hint: 'actions.teams.effectivePolicies.hint', icon: <BadgeCheck size={16} /> },
   'mail.purge': { label: 'actions.mail.purge.label', hint: 'actions.mail.purge.hint', notes: ['actions.mail.purge.note'], warn: ['actions.mail.purge.warn'], icon: <MailX size={16} /> },
+  'mail.ruleAudit': { label: 'actions.mail.ruleAudit.label', hint: 'actions.mail.ruleAudit.hint', notes: ['actions.mail.ruleAudit.note'], icon: <Siren size={16} /> },
+  'mail.reportThreat': { label: 'actions.mail.reportThreat.label', hint: 'actions.mail.reportThreat.hint', icon: <Flag size={16} /> },
+  'mail.blockSender': { label: 'actions.mail.blockSender.label', hint: 'actions.mail.blockSender.hint', notes: ['actions.mail.blockSender.note'], icon: <ShieldBan size={16} /> },
+  'mail.quarantine': { label: 'actions.mail.quarantine.label', hint: 'actions.mail.quarantine.hint', icon: <Archive size={16} /> },
+  'mail.releaseQuarantine': { label: 'actions.mail.releaseQuarantine.label', hint: 'actions.mail.releaseQuarantine.hint', notes: ['actions.mail.releaseQuarantine.note'], icon: <ArchiveRestore size={16} /> },
   'group.membership': { label: 'groups.tileAdd', hint: 'groups.hintAdd', notes: ['groups.noteAdd'], icon: <UserPlus size={16} /> },
   'license.assign': { label: 'licensing.tileAssign', hint: 'licensing.hintAssign', notes: ['licensing.noteAssign'], warn: ['licensing.noteRemove'], icon: <Plus size={16} /> },
 }
@@ -291,9 +296,17 @@ function CatalogPanel({ entry, mark, askConfirm }: {
 function RowsView({ result }: { result: engine.ReadResult }) {
   const { t, i18n } = useTranslation()
   const cols = result.columns ?? []
-  const show = (v: string) => (/^[A-Za-z]+$/.test(v) && i18n.exists(`actions.values.${v}`) ? t(`actions.values.${v}`) : v)
-  if (!result.rows?.length) return <p className="text-sm text-[var(--text-dim)]">{t('actions.noRows')}</p>
+  const word = (v: string) => (/^[A-Za-z]+$/.test(v) && i18n.exists(`actions.values.${v}`) ? t(`actions.values.${v}`) : v)
+  // "why" cells hold reason tokens: "externalForward=addr; deletes".
+  const why = (v: string) => v.split('; ').map((tok) => {
+    const [k, val] = tok.split('=')
+    return t(`actions.why.${k}`, { value: val ?? '', defaultValue: tok })
+  }).join('; ')
+  const show = (c: string, v: string) => (c === 'why' ? why(v) : word(v))
+  const note = result.note && <p className="text-xs text-[var(--text-faint)]">{t(`actions.readNotes.${result.note.key}`, { ...result.note.params, defaultValue: result.note.key })}</p>
+  if (!result.rows?.length) return <><p className="text-sm text-[var(--text-dim)]">{t('actions.noRows')}</p>{note}</>
   return (
+    <>
     <div className="max-h-72 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--bg)]">
       <table className="w-full text-left text-xs">
         <thead className="sticky top-0 bg-[var(--bg-elev)] text-[var(--text-faint)]">
@@ -302,12 +315,14 @@ function RowsView({ result }: { result: engine.ReadResult }) {
         <tbody>
           {result.rows.map((r, i) => (
             <tr key={i} className="border-t border-[var(--border)]">
-              {cols.map((c) => <td key={c} className="px-2 py-1.5">{show(r[c] ?? '')}</td>)}
+              {cols.map((c) => <td key={c} className="px-2 py-1.5">{show(c, r[c] ?? '')}</td>)}
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+    {note}
+    </>
   )
 }
 

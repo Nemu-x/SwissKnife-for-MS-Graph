@@ -1167,8 +1167,10 @@ const en = {
   actions: {
     run: 'Show',
     rows: '{{count}} row(s)',
+    why: { externalForward: 'forwards outside the company to {{value}}', deletes: 'deletes messages', hides: 'moves messages away and marks them read' },
+    readNotes: { rulesScanned: '{{scanned}} mailbox(es) scanned, {{unreadable}} could not be read' },
     noRows: 'Nothing found.',
-    columns: { policy: 'Policy', description: 'Description', policyType: 'Type' },
+    columns: { user: 'User', rule: 'Rule', enabled: 'On', why: 'Why it looks suspicious', received: 'Received', sender: 'Sender', recipient: 'Recipient', subject: 'Subject', type: 'Type', status: 'Status', identity: 'Identity', policy: 'Policy', description: 'Description', policyType: 'Type' },
     preview: 'Preview changes',
     apply: 'Apply',
     planTitle: 'What will change',
@@ -1190,6 +1192,11 @@ const en = {
       calendarProcessing: { label: 'Room booking behaviour', hint: 'Whether a room or equipment mailbox accepts meeting requests on its own.', note: 'Auto-accept books the room by itself; None leaves requests for a delegate.' },
     },
     mail: {
+      ruleAudit: { label: 'Find suspicious inbox rules', hint: 'Rules that forward mail outside the company, delete it, or hide it — what attackers leave behind. Leave the user empty to scan everyone.', note: 'Scanning every mailbox takes a while in large tenants (eight mailboxes at a time).' },
+      reportThreat: { label: 'Report an email to Microsoft', hint: 'Send the newest message from a sender in someone’s mailbox to Microsoft as phishing, spam or malware.' },
+      blockSender: { label: 'Block a sender or domain', hint: 'Add it to the Tenant Allow/Block List: their mail is rejected for everyone.', note: 'Takes a few minutes to apply across Exchange Online. Remove it the same way.' },
+      quarantine: { label: 'Look into quarantine', hint: 'Messages held as spam, phishing or malware — filter by recipient or sender.' },
+      releaseQuarantine: { label: 'Release a quarantined message', hint: 'Deliver a false positive after all. Copy the identity from the quarantine list.', note: 'Release only what you have checked: malware verdicts can be released by admins only and should not be.' },
       purge: { label: 'Find and delete a phishing email', hint: 'Search every mailbox for a message by sender, subject and date, see how many match, then remove them.', note: 'The preview runs an eDiscovery search and estimate — it takes a minute or two. The case it creates stays in Purview as the record of the clean-up.', warn: 'Microsoft removes at most 100 messages per mailbox per run. “Recoverable” moves them to Recoverable Items (an admin can restore them); “permanent” cannot be undone and needs the Search And Purge role.' },
     },
     teams: {
@@ -1204,13 +1211,16 @@ const en = {
     transportRule: {
       state: { label: 'Turn a mail flow rule on or off', hint: 'Enable or disable a transport rule by its name.', note: 'Mail flow rules act on every message in the tenant — check the rule name twice.' },
     },
-    fields: { sender: 'Sender (address or domain)', subject: 'Subject contains', since: 'Received since (YYYY-MM-DD)', purgeType: 'How to delete', policyType: 'Policy type', policy: 'Policy name', type: 'Convert to', forwardTo: 'Forward to', keepCopy: 'Keep a copy in the mailbox', address: 'Email address', automate: 'Meeting requests', rule: 'Rule name', mailbox: 'Mailbox', delegate: 'Delegate', folder: 'Folder', access: 'Access', user: 'User', group: 'Group', role: 'As', op: 'Action', sku: 'License', state: 'Sign-in', manager: 'Manager', country: 'Country code (e.g. US, DE)' },
+    fields: { category: 'Report as', recipient: 'Recipient', identity: 'Message identity', releaseTo: 'Release to', sender: 'Sender (address or domain)', subject: 'Subject contains', since: 'Received since (YYYY-MM-DD)', purgeType: 'How to delete', policyType: 'Policy type', policy: 'Policy name', type: 'Convert to', forwardTo: 'Forward to', keepCopy: 'Keep a copy in the mailbox', address: 'Email address', automate: 'Meeting requests', rule: 'Rule name', mailbox: 'Mailbox', delegate: 'Delegate', folder: 'Folder', access: 'Access', user: 'User', group: 'Group', role: 'As', op: 'Action', sku: 'License', state: 'Sign-in', manager: 'Manager', country: 'Country code (e.g. US, DE)' },
     user: {
       manager: { label: 'Set a manager', hint: 'Who they report to — the preview shows the current one.' },
       usageLocation: { label: 'Set usage location', hint: 'The country that decides which licenses can be assigned.', note: 'Two-letter ISO code. License assignment fails while it is empty.' },
     },
-    options: { recoverable: 'Recoverable', permanent: 'Permanently', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
+    options: { phishing: 'Phishing', spam: 'Spam', malware: 'Malware', notJunk: 'Not junk', recipients: 'Original recipients', all: 'All recipients', recoverable: 'Recoverable', permanent: 'Permanently', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
     changeFields: {
+      threatReport: 'report to Microsoft',
+      blockedSender: 'blocked sender',
+      quarantine: 'quarantine',
       messagesInMailboxes: 'messages / mailboxes',
       teamsPolicy: { meeting: 'meeting policy', messaging: 'messaging policy', calling: 'calling policy', appSetup: 'app setup policy', appPermission: 'app permission policy' },
       signIn: 'sign-in',
@@ -1230,8 +1240,8 @@ const en = {
       usageLocation: 'usage location',
       group: { member: 'member of', owner: 'owner of' },
     },
-    notes: { purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
-    values: { meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', Global: 'Global (org default)', shared: 'shared', regular: 'user mailbox', enabled: 'on', disabled: 'off', allowed: 'allowed', blocked: 'blocked', active: 'active', revoked: 'revoked' },
+    notes: { purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone', recoverableOverLimit: 'more than 100 per mailbox: one recoverable run removes at most 100 per mailbox — run again for the rest' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
+    values: { yes: 'yes', no: 'no', released: 'released', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', Global: 'Global (org default)', shared: 'shared', regular: 'user mailbox', enabled: 'on', disabled: 'off', allowed: 'allowed', blocked: 'blocked', active: 'active', revoked: 'revoked' },
     reasons: {
       pwshMissing: 'Needs PowerShell 7 — install it, then recheck in Settings → PowerShell.',
       moduleMissing: 'Needs the {{module}} PowerShell module — install it in Settings → PowerShell.',

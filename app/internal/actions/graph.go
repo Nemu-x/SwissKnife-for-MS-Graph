@@ -19,7 +19,9 @@ func Builtin() []engine.Action {
 	out := append(graphActions(), exchangeActions()...)
 	out = append(out, exchangePSActions()...)
 	out = append(out, teamsActions()...)
-	return append(out, complianceActions()...)
+	out = append(out, complianceActions()...)
+	out = append(out, securityActions()...)
+	return append(out, securityPSActions()...)
 }
 
 func graphActions() []engine.Action {

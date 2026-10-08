@@ -1167,8 +1167,10 @@ const ru: Dict<typeof en> = {
   actions: {
     run: 'Показать',
     rows: 'Строк: {{count}}',
+    why: { externalForward: 'пересылает наружу на {{value}}', deletes: 'удаляет письма', hides: 'уносит письма и помечает прочитанными' },
+    readNotes: { rulesScanned: 'Проверено ящиков: {{scanned}}, не удалось прочитать: {{unreadable}}' },
     noRows: 'Ничего не найдено.',
-    columns: { policy: 'Политика', description: 'Описание', policyType: 'Тип' },
+    columns: { user: 'Пользователь', rule: 'Правило', enabled: 'Вкл.', why: 'Чем подозрительно', received: 'Получено', sender: 'Отправитель', recipient: 'Получатель', subject: 'Тема', type: 'Тип', status: 'Статус', identity: 'Identity', policy: 'Политика', description: 'Описание', policyType: 'Тип' },
     preview: 'Показать изменения',
     apply: 'Применить',
     planTitle: 'Что изменится',
@@ -1190,6 +1192,11 @@ const ru: Dict<typeof en> = {
       calendarProcessing: { label: 'Бронирование переговорки', hint: 'Принимает ли ящик комнаты или оборудования приглашения сам.', note: '«Принимать автоматически» бронирует сразу; «Оставить делегату» — решает человек.' },
     },
     mail: {
+      ruleAudit: { label: 'Найти подозрительные правила ящиков', hint: 'Правила, которые пересылают почту наружу, удаляют или прячут её, — то, что оставляют атакующие. Оставьте пользователя пустым, чтобы проверить всех.', note: 'Проверка всех ящиков в большом тенанте идёт долго (по восемь ящиков одновременно).' },
+      reportThreat: { label: 'Отправить письмо в Microsoft', hint: 'Отправить самое новое письмо от отправителя из чьего-то ящика в Microsoft как фишинг, спам или вредонос.' },
+      blockSender: { label: 'Заблокировать отправителя или домен', hint: 'Добавить в Tenant Allow/Block List: его почта отклоняется для всех.', note: 'Применяется по всему Exchange Online за несколько минут. Снимается так же.' },
+      quarantine: { label: 'Посмотреть карантин', hint: 'Письма, задержанные как спам, фишинг или вредонос, — с фильтром по получателю или отправителю.' },
+      releaseQuarantine: { label: 'Выпустить письмо из карантина', hint: 'Доставить ложное срабатывание. Identity скопируйте из списка карантина.', note: 'Выпускайте только проверенное: вредонос выпустить может лишь админ, и делать этого не стоит.' },
       purge: { label: 'Найти и удалить фишинговое письмо', hint: 'Найти письмо по отправителю, теме и дате во всех ящиках, посмотреть, сколько найдено, и удалить.', note: 'Предпросмотр запускает поиск и оценку eDiscovery — это минута-две. Созданное дело остаётся в Purview как запись о чистке.', warn: 'Microsoft удаляет не больше 100 писем на ящик за проход. «С восстановлением» переносит их в Recoverable Items (админ сможет вернуть); «Безвозвратно» отменить нельзя, нужна роль Search And Purge.' },
     },
     teams: {
@@ -1204,13 +1211,16 @@ const ru: Dict<typeof en> = {
     transportRule: {
       state: { label: 'Включить или выключить правило потока почты', hint: 'Включить или отключить транспортное правило по имени.', note: 'Правила потока почты действуют на каждое письмо тенанта — проверьте имя правила дважды.' },
     },
-    fields: { sender: 'Отправитель (адрес или домен)', subject: 'Тема содержит', since: 'Получено с (ГГГГ-ММ-ДД)', purgeType: 'Как удалить', policyType: 'Тип политики', policy: 'Имя политики', type: 'Перевести в', forwardTo: 'Пересылать кому', keepCopy: 'Оставлять копию в ящике', address: 'Адрес почты', automate: 'Приглашения на встречи', rule: 'Имя правила', mailbox: 'Ящик', delegate: 'Делегат', folder: 'Папка', access: 'Доступ', user: 'Пользователь', group: 'Группа', role: 'Как', op: 'Действие', sku: 'Лицензия', state: 'Вход', manager: 'Руководитель', country: 'Код страны (например, US, DE)' },
+    fields: { category: 'Отправить как', recipient: 'Получатель', identity: 'Identity письма', releaseTo: 'Кому выпустить', sender: 'Отправитель (адрес или домен)', subject: 'Тема содержит', since: 'Получено с (ГГГГ-ММ-ДД)', purgeType: 'Как удалить', policyType: 'Тип политики', policy: 'Имя политики', type: 'Перевести в', forwardTo: 'Пересылать кому', keepCopy: 'Оставлять копию в ящике', address: 'Адрес почты', automate: 'Приглашения на встречи', rule: 'Имя правила', mailbox: 'Ящик', delegate: 'Делегат', folder: 'Папка', access: 'Доступ', user: 'Пользователь', group: 'Группа', role: 'Как', op: 'Действие', sku: 'Лицензия', state: 'Вход', manager: 'Руководитель', country: 'Код страны (например, US, DE)' },
     user: {
       manager: { label: 'Назначить руководителя', hint: 'Кому подчиняется — текущий виден в предпросмотре.' },
       usageLocation: { label: 'Страна использования', hint: 'От неё зависит, какие лицензии можно выдать.', note: 'Двухбуквенный ISO-код. Пока поле пустое, выдача лицензии падает.' },
     },
-    options: { recoverable: 'С восстановлением', permanent: 'Безвозвратно', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', shared: 'Общий', regular: 'Ящик пользователя', set: 'Пересылать', clear: 'Отключить пересылку', yes: 'Да', no: 'Нет', AutoAccept: 'Принимать автоматически', AutoUpdate: 'Только под вопросом', None: 'Оставить делегату', enabled: 'Вкл.', disabled: 'Выкл.', calendar: 'Календарь', inbox: 'Входящие', AvailabilityOnly: 'Только занятость', LimitedDetails: 'Ограниченные сведения', Reviewer: 'Читатель', Author: 'Автор', Editor: 'Редактор', Owner: 'Владелец', none: 'Убрать доступ', blocked: 'Заблокировать', allowed: 'Разрешить', member: 'Участник', owner: 'Владелец', add: 'Добавить', remove: 'Убрать' },
+    options: { phishing: 'Фишинг', spam: 'Спам', malware: 'Вредонос', notJunk: 'Не спам', recipients: 'Исходным получателям', all: 'Всем получателям', recoverable: 'С восстановлением', permanent: 'Безвозвратно', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', shared: 'Общий', regular: 'Ящик пользователя', set: 'Пересылать', clear: 'Отключить пересылку', yes: 'Да', no: 'Нет', AutoAccept: 'Принимать автоматически', AutoUpdate: 'Только под вопросом', None: 'Оставить делегату', enabled: 'Вкл.', disabled: 'Выкл.', calendar: 'Календарь', inbox: 'Входящие', AvailabilityOnly: 'Только занятость', LimitedDetails: 'Ограниченные сведения', Reviewer: 'Читатель', Author: 'Автор', Editor: 'Редактор', Owner: 'Владелец', none: 'Убрать доступ', blocked: 'Заблокировать', allowed: 'Разрешить', member: 'Участник', owner: 'Владелец', add: 'Добавить', remove: 'Убрать' },
     changeFields: {
+      threatReport: 'отправка в Microsoft',
+      blockedSender: 'заблокированный отправитель',
+      quarantine: 'карантин',
       messagesInMailboxes: 'писем / ящиков',
       teamsPolicy: { meeting: 'политика собраний', messaging: 'политика сообщений', calling: 'политика звонков', appSetup: 'настройка приложений', appPermission: 'разрешения приложений' },
       signIn: 'вход',
@@ -1230,8 +1240,8 @@ const ru: Dict<typeof en> = {
       usageLocation: 'страна использования',
       group: { member: 'участник', owner: 'владелец' },
     },
-    notes: { purge: { recoverable: 'перенесены в Recoverable Items — можно вернуть', permanent: 'удалены безвозвратно — не вернуть' }, forwardKeepCopy: 'копия остаётся в ящике', forwardNoCopy: 'копия в ящике не остаётся', inheritedLicense: 'Выдана через группу — уберите пользователя из группы (или лицензию у группы).' },
-    values: { meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', Global: 'Global (стандартная)', shared: 'общий', regular: 'ящик пользователя', enabled: 'вкл.', disabled: 'выкл.', allowed: 'разрешён', blocked: 'заблокирован', active: 'активны', revoked: 'отозваны' },
+    notes: { purge: { recoverable: 'перенесены в Recoverable Items — можно вернуть', permanent: 'удалены безвозвратно — не вернуть', recoverableOverLimit: 'больше 100 на ящик: за один проход с восстановлением удаляется не больше 100 на ящик — запустите ещё раз для остальных' }, forwardKeepCopy: 'копия остаётся в ящике', forwardNoCopy: 'копия в ящике не остаётся', inheritedLicense: 'Выдана через группу — уберите пользователя из группы (или лицензию у группы).' },
+    values: { yes: 'да', no: 'нет', released: 'выпущено', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', Global: 'Global (стандартная)', shared: 'общий', regular: 'ящик пользователя', enabled: 'вкл.', disabled: 'выкл.', allowed: 'разрешён', blocked: 'заблокирован', active: 'активны', revoked: 'отозваны' },
     reasons: {
       pwshMissing: 'Нужен PowerShell 7 — установите его и проверьте снова в Настройки → PowerShell.',
       moduleMissing: 'Нужен модуль PowerShell {{module}} — установите его в Настройки → PowerShell.',

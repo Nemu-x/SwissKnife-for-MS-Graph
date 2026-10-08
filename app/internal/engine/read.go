@@ -12,6 +12,9 @@ type ReadResult struct {
 	Columns []string `json:"columns"`
 	Rows    []Row    `json:"rows"`
 	Backend Backend  `json:"backend"`
+	// Note is an optional line under the table (an i18n key + params), e.g.
+	// how many mailboxes a scan covered.
+	Note *Reason `json:"note,omitempty"`
 }
 
 // Reader is implemented by read actions (Danger Read). They answer with rows

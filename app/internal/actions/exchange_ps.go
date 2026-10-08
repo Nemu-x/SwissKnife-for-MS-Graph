@@ -31,7 +31,10 @@ var exchangeCmdlets = []string{
 
 // PowerShellCmdlets returns the allow-list per module family for the host pool.
 func PowerShellCmdlets() map[string][]string {
-	return map[string][]string{pwsh.FamilyExchange: exchangeCmdlets, pwsh.FamilyTeams: teamsCmdlets()}
+	return map[string][]string{
+		pwsh.FamilyExchange: append(append([]string{}, exchangeCmdlets...), securityCmdlets...),
+		pwsh.FamilyTeams:    teamsCmdlets(),
+	}
 }
 
 func exo(env engine.Env, cmdlet string, params map[string]any, sel ...string) ([]json.RawMessage, error) {
