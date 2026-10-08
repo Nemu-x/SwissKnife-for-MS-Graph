@@ -283,10 +283,26 @@ test('on-prem AD works without a tenant connection', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(String(e)))
   await page.goto('/')
-  await page.getByRole('button', { name: 'On-prem AD' }).click()
+  // Hidden until switched on: the connect page offers it.
+  await expect(page.getByRole('button', { name: 'On-prem AD', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Turn on On-prem AD' }).click()
+  await expect(page.getByRole('button', { name: 'On-prem AD', exact: true })).toBeVisible()
   await page.getByRole('button', { name: /Directory connection/ }).click()
   await expect(page.getByText('Not connected to a directory.')).toBeVisible()
   await page.getByRole('combobox').selectOption('none')
   await expect(page.getByText('crosses the network in clear text', { exact: false })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('an on-prem-only setup hides the Microsoft 365 pages and starts on AD', async ({ page }) => {
+  await stubWails(page)
+  await page.addInitScript(() => localStorage.setItem('workspaces', JSON.stringify({ cloud: false, onprem: true })))
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: /Directory connection/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Connect', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Users & Admin' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible()
   expect(errors).toEqual([])
 })

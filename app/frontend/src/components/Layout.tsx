@@ -6,6 +6,7 @@ import {
   ScrollText, TerminalSquare, Settings, Lock, Layers, ShieldAlert, History, ChevronDown, Search, ShieldHalf, Compass, Server,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
+import { pageEnabled } from '../lib/workspaces'
 import logo from '../assets/images/logo.png'
 import type { PageId } from '../pages/registry'
 
@@ -94,7 +95,7 @@ export function Layout({
   children: ReactNode
 }) {
   const { t } = useTranslation()
-  const { connected, status, readOnly, access, hideUnavailable } = useStore()
+  const { connected, status, readOnly, access, hideUnavailable, workspaces } = useStore()
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem('navCollapsed') || '{}') } catch { return {} }
@@ -107,7 +108,8 @@ export function Layout({
     })
   }
 
-  const itemVisible = (it: NavItem) => !hideUnavailable || !(it.id in access) || access[it.id] !== false
+  const itemVisible = (it: NavItem) => pageEnabled(it.id, workspaces) &&
+    (!hideUnavailable || !(it.id in access) || access[it.id] !== false)
 
   const renderItem = (it: NavItem) => {
     const active = page === it.id
@@ -169,12 +171,12 @@ export function Layout({
           })}
         </nav>
         <div className="border-t border-[var(--border)] px-4 py-3 text-xs">
-          <div className="flex items-center gap-1.5">
+          {workspaces.cloud && <div className="flex items-center gap-1.5">
             <span className={`h-2 w-2 rounded-full ${connected ? 'bg-[var(--ok)]' : 'bg-[var(--text-faint)]'}`} />
             <span className="truncate text-[var(--text-dim)]">
               {connected ? status?.profileName : t('common.notConnected')}
             </span>
-          </div>
+          </div>}
           {readOnly && (
             <div className="mt-1.5 flex items-center gap-1 text-[var(--warn)]">
               <Lock size={12} /> {t('safety.readOnly')}

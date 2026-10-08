@@ -10,7 +10,7 @@ import { api, errMessage, type Profile } from '../lib/api'
 
 export function ConnectPage() {
   const { t } = useTranslation()
-  const { status, setStatus, refreshStatus, connected, toast, loadDomains } = useStore()
+  const { status, setStatus, refreshStatus, connected, toast, loadDomains, workspaces, setWorkspaces, goTo } = useStore()
 
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [limitsFor, setLimitsFor] = useState<string | null>(null)
@@ -97,6 +97,15 @@ export function ConnectPage() {
 
   return (
     <Page title={t('connect.title')}>
+      {!workspaces.onprem && (
+        <p className="mb-3 text-xs text-[var(--text-faint)]">
+          {t('settings.workspaces.onpremOffHint')}{' '}
+          <button className="text-[var(--accent)] hover:underline"
+            onClick={() => { setWorkspaces({ ...workspaces, onprem: true }); goTo('onprem') }}>
+            {t('settings.workspaces.turnOnOnprem')}
+          </button>
+        </p>
+      )}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title={t('connect.profiles')}>
           {profiles.length === 0 && <p className="text-sm text-[var(--text-faint)]">{t('common.empty')}</p>}

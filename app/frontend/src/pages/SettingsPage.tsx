@@ -25,7 +25,7 @@ const SUPPORT_WALLETS: { asset: string; address: string }[] = [
 
 export function SettingsPage() {
   const { t, i18n } = useTranslation()
-  const { theme, toggleTheme, accent, setAccent, safeMode, setSafeMode, hideUnavailable, setHideUnavailable, checkAccess, readOnly, setStatus, connected, toast, cache, setCache } = useStore()
+  const { theme, toggleTheme, accent, setAccent, safeMode, setSafeMode, hideUnavailable, setHideUnavailable, checkAccess, readOnly, setStatus, connected, toast, cache, setCache, workspaces, setWorkspaces } = useStore()
   const [checkingAccess, setCheckingAccess] = useState(false)
   const [version, setVersion] = useState('')
   // The update check result and the recovery path below are one-time results:
@@ -169,6 +169,21 @@ export function SettingsPage() {
               <Lock size={15} /> {readOnly ? `${t('safety.readOnly')}: ON` : `${t('safety.readOnly')}: OFF`}
             </Button>
           )}
+        </Card>
+
+        <Card title={t('settings.workspaces.title')}>
+          <p className="text-xs text-[var(--text-faint)]">{t('settings.workspaces.hint')}</p>
+          {(['cloud', 'onprem'] as const).map((k) => (
+            <label key={k} className="mt-3 flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-1" checked={workspaces[k]}
+                disabled={workspaces[k] && !workspaces[k === 'cloud' ? 'onprem' : 'cloud']}
+                onChange={(e) => setWorkspaces({ ...workspaces, [k]: e.target.checked })} />
+              <span>
+                {t(`settings.workspaces.${k}`)}
+                <span className="block text-xs text-[var(--text-faint)]">{t(`settings.workspaces.${k}Hint`)}</span>
+              </span>
+            </label>
+          ))}
         </Card>
 
         <Card title={t('settings.access')}>

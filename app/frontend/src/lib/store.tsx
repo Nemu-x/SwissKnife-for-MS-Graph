@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode, useCall
 import { api, errMessage, type Status } from './api'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import i18n from '../i18n'
+import { loadWorkspaces, saveWorkspaces, type Workspaces } from './workspaces'
 import { applyAccent } from './color'
 import { humanBytes } from './format'
 
@@ -70,6 +71,9 @@ interface Store {
 
   safeMode: boolean
   setSafeMode: (v: boolean) => void
+  // Microsoft 365, on-prem AD or both (see lib/workspaces).
+  workspaces: Workspaces
+  setWorkspaces: (ws: Workspaces) => void
 
   access: Record<string, boolean>
   hideUnavailable: boolean
@@ -118,6 +122,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [theme, setTheme] = useState<Theme>((localStorage.getItem('theme') as Theme) || 'dark')
   const [safeMode, setSafeModeState] = useState<boolean>(localStorage.getItem('safeMode') !== 'false')
+  const [workspaces, setWorkspacesState] = useState<Workspaces>(loadWorkspaces)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [domains, setDomains] = useState<string[]>([])
   const [access, setAccess] = useState<Record<string, boolean>>(() => {
@@ -443,6 +448,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSafeMode: (v) => {
       setSafeModeState(v)
       localStorage.setItem('safeMode', String(v))
+    },
+    workspaces,
+    setWorkspaces: (ws) => {
+      if (!ws.cloud && !ws.onprem) return // one part always stays on
+      setWorkspacesState(ws)
+      saveWorkspaces(ws)
     },
     access,
     hideUnavailable,
