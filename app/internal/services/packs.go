@@ -32,6 +32,10 @@ func trustFile(s *session.Session) string { return filepath.Join(s.ConfigDir(), 
 func trustedScriptHashes() []string {
 	packMu.Lock()
 	defer packMu.Unlock()
+	return scriptHashesLocked()
+}
+
+func scriptHashesLocked() []string {
 	var out []string
 	for _, p := range loaded {
 		if !p.Usable() {
@@ -51,21 +55,23 @@ func reloadPacks(s *session.Session, e *engine.Engine) []packs.Pack {
 	if s.ConfigDir() == "" {
 		return nil
 	}
-	list := packs.Load(packsRoot(s), packs.LoadTrust(trustFile(s)))
-	before := strings.Join(trustedScriptHashes(), ",")
+	// One reload at a time: the engine's actions, the trusted scripts and
+	// the hosts must all come from the same load.
 	packMu.Lock()
+	defer packMu.Unlock()
+	list := packs.Load(packsRoot(s), packs.LoadTrust(trustFile(s)))
+	before := strings.Join(scriptHashesLocked(), ",")
 	loaded = list
-	packMu.Unlock()
-	e.SetPacks(packActions(list))
-	// Hosts know their trusted scripts from the start: restart them only
-	// when that set changed (a restart signs every module in again).
-	if pool, ok := e.PS.(*pwsh.Pool); ok && strings.Join(trustedScriptHashes(), ",") != before {
-		pool.Reset()
+	e.SetPacks(packActions(s, list))
+	// Pack hosts know their trusted scripts from the start: replace them
+	// (at their next use) only when that set changed.
+	if pool, ok := e.PS.(*pwsh.Pool); ok && strings.Join(scriptHashesLocked(), ",") != before {
+		pool.ResetPacks()
 	}
 	return list
 }
 
-func packActions(list []packs.Pack) []engine.Action {
+func packActions(s *session.Session, list []packs.Pack) []engine.Action {
 	var out []engine.Action
 	for _, p := range list {
 		if p.Status == packs.Invalid {
@@ -78,6 +84,8 @@ func packActions(list []packs.Pack) []engine.Action {
 				return &engine.Reason{Key: "packUntrusted"}
 			case packs.Changed:
 				return &engine.Reason{Key: "packChanged"}
+			case packs.Disabled:
+				return &engine.Reason{Key: "packDisabled"}
 			}
 			return nil
 		}
@@ -87,12 +95,13 @@ func packActions(list []packs.Pack) []engine.Action {
 				fields = append(fields, engine.Field{Name: f.Name, Kind: engine.FieldKind(f.Kind), Required: f.Required,
 					Options: f.Options, Default: f.Default, Label: f.Label})
 			}
-			impl := packImpl{def: d, script: p.Scripts[d.Script], family: pwsh.FamilyExchange, backend: pwsh.BackendExchangePS}
+			id := "pack." + p.Manifest.Name + "." + d.ID
+			impl := packImpl{s: s, id: id, def: d, script: p.Scripts[d.Script], family: pwsh.FamilyExchange, backend: pwsh.BackendExchangePS}
 			if d.Module == "teams" {
 				impl.family, impl.backend = pwsh.FamilyTeams, pwsh.BackendTeamsPS
 			}
 			a := engine.Action{
-				Manifest: engine.Manifest{ID: "pack." + p.Manifest.Name + "." + d.ID, Page: d.Page, Danger: engine.Danger(d.Danger),
+				Manifest: engine.Manifest{ID: id, Page: d.Page, Danger: engine.Danger(d.Danger),
 					Fields: fields, ConfirmField: d.ConfirmField, Label: d.Label, Hint: d.Hint, Pack: p.Manifest.Name},
 				Gate: gate,
 			}
@@ -111,6 +120,8 @@ func packActions(list []packs.Pack) []engine.Action {
 // read, plan or apply. Plan returns objects {target, field, op, before,
 // after, ref}; apply gets one of them back as $Change.
 type packImpl struct {
+	s       *session.Session
+	id      string
 	def     packs.ActionDef
 	script  string
 	family  string
@@ -119,7 +130,17 @@ type packImpl struct {
 
 func (p packImpl) Backend() engine.Backend { return p.backend }
 
-func (p packImpl) run(env engine.Env, mode string, in engine.Inputs, change map[string]any) ([]json.RawMessage, error) {
+func (p packImpl) run(env engine.Env, mode string, in engine.Inputs, change map[string]any) (out []json.RawMessage, err error) {
+	// Every mode runs the pack's code — a preview or a "read" included — so
+	// read-only mode stops all of them, and each run is audited.
+	if env.ReadOnly {
+		return nil, session.ErrReadOnly
+	}
+	if p.s != nil {
+		defer func() {
+			p.s.Record("pack.run", p.id, "mode="+mode+" script="+pwsh.ScriptHash(p.script)[:16], err)
+		}()
+	}
 	runner, ok := env.PS.(engine.ScriptRunner)
 	if !ok || env.PS == nil {
 		return nil, errors.New("PowerShell is not available")
@@ -306,6 +327,30 @@ func (x *PacksService) Trust(name, digest string) ([]PackInfo, error) {
 		return x.List()
 	}
 	return nil, fmt.Errorf("no loadable pack named %q", name)
+}
+
+// Disable turns a pack off, even a signed one; Enable undoes it.
+func (x *PacksService) Disable(name string) ([]PackInfo, error) { return x.setDisabled(name, true) }
+
+func (x *PacksService) Enable(name string) ([]PackInfo, error) { return x.setDisabled(name, false) }
+
+func (x *PacksService) setDisabled(name string, off bool) ([]PackInfo, error) {
+	t := packs.LoadTrust(trustFile(x.s))
+	kept := []string{}
+	for _, n := range t.Disabled {
+		if n != name {
+			kept = append(kept, n)
+		}
+	}
+	if off {
+		kept = append(kept, name)
+	}
+	t.Disabled = kept
+	if err := packs.SaveTrust(trustFile(x.s), t); err != nil {
+		return nil, err
+	}
+	x.s.Record("pack.disable", name, fmt.Sprintf("disabled=%v", off), nil)
+	return x.List()
 }
 
 // Untrust removes a pack's pin.

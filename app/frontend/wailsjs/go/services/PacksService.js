@@ -6,6 +6,14 @@ export function AddKey(arg1) {
   return window['go']['services']['PacksService']['AddKey'](arg1);
 }
 
+export function Disable(arg1) {
+  return window['go']['services']['PacksService']['Disable'](arg1);
+}
+
+export function Enable(arg1) {
+  return window['go']['services']['PacksService']['Enable'](arg1);
+}
+
 export function Keys() {
   return window['go']['services']['PacksService']['Keys']();
 }

@@ -28,10 +28,18 @@ func (e *Engine) checkPolicy(env Env, a Action, in Inputs) error {
 		return nil // tenant profile limits do not govern the on-prem directory
 	}
 	pol := e.s.Policy()
-	if !dangerAllowed(a.Danger, pol.MaxDanger) {
+	if !dangerAllowed(effectiveDanger(a), pol.MaxDanger) {
 		return &Error{Code: "policyDanger", Msg: fmt.Sprintf("this connection profile allows %s actions at most", pol.MaxDanger)}
 	}
-	if a.Danger == Read || len(pol.AllowedGroups) == 0 {
+	if len(pol.AllowedGroups) == 0 {
+		return nil
+	}
+	// A pack script can touch any object whatever its inputs name: under a
+	// group scope packs do not run at all.
+	if a.Pack != "" {
+		return &Error{Code: "policyUnscoped", Msg: "this connection profile may only change members of its groups, and action-pack scripts cannot be checked against them"}
+	}
+	if a.Danger == Read {
 		return nil
 	}
 	named := 0
@@ -129,4 +137,13 @@ func looksLikeID(v string) bool {
 		}
 	}
 	return true
+}
+
+// effectiveDanger is the danger the profile limits judge: a pack's own
+// "read" is a claim its script is not held to, so packs count as writes.
+func effectiveDanger(a Action) Danger {
+	if a.Pack != "" && a.Danger == Read {
+		return Write
+	}
+	return a.Danger
 }

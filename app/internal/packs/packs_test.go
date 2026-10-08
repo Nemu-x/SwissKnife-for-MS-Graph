@@ -121,3 +121,43 @@ func TestSamplePackIsValid(t *testing.T) {
 		t.Fatalf("sample pack: %+v", list)
 	}
 }
+
+func TestLookAlikesKeyHijackEncodingAndDisable(t *testing.T) {
+	// Two folders with one name: neither loads.
+	root := t.TempDir()
+	writePack(t, root, "a", manifest)
+	writePack(t, root, "0-copy", manifest)
+	for _, p := range Load(root, Trust{}) {
+		if p.Status != Invalid {
+			t.Fatalf("duplicate name must not load: %+v", p)
+		}
+	}
+
+	// A user key that claims the project key's id is ignored.
+	builtin := trustedKeys(nil)
+	var id [8]byte
+	for k := range builtin {
+		id = k
+	}
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	fake := base64.StdEncoding.EncodeToString(append(append([]byte("Ed"), id[:]...), pub...))
+	if keys := trustedKeys([]string{fake}); len(keys[id]) != 1 || keys[id][0].name != "SwissKnife project" {
+		t.Fatalf("project key shadowed: %+v", keys[id])
+	}
+
+	// Scripts must be UTF-8.
+	root = t.TempDir()
+	d := writePack(t, root, "p", manifest)
+	_ = os.WriteFile(filepath.Join(d, "holds.ps1"), []byte{0xFF, 0xFE, 'G', 0}, 0o644)
+	if p := Load(root, Trust{})[0]; p.Status != Invalid || !strings.Contains(p.Error, "UTF-8") {
+		t.Fatalf("UTF-16 script: %+v", p)
+	}
+
+	// A disabled pack stays off even when signed.
+	root = t.TempDir()
+	d = writePack(t, root, "p", manifest)
+	key := sign(t, d)
+	if p := Load(root, Trust{Keys: []string{key}, Disabled: []string{"contoso-tools"}})[0]; p.Status != Disabled || p.Usable() {
+		t.Fatalf("disabled pack: %+v", p)
+	}
+}

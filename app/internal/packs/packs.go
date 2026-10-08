@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jedisct1/go-minisign"
 	"gopkg.in/yaml.v3"
@@ -73,6 +74,7 @@ const (
 	Trusted   Status = "trusted"   // unsigned, contents pinned by the operator
 	Untrusted Status = "untrusted" // never trusted
 	Changed   Status = "changed"   // pinned contents differ from the folder
+	Disabled  Status = "disabled"  // turned off by the operator (even if signed)
 	Invalid   Status = "invalid"   // cannot be loaded (manifest, signature, files)
 )
 
@@ -93,8 +95,9 @@ func (p Pack) Usable() bool { return p.Status == Signed || p.Status == Trusted }
 
 // Trust is the operator's trust store (packs.json).
 type Trust struct {
-	Keys   []string          `json:"keys"`   // extra minisign public keys
-	Pinned map[string]string `json:"pinned"` // pack name → trusted digest
+	Keys     []string          `json:"keys"`               // extra minisign public keys
+	Pinned   map[string]string `json:"pinned"`             // pack name → trusted digest
+	Disabled []string          `json:"disabled,omitempty"` // pack names turned off
 }
 
 var (
@@ -109,7 +112,16 @@ var Pages = map[string]bool{"users": true, "groups": true, "teams": true, "mail"
 // Digest hashes every file of the pack except the signature files: one line
 // per file ("path\x00sha256\n", sorted, forward slashes), hashed again.
 func Digest(dir string) (string, error) {
+	d, _, err := readPack(dir)
+	return d, err
+}
+
+// readPack reads every file once and returns the digest with the bytes it
+// was computed from: the manifest and scripts are parsed from these same
+// bytes, so what was digested (signed, pinned) is exactly what runs.
+func readPack(dir string) (string, map[string][]byte, error) {
 	var lines []string
+	files := map[string][]byte{}
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -132,16 +144,17 @@ func Digest(dir string) (string, error) {
 		if err != nil {
 			return err
 		}
+		files[rel] = b
 		sum := sha256.Sum256(b)
 		lines = append(lines, rel+"\x00"+hex.EncodeToString(sum[:])+"\n")
 		return nil
 	})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	sort.Strings(lines)
 	sum := sha256.Sum256([]byte(strings.Join(lines, "")))
-	return hex.EncodeToString(sum[:]), nil
+	return hex.EncodeToString(sum[:]), files, nil
 }
 
 // Load reads every pack under root and decides its status.
@@ -150,54 +163,74 @@ func Load(root string, trust Trust) []Pack {
 	if err != nil {
 		return nil
 	}
-	keys := map[string]minisign.PublicKey{}
-	for _, k := range append([]string{BuiltinKey}, trust.Keys...) {
-		if pk, err := minisign.NewPublicKey(strings.TrimSpace(k)); err == nil {
-			keys[keyID(pk)] = pk
-		}
-	}
+	keys := trustedKeys(trust.Keys)
 	var out []Pack
-	seen := map[string]bool{}
+	count := map[string]int{}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
 		p := loadOne(filepath.Join(root, e.Name()), trust, keys)
-		if p.Status != Invalid {
-			if seen[p.Manifest.Name] {
-				p.Status, p.Error = Invalid, "another pack has the same name"
-			}
-			seen[p.Manifest.Name] = true
-		}
+		count[p.Manifest.Name]++
 		out = append(out, p)
+	}
+	// Two folders claiming one name: neither loads, so a look-alike can
+	// never stand in for the real pack.
+	for i := range out {
+		if out[i].Manifest.Name != "" && count[out[i].Manifest.Name] > 1 {
+			out[i].Status, out[i].Error = Invalid, "another pack folder has the same name — remove one"
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Dir < out[j].Dir })
 	return out
 }
 
-func keyID(pk minisign.PublicKey) string {
-	b, _ := json.Marshal(pk.KeyId)
-	return string(b)
+// signingKey is a trusted key and how it is shown.
+type signingKey struct {
+	key  minisign.PublicKey
+	name string
 }
 
-func loadOne(dir string, trust Trust, keys map[string]minisign.PublicKey) Pack {
+func trustedKeys(user []string) map[[8]byte][]signingKey {
+	keys := map[[8]byte][]signingKey{}
+	builtin, _ := minisign.NewPublicKey(BuiltinKey)
+	keys[builtin.KeyId] = []signingKey{{builtin, "SwissKnife project"}}
+	for _, k := range user {
+		pk, err := minisign.NewPublicKey(strings.TrimSpace(k))
+		if err != nil || pk.KeyId == builtin.KeyId {
+			continue // never shadows the project's key
+		}
+		keys[pk.KeyId] = append(keys[pk.KeyId], signingKey{pk, fmt.Sprintf("%X", pk.KeyId)})
+	}
+	return keys
+}
+
+func loadOne(dir string, trust Trust, keys map[[8]byte][]signingKey) Pack {
 	p := Pack{Dir: dir, Status: Invalid}
 	fail := func(format string, a ...any) Pack {
 		p.Status, p.Error = Invalid, fmt.Sprintf(format, a...)
 		return p
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, ManifestFile))
+	digest, files, err := readPack(dir)
 	if err != nil {
+		return fail("%v", err)
+	}
+	p.Digest = digest
+	raw, ok := files[ManifestFile]
+	if !ok {
 		return fail("no %s", ManifestFile)
 	}
 	if err := yaml.Unmarshal(raw, &p.Manifest); err != nil {
 		return fail("manifest: %v", err)
 	}
-	if p.Digest, err = Digest(dir); err != nil {
+	if p.Scripts, err = validate(files, &p.Manifest); err != nil {
 		return fail("%v", err)
 	}
-	if p.Scripts, err = validate(dir, &p.Manifest); err != nil {
-		return fail("%v", err)
+	for _, n := range trust.Disabled {
+		if n == p.Manifest.Name {
+			p.Status = Disabled
+			return p
+		}
 	}
 	// A signature, when present, must verify: a pack is never downgraded
 	// from "signed" to "pinned" silently.
@@ -220,7 +253,7 @@ func loadOne(dir string, trust Trust, keys map[string]minisign.PublicKey) Pack {
 	return p
 }
 
-func verify(dir, digest string, keys map[string]minisign.PublicKey) (string, error) {
+func verify(dir, digest string, keys map[[8]byte][]signingKey) (string, error) {
 	msg, err := os.ReadFile(filepath.Join(dir, DigestFile))
 	if err != nil {
 		return "", fmt.Errorf("%s is missing", DigestFile)
@@ -232,19 +265,20 @@ func verify(dir, digest string, keys map[string]minisign.PublicKey) (string, err
 	if err != nil {
 		return "", err
 	}
-	b, _ := json.Marshal(sig.KeyId)
-	pk, ok := keys[string(b)]
+	candidates, ok := keys[sig.KeyId]
 	if !ok {
 		return "", errors.New("signed by an unknown key — add the author's public key to trust it")
 	}
-	if ok, err := pk.Verify(msg, sig); err != nil || !ok {
-		return "", errors.New("invalid signature")
+	for _, k := range candidates {
+		if ok, err := k.key.Verify(msg, sig); err == nil && ok {
+			return k.name, nil
+		}
 	}
-	return fmt.Sprintf("%X", sig.KeyId), nil
+	return "", errors.New("invalid signature")
 }
 
 // validate checks the manifest and returns the scripts it uses.
-func validate(dir string, m *Manifest) (map[string]string, error) {
+func validate(files map[string][]byte, m *Manifest) (map[string]string, error) {
 	if !nameRe.MatchString(m.Name) {
 		return nil, errors.New("name: lowercase letters, digits and dashes (2-40)")
 	}
@@ -298,9 +332,14 @@ func validate(dir string, m *Manifest) (map[string]string, error) {
 			return nil, fmt.Errorf("%s: script must be a .ps1 file in the pack", a.ID)
 		}
 		if _, ok := scripts[rel]; !ok {
-			b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
-			if err != nil {
-				return nil, fmt.Errorf("%s: %v", a.ID, err)
+			b, ok := files[rel]
+			if !ok {
+				return nil, fmt.Errorf("%s: script %s not found", a.ID, rel)
+			}
+			// The host hashes the UTF-8 text it receives: anything else
+			// would look trusted here and be refused there.
+			if len(b) >= 2 && (b[0] == 0xFF && b[1] == 0xFE || b[0] == 0xFE && b[1] == 0xFF) || !utf8.Valid(b) {
+				return nil, fmt.Errorf("%s: save the script as UTF-8", rel)
 			}
 			scripts[rel] = strings.TrimPrefix(string(b), string(rune(0xFEFF)))
 		}

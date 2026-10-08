@@ -36,6 +36,7 @@ type entry struct {
 	host       *Host
 	conn       *graphapi.Client // connection the host is signed in for
 	validUntil time.Time        // zero = not signed in
+	stale      bool             // replace at next use (pack trust changed)
 }
 
 // Pool keeps one signed-in host per module family for the current connection
@@ -100,16 +101,23 @@ func isAuthError(err error) bool {
 }
 
 // expire forces the next call to sign the host in again.
-func (p *Pool) expire(family string, h *Host) {
+func (p *Pool) expire(key string, h *Host) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if e := p.hosts[family]; e != nil && e.host == h {
+	if e := p.hosts[key]; e != nil && e.host == h {
 		e.validUntil = time.Time{}
 	}
 }
 
 // host returns a connected host, (re)starting or reconnecting as needed.
-func (p *Pool) host(env engine.Env, family string) (*Host, error) {
+// packSuffix keys the hosts that run action-pack scripts: a pack gets its own
+// process, so its code can never shadow a cmdlet or widen the allow-list of
+// the hosts built-in actions use.
+const packSuffix = "/pack"
+
+func (p *Pool) host(env engine.Env, key string) (*Host, error) {
+	family := strings.TrimSuffix(key, packSuffix)
+	isPack := key != family
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// A call from a connection that already ended must not touch the pool —
@@ -117,10 +125,10 @@ func (p *Pool) host(env engine.Env, family string) (*Host, error) {
 	if p.closed[env.Graph] {
 		return nil, errors.New("disconnected")
 	}
-	e := p.hosts[family]
-	if e != nil && (!e.host.Alive() || e.conn != env.Graph) {
+	e := p.hosts[key]
+	if e != nil && (!e.host.Alive() || e.conn != env.Graph || e.stale) {
 		e.host.Close()
-		delete(p.hosts, family)
+		delete(p.hosts, key)
 		e = nil
 	}
 	if e == nil {
@@ -129,11 +137,16 @@ func (p *Pool) host(env engine.Env, family string) (*Host, error) {
 			return nil, errors.New("PowerShell 7.2 or later is not installed")
 		}
 		gen := p.gen
-		var scripts []string
-		if p.Scripts != nil {
-			scripts = p.Scripts()
+		// Built-in hosts run allow-listed cmdlets only; pack hosts run trusted
+		// scripts only.
+		allow, scripts := p.allow[family], []string(nil)
+		if isPack {
+			allow = nil
+			if p.Scripts != nil {
+				scripts = p.Scripts()
+			}
 		}
-		h, err := p.start(pe.Exe, p.allow[family], scripts)
+		h, err := p.start(pe.Exe, allow, scripts)
 		if err != nil {
 			return nil, err
 		}
@@ -142,7 +155,7 @@ func (p *Pool) host(env engine.Env, family string) (*Host, error) {
 			return nil, errors.New("disconnected")
 		}
 		e = &entry{host: h, conn: env.Graph}
-		p.hosts[family] = e
+		p.hosts[key] = e
 	}
 	if e.validUntil.IsZero() || p.now().After(e.validUntil) {
 		params, err := connectParams(env, family)
@@ -154,7 +167,7 @@ func (p *Pool) host(env engine.Env, family string) (*Host, error) {
 		cancel()
 		if err != nil {
 			if !e.host.Alive() {
-				delete(p.hosts, family)
+				delete(p.hosts, key)
 			}
 			return nil, err
 		}
@@ -181,12 +194,12 @@ func signInValidUntil(token any, now time.Time) time.Time {
 	return now.Add(fallbackTTL)
 }
 
-func (p *Pool) drop(family string, h *Host) {
+func (p *Pool) drop(key string, h *Host) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if e := p.hosts[family]; e != nil && e.host == h {
+	if e := p.hosts[key]; e != nil && e.host == h {
 		h.Close()
-		delete(p.hosts, family)
+		delete(p.hosts, key)
 	}
 }
 
@@ -210,23 +223,33 @@ func (p *Pool) CloseFor(conn *graphapi.Client) {
 // RunScript implements engine.ScriptRunner: a trusted pack script in the
 // family's signed-in host. Not retried: it may write.
 func (p *Pool) RunScript(env engine.Env, family, script string, params map[string]any) ([]json.RawMessage, error) {
-	h, err := p.host(env, family)
+	key := family + packSuffix
+	h, err := p.host(env, key)
 	if err != nil {
 		return nil, err
 	}
 	out, err := h.RunScript(env.Ctx, script, params)
 	if errors.Is(err, ErrHostExited) || !h.Alive() {
-		p.drop(family, h)
+		p.drop(key, h)
 	}
 	if isAuthError(err) {
-		p.expire(family, h)
+		p.expire(key, h)
 	}
 	return out, err
 }
 
-// Reset stops every host so the next call starts one with the current
-// trusted scripts.
-func (p *Pool) Reset() { p.Close() }
+// ResetPacks marks the pack hosts stale: each is replaced, with the current
+// trusted scripts, at its next use. Built-in hosts and running calls are
+// not touched.
+func (p *Pool) ResetPacks() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for k, e := range p.hosts {
+		if strings.HasSuffix(k, packSuffix) {
+			e.stale = true
+		}
+	}
+}
 
 // Close stops every host (shutdown).
 func (p *Pool) Close() {

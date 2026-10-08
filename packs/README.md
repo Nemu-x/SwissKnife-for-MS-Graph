@@ -20,7 +20,20 @@ A pack runs only when one of these holds:
 - you **reviewed and trusted** its exact contents — any later change to any
   file makes its actions unavailable until you trust it again.
 
-Pack scripts run with your admin connection. Read them before trusting.
+Pack scripts are **full PowerShell** running in an Exchange Online or Teams
+session signed in with your admin connection — they are not limited to the
+cmdlets built-in actions may use. Read them before trusting. In return the app
+keeps them on a short leash:
+
+- they run in their own PowerShell process, apart from the built-in actions;
+- every run (a preview and a "read" included) is blocked in read-only mode and
+  written to the audit log;
+- profile limits treat every pack action as at least a change, and a profile
+  limited to groups runs no packs at all;
+- a signed pack can still be turned off in Settings.
+
+Changes to a pack folder take effect when the packs are reloaded (opening
+Settings → Action packs, *Reload*, or restarting the app).
 
 ## Manifest
 
@@ -41,7 +54,8 @@ Pack scripts run with your admin connection. Read them before trusting.
 `param($Mode, $Inputs, $Change)`
 
 - `read` — return objects; their properties are the table's columns.
-- `plan` — change nothing; return `{target, field, op, before, after, ref}`
+- `plan` — must change nothing (the app cannot enforce this — it is why a
+  pack needs your trust); return `{target, field, op, before, after, ref}`
   objects (`op`: `set`, `add`, `remove` or `none`). The app previews them.
 - `apply` — called once per planned change with it as `$Change`.
 

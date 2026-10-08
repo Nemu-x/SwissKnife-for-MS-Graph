@@ -65,7 +65,7 @@ func TestPackActionsNeedTrustAndRunThroughTheScriptHost(t *testing.T) {
 	fake := &fakeScripts{}
 	e.PS = fake
 	list := packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))
-	e.SetPacks(packActions(list))
+	e.SetPacks(packActions(sess, list))
 
 	entry := func() engine.CatalogEntry {
 		for _, c := range e.Catalog() {
@@ -87,7 +87,7 @@ func TestPackActionsNeedTrustAndRunThroughTheScriptHost(t *testing.T) {
 	if err := packs.SaveTrust(trustFile(sess), packs.Trust{Pinned: map[string]string{"contoso-tools": list[0].Digest}}); err != nil {
 		t.Fatal(err)
 	}
-	e.SetPacks(packActions(packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
+	e.SetPacks(packActions(sess, packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
 	if c := entry(); !c.Available {
 		t.Fatalf("trusted pack: %+v", c)
 	}
@@ -111,11 +111,68 @@ func TestPackActionsNeedTrustAndRunThroughTheScriptHost(t *testing.T) {
 
 	// Editing the script after trusting it makes the action unavailable.
 	_ = os.WriteFile(filepath.Join(pack, "hold.ps1"), []byte("Remove-Mailbox *"), 0o644)
-	e.SetPacks(packActions(packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
+	e.SetPacks(packActions(sess, packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
 	if c := entry(); c.Available || c.Reason.Key != "packChanged" {
 		t.Fatalf("changed pack: %+v", c)
 	}
 	if _, err := e.Plan("pack.contoso-tools.setHold", engine.Inputs{"mailbox": "x"}); err == nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("a changed pack must not run: %v", err)
+	}
+}
+
+const readManifest = `name: contoso-read
+version: 1.0.0
+actions:
+  - id: holds
+    page: reports
+    danger: read
+    module: exo
+    script: holds.ps1
+    label: { en: Holds }
+`
+
+// A pack's "read" runs a script: read-only mode, a read-only profile and a
+// group scope all stop it, and every run is audited.
+func TestPackReadsAreGuardedLikeWrites(t *testing.T) {
+	dir := t.TempDir()
+	logDir := t.TempDir()
+	sess := session.New(auditlog.New(logDir))
+	sess.SetConfigDir(dir)
+	sess.SetClient(graphapi.New(graphapi.StaticToken("t")), "test")
+	pack := filepath.Join(dir, "actions", "r")
+	_ = os.MkdirAll(pack, 0o755)
+	_ = os.WriteFile(filepath.Join(pack, packs.ManifestFile), []byte(readManifest), 0o644)
+	_ = os.WriteFile(filepath.Join(pack, "holds.ps1"), []byte("param($Mode)"), 0o644)
+	list := packs.Load(packsRoot(sess), packs.Trust{})
+	_ = packs.SaveTrust(trustFile(sess), packs.Trust{Pinned: map[string]string{"contoso-read": list[0].Digest}})
+
+	e := engine.New(sess, readyPS{})
+	fake := &fakeScripts{reply: []string{`{"name":"Ann"}`}}
+	e.PS = fake
+	e.SetPacks(packActions(sess, packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
+	const id = "pack.contoso-read.holds"
+
+	if res, err := e.Run(t.Context(), id, nil); err != nil || len(res.Rows) != 1 {
+		t.Fatalf("trusted read: %+v %v", res, err)
+	}
+	sess.SetReadOnly(true)
+	if _, err := e.Run(t.Context(), id, nil); err == nil {
+		t.Fatal("read-only mode must stop pack scripts")
+	}
+	sess.SetReadOnly(false)
+	sess.SetPolicy("p", session.Policy{MaxDanger: "read"})
+	if _, err := e.Run(t.Context(), id, nil); err == nil {
+		t.Fatal("a read-only profile must not run pack scripts")
+	}
+	sess.SetPolicy("p", session.Policy{AllowedGroups: []string{"g1"}})
+	if _, err := e.Run(t.Context(), id, nil); err == nil || !strings.Contains(err.Error(), "action-pack") {
+		t.Fatalf("a group scope must refuse packs: %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("refused runs must not reach PowerShell: %d", len(fake.calls))
+	}
+	b, _ := os.ReadFile(sess.Audit.Path())
+	if !strings.Contains(string(b), "pack.run") {
+		t.Fatal("pack runs must be audited")
 	}
 }

@@ -61,6 +61,13 @@ func (e *Engine) Run(ctx context.Context, actionID string, in Inputs) (*ReadResu
 	if impl == nil {
 		return nil, &Error{Code: "unavailable", Msg: "action unavailable: " + reason.Key}
 	}
+	// Built-in reads are reads; a pack's "read" runs a script, so the
+	// profile limits apply to it like to a write.
+	if a.Pack != "" {
+		if err := e.checkPolicy(e.env(ctx), a, in); err != nil {
+			return nil, err
+		}
+	}
 	r, ok := impl.(readerImpl)
 	if !ok {
 		return nil, errReadOnlyAction

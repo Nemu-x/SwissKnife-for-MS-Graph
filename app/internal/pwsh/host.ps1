@@ -13,8 +13,10 @@
 # was in the init request: the trust decision is made before the host starts.
 # Replies: {"id":N,"ok":true,"data":[...]} or {"id":N,"ok":false,"error":{...}}
 #
-# Only allow-listed cmdlets run, and parameters are splatted from the decoded
-# object — input values are never parsed as PowerShell.
+# A host either runs allow-listed cmdlets (built-in actions) or trusted pack
+# scripts (its own process, started with an empty allow-list) — never both.
+# Parameters are splatted from the decoded object: input values are never
+# parsed as PowerShell.
 
 # The console code page (866 on Russian Windows, 437 in the US) would garble
 # every non-ASCII name in both directions: the protocol is UTF-8.
@@ -73,6 +75,7 @@ while ($true) {
                         elseif ($req.delegatedOrg) { $p.DelegatedOrganization = $req.delegatedOrg }
                         else { $p.Organization = $req.organization }
                         Connect-ExchangeOnline @p | Out-Null
+                        Remove-Variable p
                     }
                     'ipps' {
                         Import-Module ExchangeOnlineManagement
@@ -81,6 +84,7 @@ while ($true) {
                         elseif ($req.delegatedOrg) { $p.DelegatedOrganization = $req.delegatedOrg }
                         else { $p.Organization = $req.organization }
                         Connect-IPPSSession @p | Out-Null
+                        Remove-Variable p
                     }
                     'teams' {
                         Import-Module MicrosoftTeams

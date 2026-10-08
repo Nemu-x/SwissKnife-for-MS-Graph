@@ -15,7 +15,8 @@ switch ($Mode) {
             op     = $op
             before = $before
             after  = $Inputs.state
-            ref    = @{ id = [string]$m.ExternalDirectoryObjectId }
+            # The object id when Exchange knows it, else the address.
+            ref    = @{ id = $(if ($m.ExternalDirectoryObjectId) { [string]$m.ExternalDirectoryObjectId } else { [string]$m.PrimarySmtpAddress }) }
         }
     }
     'apply' {

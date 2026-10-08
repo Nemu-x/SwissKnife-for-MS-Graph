@@ -264,7 +264,7 @@ func (e *Engine) Catalog() []CatalogEntry {
 		entry := CatalogEntry{Manifest: a.Manifest, FanOut: graphReader(a) != nil}
 		impl, reason := e.resolve(a)
 		switch {
-		case !onDirectory(a) && !dangerAllowed(a.Danger, e.s.Policy().MaxDanger):
+		case !onDirectory(a) && !dangerAllowed(effectiveDanger(a), e.s.Policy().MaxDanger):
 			entry.Reason = &Reason{Key: "policy"}
 		case impl != nil:
 			entry.Available, entry.Backend = true, impl.Backend()
@@ -459,6 +459,13 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 	a, err := e.lookup(p.ActionID)
 	if err != nil {
 		return nil, err
+	}
+	// A pack may have lost its trust since the preview.
+	if a.Gate != nil {
+		if r := a.Gate(); r != nil {
+			e.plans.drop(planID)
+			return nil, &Error{Code: "unavailable", Msg: "action unavailable: " + r.Key}
+		}
 	}
 	// The plan holds object ids of the connection it was computed on (the
 	// tenant, or the on-prem directory): a disconnect or a switch invalidates it.

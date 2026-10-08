@@ -4,6 +4,10 @@ import {services} from '../models';
 
 export function AddKey(arg1:string):Promise<Array<string>>;
 
+export function Disable(arg1:string):Promise<Array<services.PackInfo>>;
+
+export function Enable(arg1:string):Promise<Array<services.PackInfo>>;
+
 export function Keys():Promise<Array<string>>;
 
 export function List():Promise<Array<services.PackInfo>>;

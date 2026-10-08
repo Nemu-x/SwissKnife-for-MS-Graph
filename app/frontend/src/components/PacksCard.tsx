@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderOpen, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Trash2 } from 'lucide-react'
+import { FolderOpen, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Trash2, Power } from 'lucide-react'
 import { Card, Button, Badge, Input } from './ui'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
@@ -8,13 +8,13 @@ import { localized } from './CatalogAction'
 
 type Pack = {
   name: string; version: string; author: string; description: string; dir: string
-  status: 'signed' | 'trusted' | 'untrusted' | 'changed' | 'invalid'
+  status: 'signed' | 'trusted' | 'untrusted' | 'changed' | 'disabled' | 'invalid'
   signer?: string; error?: string; digest: string
   actions: { id: string; label: Record<string, string>; page: string; danger: string; module: string }[]
 }
 
 const KIND: Record<Pack['status'], 'ok' | 'warn' | 'danger' | 'neutral'> = {
-  signed: 'ok', trusted: 'ok', untrusted: 'neutral', changed: 'warn', invalid: 'danger',
+  signed: 'ok', trusted: 'ok', untrusted: 'neutral', changed: 'warn', disabled: 'neutral', invalid: 'danger',
 }
 
 // Community action packs (ADR-008): what is installed, whether it is trusted,
@@ -79,9 +79,17 @@ export function PacksCard() {
                 <Button variant="primary" onClick={() => act(() => api.packs.trust(p.name, p.digest))}><ShieldCheck size={14} /> {t('packs.trust')}</Button>
               </div>
             )}
-            {p.status === 'trusted' && (
-              <Button variant="ghost" className="mt-2" onClick={() => act(() => api.packs.untrust(p.name))}><ShieldOff size={14} /> {t('packs.untrust')}</Button>
-            )}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {p.status === 'trusted' && (
+                <Button variant="ghost" onClick={() => act(() => api.packs.untrust(p.name))}><ShieldOff size={14} /> {t('packs.untrust')}</Button>
+              )}
+              {(p.status === 'signed' || p.status === 'trusted') && (
+                <Button variant="ghost" onClick={() => act(() => api.packs.disable(p.name))}><Power size={14} /> {t('packs.disable')}</Button>
+              )}
+              {p.status === 'disabled' && (
+                <Button variant="subtle" onClick={() => act(() => api.packs.enable(p.name))}><Power size={14} /> {t('packs.enable')}</Button>
+              )}
+            </div>
           </div>
         ))}
       </div>
