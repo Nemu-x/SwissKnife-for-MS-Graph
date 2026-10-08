@@ -141,7 +141,14 @@ func (p *PlaybookService) Compromised(req CompromisedRequest) (*CompromisedResul
 			if err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("%v method(s) removed", out["removed"]), nil
+			detail := fmt.Sprintf("%v method(s) removed", out["removed"])
+			// A method left behind is a way back in for the attacker.
+			if failures, _ := out["failures"].(map[string]string); len(failures) > 0 {
+				for kind, msg := range failures {
+					return detail, fmt.Errorf("%d method(s) could not be removed (e.g. %s: %s)", len(failures), kind, msg)
+				}
+			}
+			return detail, nil
 		})
 	}
 	if req.ClearForwarding && !r.stop() {
