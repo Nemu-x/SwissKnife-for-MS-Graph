@@ -321,17 +321,22 @@ test('every screen opens and every tile can be clicked without crashing', async 
   const names = await page.locator('nav button').evaluateAll((els) =>
     els.filter((e) => !e.hasAttribute('aria-expanded')).map((e) => (e.textContent || '').trim()))
   expect(names.length).toBeGreaterThan(20)
+  expect(names).toContain('Usage reports')
   const crashed = page.getByText('This page ran into a problem')
   for (const name of names) {
-    const open = () => page.locator('nav button').filter({ hasText: name }).first().click()
+    // Catalog tiles arrive after the page: wait until they are in.
+    const open = async () => {
+      await page.locator('nav button').filter({ hasText: name }).first().click()
+      await expect(page.locator('main h1').first(), name).toBeVisible()
+      await expect(page.locator('main [data-catalog-ready="false"]'), name).toHaveCount(0)
+    }
     await open()
-    await expect(page.locator('main h1').first(), name).toBeVisible()
     await expect(crashed, name).toHaveCount(0)
     const tiles = await page.locator('main [data-tile]').evaluateAll((els) =>
       els.filter((e) => e.getAttribute('aria-disabled') !== 'true').map((e) => e.getAttribute('data-tile')))
     for (const id of tiles) {
       await page.locator(`main [data-tile="${id}"]`).first().click()
-      await page.waitForTimeout(30)
+      await expect(page.locator('main h1').first(), `${name} → ${id}`).toBeVisible()
       await expect(crashed, `${name} → ${id}`).toHaveCount(0)
       expect(errors, `${name} → ${id}`).toEqual([])
       await open() // back to a clean page (a tile may navigate or open a panel)
