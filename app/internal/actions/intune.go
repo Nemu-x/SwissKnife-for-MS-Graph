@@ -90,10 +90,17 @@ func listPolicies(env engine.Env, fams []policyFamily) ([]intunePolicy, []string
 			case errors.As(err, &ge) && ge.StatusCode == 403:
 				denied = append(denied, f.kind)
 				continue
-			case errors.As(err, &ge) && (ge.StatusCode == 400 || ge.StatusCode == 404):
-				continue
+			case f.beta && errors.As(err, &ge) && (ge.StatusCode == 400 || ge.StatusCode == 404):
+				continue // a beta collection this tenant does not offer
+			case errors.As(err, &ge) && ge.StatusCode == 400 && f.filter != "":
+				// The filter is an optimisation; read the family without it.
+				raw, err = env.Graph.ListAll(env.Ctx, path, url.Values{"$expand": {"assignments"}}, 0)
+				if err != nil {
+					return nil, nil, err
+				}
+			default:
+				return nil, nil, err
 			}
-			return nil, nil, err
 		}
 		for _, r := range raw {
 			var p map[string]json.RawMessage
@@ -183,8 +190,13 @@ func (graphAssignedTo) Read(env engine.Env, in engine.Inputs) (*engine.ReadResul
 		return nil, err
 	}
 	res := &engine.ReadResult{Columns: []string{"kind", "policy", "via", "effect"}, Note: deniedNote(denied)}
-	if res.Note == nil && forUser {
-		res.Note = &engine.Reason{Key: "intuneUserGroupsOnly"}
+	if forUser {
+		// Both caveats matter; the user-groups one most when others apply.
+		if res.Note != nil {
+			res.Note.Key = "intuneDeniedUserGroupsOnly"
+		} else {
+			res.Note = &engine.Reason{Key: "intuneUserGroupsOnly"}
+		}
 	}
 	for _, p := range policies {
 		for _, a := range p.Assignments {
@@ -333,6 +345,8 @@ func findPolicy(env engine.Env, in engine.Inputs) (*intunePolicy, error) {
 // as it is (filters included), with the group's include target added or
 // removed. /assign replaces the whole list, so nothing may be lost here.
 func rebuild(p *intunePolicy, groupID, op string) (next []map[string]json.RawMessage, has bool, err error) {
+	// Never nil: removing the last assignment must send [], not null.
+	next = make([]map[string]json.RawMessage, 0, len(p.Assignments)+1)
 	for _, a := range p.Assignments {
 		t := a.view()
 		if t.GroupID == groupID {

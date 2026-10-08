@@ -150,3 +150,15 @@ func TestIntuneReportsSayWhatTheyCouldNotRead(t *testing.T) {
 		t.Fatalf("note %+v", res.Note)
 	}
 }
+
+func TestIntuneRemovingTheLastAssignmentSendsAnEmptyList(t *testing.T) {
+	p := &intunePolicy{Assignments: []intuneAssignment{{Target: json.RawMessage(`{"@odata.type":"#microsoft.graph.groupAssignmentTarget","groupId":"g1"}`)}}}
+	next, _, err := rebuild(p, "g1", "remove")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(map[string]any{"assignments": next})
+	if string(b) != `{"assignments":[]}` {
+		t.Fatalf("body %s", b)
+	}
+}
