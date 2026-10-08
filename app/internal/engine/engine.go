@@ -249,6 +249,19 @@ func (e *Engine) resolve(a Action) (Impl, *Reason) {
 	return nil, first
 }
 
+// Env is the environment implementations get, for callers outside the
+// catalog that reuse the engine's connections (snapshot collectors).
+func (e *Engine) Env(ctx context.Context) Env { return e.env(ctx) }
+
+// BackendStatus reports whether a backend can run now (nil = available).
+func (e *Engine) BackendStatus(b Backend) *Reason {
+	p, ok := e.providers[b]
+	if !ok {
+		return &Reason{Key: "backendMissing", Params: map[string]string{"backend": string(b)}}
+	}
+	return p.Status(e.s)
+}
+
 func (e *Engine) env(ctx context.Context) Env {
 	c, _ := e.s.Client()
 	return Env{Ctx: ctx, Graph: c, Tokens: e.s.Tokens(), TenantID: e.s.TenantID(), AppOnly: e.s.AppOnly(), PS: e.PS, ReadOnly: e.s.ReadOnly()}
