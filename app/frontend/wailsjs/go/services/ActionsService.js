@@ -26,8 +26,16 @@ export function InstallModule(arg1) {
   return window['go']['services']['ActionsService']['InstallModule'](arg1);
 }
 
+export function InstallPowerShell() {
+  return window['go']['services']['ActionsService']['InstallPowerShell']();
+}
+
 export function Plan(arg1, arg2) {
   return window['go']['services']['ActionsService']['Plan'](arg1, arg2);
+}
+
+export function PowerShellInstallMethod() {
+  return window['go']['services']['ActionsService']['PowerShellInstallMethod']();
 }
 
 export function PowerShellStatus() {

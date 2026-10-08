@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"swissknife-app/internal/actions"
@@ -164,6 +165,29 @@ func (a *ActionsService) PowerShellStatus() PowerShellStatus {
 // InstallModule installs a supported module for the current user (minutes).
 func (a *ActionsService) InstallModule(name string) (PowerShellStatus, error) {
 	err := psDetector.Install(a.s.Ctx(), name)
+	return a.PowerShellStatus(), err
+}
+
+// installingPwsh lets one PowerShell installation run at a time.
+var installingPwsh atomic.Bool
+
+// PowerShellInstallMethod says whether the app can install PowerShell 7 here
+// and, if not, what to run by hand.
+func (a *ActionsService) PowerShellInstallMethod() pwsh.InstallMethod { return pwsh.Method() }
+
+// InstallPowerShell downloads and installs PowerShell 7 (checked against the
+// published checksum; the system asks for admin rights once). Progress
+// arrives as "pwsh:install" events.
+func (a *ActionsService) InstallPowerShell() (PowerShellStatus, error) {
+	if !installingPwsh.CompareAndSwap(false, true) {
+		return a.PowerShellStatus(), errors.New("PowerShell is already being installed")
+	}
+	defer installingPwsh.Store(false)
+	err := pwsh.InstallPowerShell(a.s.Ctx(), func(stage string, pct int) {
+		emitEvent(a.s.Ctx(), "pwsh:install", map[string]any{"stage": stage, "pct": pct})
+	})
+	a.s.Record("powershell.install", pwsh.Method().How, "", err)
+	psDetector.Invalidate()
 	return a.PowerShellStatus(), err
 }
 

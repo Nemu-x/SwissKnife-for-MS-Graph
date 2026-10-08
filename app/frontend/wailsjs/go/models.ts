@@ -510,6 +510,29 @@ export namespace ldapx {
 
 }
 
+export namespace pwsh {
+	
+	export class InstallMethod {
+	    auto: boolean;
+	    how: string;
+	    commands?: string[];
+	    url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new InstallMethod(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.auto = source["auto"];
+	        this.how = source["how"];
+	        this.commands = source["commands"];
+	        this.url = source["url"];
+	    }
+	}
+
+}
+
 export namespace secrets {
 	
 	export class Profile {

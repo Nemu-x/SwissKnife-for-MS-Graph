@@ -3,6 +3,7 @@
 import {engine} from '../models';
 import {secrets} from '../models';
 import {services} from '../models';
+import {pwsh} from '../models';
 
 export function Apply(arg1:string,arg2:string):Promise<engine.Result>;
 
@@ -16,7 +17,11 @@ export function FanOutProfiles():Promise<Array<secrets.Profile>>;
 
 export function InstallModule(arg1:string):Promise<services.PowerShellStatus>;
 
+export function InstallPowerShell():Promise<services.PowerShellStatus>;
+
 export function Plan(arg1:string,arg2:Record<string, string>):Promise<engine.Plan>;
+
+export function PowerShellInstallMethod():Promise<pwsh.InstallMethod>;
 
 export function PowerShellStatus():Promise<services.PowerShellStatus>;
 
