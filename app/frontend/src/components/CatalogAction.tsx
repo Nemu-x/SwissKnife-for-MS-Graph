@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, Eye, Check, ArrowRight, Minus } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Eye, Check, ArrowRight, Minus } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
@@ -9,6 +9,7 @@ import { useConfirm } from '../lib/useConfirm'
 import { useTaskStatus } from '../lib/useTaskStatus'
 import { loadGroups, loadSkus, loadUsers } from '../lib/pickers'
 import { skuFriendly } from '../lib/skuNames'
+import { toCSV, downloadText } from '../lib/format'
 import { api, errMessage, errParsed } from '../lib/api'
 import type { engine } from '../../wailsjs/go/models'
 
@@ -50,6 +51,14 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
   'mail.blockSender': { label: 'actions.mail.blockSender.label', hint: 'actions.mail.blockSender.hint', notes: ['actions.mail.blockSender.note'], icon: <ShieldBan size={16} /> },
   'mail.quarantine': { label: 'actions.mail.quarantine.label', hint: 'actions.mail.quarantine.hint', icon: <Archive size={16} /> },
   'mail.releaseQuarantine': { label: 'actions.mail.releaseQuarantine.label', hint: 'actions.mail.releaseQuarantine.hint', notes: ['actions.mail.releaseQuarantine.note'], icon: <ArchiveRestore size={16} /> },
+  'report.inactiveUsers': { label: 'actions.report.inactiveUsers.label', hint: 'actions.report.inactiveUsers.hint', icon: <UserX size={16} /> },
+  'report.licenseWaste': { label: 'actions.report.licenseWaste.label', hint: 'actions.report.licenseWaste.hint', icon: <BadgeDollarSign size={16} /> },
+  'report.guests': { label: 'actions.report.guests.label', hint: 'actions.report.guests.hint', icon: <Plane size={16} /> },
+  'report.mfaStatus': { label: 'actions.report.mfaStatus.label', hint: 'actions.report.mfaStatus.hint', icon: <ShieldQuestion size={16} /> },
+  'report.privilegedRoles': { label: 'actions.report.privilegedRoles.label', hint: 'actions.report.privilegedRoles.hint', icon: <Crown size={16} /> },
+  'report.mailboxSizes': { label: 'actions.report.mailboxSizes.label', hint: 'actions.report.mailboxSizes.hint', notes: ['actions.report.mailboxSizes.note'], icon: <HardDrive size={16} /> },
+  'report.mailboxForwarding': { label: 'actions.report.mailboxForwarding.label', hint: 'actions.report.mailboxForwarding.hint', icon: <ForwardIcon size={16} /> },
+  'mailbox.statistics': { label: 'actions.mailbox.statistics.label', hint: 'actions.mailbox.statistics.hint', icon: <BarChart3 size={16} /> },
   'group.membership': { label: 'groups.tileAdd', hint: 'groups.hintAdd', notes: ['groups.noteAdd'], icon: <UserPlus size={16} /> },
   'license.assign': { label: 'licensing.tileAssign', hint: 'licensing.hintAssign', notes: ['licensing.noteAssign'], warn: ['licensing.noteRemove'], icon: <Plus size={16} /> },
 }
@@ -322,7 +331,20 @@ function RowsView({ result }: { result: engine.ReadResult }) {
         </tbody>
       </table>
     </div>
-    {note}
+    <div className="flex items-center justify-between gap-2">
+      {note || <span />}
+      <button
+        onClick={() => {
+          // Translated headers and values: the file reads like the table.
+          const head = cols.map((c) => t(`actions.columns.${c}`, { defaultValue: c }))
+          const rows = result.rows.map((r) => Object.fromEntries(cols.map((c, i) => [head[i], show(c, r[c] ?? '')])))
+          downloadText(`${new Date().toISOString().slice(0, 10)}-report.csv`, toCSV(head, rows))
+        }}
+        className="flex shrink-0 items-center gap-1.5 text-xs text-[var(--accent)] hover:underline"
+      >
+        <Download size={13} /> {t('actions.exportCsv')}
+      </button>
+    </div>
     </>
   )
 }
