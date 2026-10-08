@@ -201,7 +201,7 @@ const en = {
     drift: 'See what changed since the last snapshot',
   },
   connect: {
-    delegatedOrg: 'Customer tenant (GDAP, optional)',
+    delegatedOrg: 'Customer tenant (GDAP, preview)',
     delegatedOrgHint: 'Partners: the customer tenant id or domain you manage through granular delegated admin (GDAP). Sign-in, Graph and Exchange then work in that tenant. The app registration must be multi-tenant and consented in the customer tenant. Save the profile to use it.',
     limits: {
       title: 'Limits',
