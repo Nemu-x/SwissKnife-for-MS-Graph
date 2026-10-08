@@ -384,7 +384,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 		return nil, err
 	}
 	// Every user the run names is checked before anything changes.
-	for _, u := range []string{req.Upn, req.ForwardTo, req.CalendarTo, req.BackupToUser, req.MailboxToUser, req.FullAccessTo} {
+	for _, u := range []string{req.Upn, req.ForwardTo, req.CalendarTo, req.BackupToUser, req.MailboxToUser, req.FullAccessTo, req.TransferOwnershipTo} {
 		if err := targetInScope(p.s, engine.FieldUser, u); err != nil {
 			return nil, err
 		}
