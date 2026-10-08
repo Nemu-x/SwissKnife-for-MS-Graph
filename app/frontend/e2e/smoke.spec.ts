@@ -272,3 +272,16 @@ test('the explorer opens an action with the picked object filled in', async ({ p
   await expect(page.getByText('What will change')).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('on-prem AD works without a tenant connection', async ({ page }) => {
+  await stubWails(page)
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'On-prem AD' }).click()
+  await page.getByRole('button', { name: /Directory connection/ }).click()
+  await expect(page.getByText('Not connected to a directory.')).toBeVisible()
+  await page.getByRole('combobox').selectOption('none')
+  await expect(page.getByText('crosses the network in clear text', { exact: false })).toBeVisible()
+  expect(errors).toEqual([])
+})

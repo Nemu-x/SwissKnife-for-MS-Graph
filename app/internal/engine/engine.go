@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"swissknife-app/internal/graphapi"
+	"swissknife-app/internal/ldapx"
 	"swissknife-app/internal/ops"
 	"swissknife-app/internal/session"
 )
@@ -26,7 +27,15 @@ type Backend string
 
 const (
 	BackendGraph Backend = "graph"
+	// On-premises Active Directory; LDAPTLS is the same connection when it
+	// is encrypted (password resets need it).
+	BackendLDAP    Backend = "ldap"
+	BackendLDAPTLS Backend = "ldap-tls"
 )
+
+// usesLDAP reports a backend that runs against the on-prem directory, not
+// the tenant.
+func usesLDAP(b Backend) bool { return b == BackendLDAP || b == BackendLDAPTLS }
 
 // Danger decides which guards an action passes through.
 type Danger string
@@ -48,6 +57,8 @@ const (
 	FieldChoice FieldKind = "choice"
 	// FieldSnapshot picks one of the saved configuration snapshots.
 	FieldSnapshot FieldKind = "snapshot"
+	// FieldSecret is a password input: never echoed back in a plan.
+	FieldSecret FieldKind = "secret"
 )
 
 // Field is one input of an action. Labels are i18n keys on the frontend
@@ -106,6 +117,8 @@ type Env struct {
 	TenantID string
 	// DelegatedOrg is the customer tenant a partner (GDAP) profile manages.
 	DelegatedOrg string
+	// LDAP is the active on-prem directory connection (nil if none).
+	LDAP *ldapx.Client
 	AppOnly  bool
 	// PS runs PowerShell cmdlets for the PowerShell backends; nil when the
 	// engine has none.
@@ -168,6 +181,8 @@ type Engine struct {
 	// Grants returns the Graph permissions the connection holds, or nil when
 	// unknown; the catalog warns about the ones a manifest lacks.
 	Grants func() map[string]bool
+	// LDAP returns the active on-prem directory connection (nil if none).
+	LDAP func() *ldapx.Client
 	// WrapErr converts implementation errors for display (services sets the
 	// operr envelope with permission hints); identity by default.
 	WrapErr func(error) error
@@ -225,7 +240,7 @@ func (e *Engine) Catalog() []CatalogEntry {
 		entry := CatalogEntry{Manifest: a.Manifest, FanOut: graphReader(a) != nil}
 		impl, reason := e.resolve(a)
 		switch {
-		case !dangerAllowed(a.Danger, e.s.Policy().MaxDanger):
+		case !onDirectory(a) && !dangerAllowed(a.Danger, e.s.Policy().MaxDanger):
 			entry.Reason = &Reason{Key: "policy"}
 		case impl != nil:
 			entry.Available, entry.Backend = true, impl.Backend()
@@ -273,7 +288,11 @@ func (e *Engine) BackendStatus(b Backend) *Reason {
 
 func (e *Engine) env(ctx context.Context) Env {
 	c, _ := e.s.Client()
-	return Env{Ctx: ctx, Graph: c, Tokens: e.s.Tokens(), TenantID: e.s.TenantID(), DelegatedOrg: e.s.DelegatedOrg(), AppOnly: e.s.AppOnly(), PS: e.PS, ReadOnly: e.s.ReadOnly()}
+	var dir *ldapx.Client
+	if e.LDAP != nil {
+		dir = e.LDAP()
+	}
+	return Env{Ctx: ctx, Graph: c, Tokens: e.s.Tokens(), TenantID: e.s.TenantID(), DelegatedOrg: e.s.DelegatedOrg(), LDAP: dir, AppOnly: e.s.AppOnly(), PS: e.PS, ReadOnly: e.s.ReadOnly()}
 }
 
 func (e *Engine) lookup(id string) (Action, error) {
@@ -339,7 +358,7 @@ func (e *Engine) Plan(actionID string, in Inputs) (*Plan, error) {
 		Inputs:   in,
 		Changes:  changes,
 		impl:     impl,
-		client:   env.Graph,
+		conn:     connOf(impl.Backend(), env),
 	}
 	if a.ConfirmField != "" {
 		p.ConfirmTarget = in[a.ConfirmField]
@@ -356,6 +375,12 @@ func (e *Engine) Plan(actionID string, in Inputs) (*Plan, error) {
 	// caller edited after the fact.
 	out := *p
 	out.Inputs = cloneInputs(p.Inputs)
+	// Secrets (a new password) stay in the stored plan only.
+	for _, f := range a.Fields {
+		if f.Kind == FieldSecret && out.Inputs[f.Name] != "" {
+			out.Inputs[f.Name] = "********"
+		}
+	}
 	out.Changes = make([]Change, len(p.Changes))
 	for i, ch := range p.Changes {
 		if ch.Ref != nil {
@@ -385,13 +410,17 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The plan holds object ids of the tenant it was computed on: a
-	// disconnect or a switch to another profile invalidates it.
-	c, err := e.s.Client()
-	if err != nil {
-		return nil, err
+	// The plan holds object ids of the connection it was computed on (the
+	// tenant, or the on-prem directory): a disconnect or a switch invalidates it.
+	cur := e.env(e.s.Ctx())
+	if usesLDAP(p.Backend) {
+		if cur.LDAP == nil {
+			return nil, &Error{Code: "unavailable", Msg: "action unavailable: ldapNotConnected"}
+		}
+	} else if cur.Graph == nil {
+		return nil, session.ErrNotConnected
 	}
-	if c != p.client {
+	if connOf(p.Backend, cur) != p.conn {
 		e.plans.drop(planID)
 		return nil, errPlanGone
 	}
@@ -404,12 +433,18 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 	if err := e.checkPolicy(e.env(e.s.Ctx()), a, p.Inputs); err != nil {
 		return nil, err
 	}
-	switch a.Danger {
-	case Destructive:
+	switch {
+	case usesLDAP(p.Backend):
+		// A tenant profile's limits say nothing about the on-prem directory:
+		// only the read-only switch and the typed confirmation apply.
+		if err := e.s.GuardDirectory(a.Danger == Destructive, p.ConfirmTarget, confirm); err != nil {
+			return nil, err
+		}
+	case a.Danger == Destructive:
 		if err := e.s.GuardDestructiveChecked(p.ConfirmTarget, confirm); err != nil {
 			return nil, err
 		}
-	case Write:
+	case a.Danger == Write:
 		if err := e.s.GuardWriteChecked(); err != nil {
 			return nil, err
 		}
@@ -473,9 +508,12 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 			"failed": res.Failed, "canceled": res.Canceled,
 		})
 	}
-	e.s.Record("action."+a.ID, target,
-		fmt.Sprintf("backend=%s applied=%d skipped=%d failed=%d %s", p.Backend, res.Applied, res.Skipped, res.Failed, describe(p.Changes)),
-		firstErr)
+	detail := fmt.Sprintf("backend=%s applied=%d skipped=%d failed=%d %s", p.Backend, res.Applied, res.Skipped, res.Failed, describe(p.Changes))
+	if usesLDAP(p.Backend) && env.LDAP != nil {
+		// The session's profile is a tenant's; name the directory too.
+		detail = "directory=" + env.LDAP.Config().Name + " " + detail
+	}
+	e.s.Record("action."+a.ID, target, detail, firstErr)
 	return res, nil
 }
 
@@ -583,3 +621,21 @@ func cloneInputs(in Inputs) Inputs {
 
 // errPlanGone is returned for unknown, consumed or expired plans.
 var errPlanGone = &Error{Code: "planExpired", Msg: "the preview has expired or was already applied — preview again"}
+
+// connOf is the connection a plan for backend b is bound to.
+func connOf(b Backend, env Env) any {
+	if usesLDAP(b) {
+		return env.LDAP
+	}
+	return env.Graph
+}
+
+// onDirectory reports an action that runs only against the on-prem directory.
+func onDirectory(a Action) bool {
+	for _, impl := range a.Impls {
+		if !usesLDAP(impl.Backend()) {
+			return false
+		}
+	}
+	return len(a.Impls) > 0
+}

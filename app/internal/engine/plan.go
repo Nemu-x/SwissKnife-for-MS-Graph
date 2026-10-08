@@ -5,8 +5,6 @@ import (
 	"encoding/hex"
 	"sync"
 	"time"
-
-	"swissknife-app/internal/graphapi"
 )
 
 // planTTL bounds how stale a preview may be when it is applied: the tenant
@@ -24,8 +22,8 @@ type Plan struct {
 	ConfirmTarget string    `json:"confirmTarget,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`
 
-	impl   Impl
-	client *graphapi.Client // connection the plan was computed on
+	impl Impl
+	conn any // connection the plan was computed on (*graphapi.Client or *ldapx.Client)
 }
 
 // target is the plan's headline object for journal and audit.

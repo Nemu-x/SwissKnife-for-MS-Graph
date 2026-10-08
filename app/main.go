@@ -82,6 +82,7 @@ func main() {
 			services.NewNotifyService(sess),
 			services.NewMailboxTransferService(sess),
 			services.NewActionsService(sess, store),
+			services.NewOnPremService(sess),
 			updateSvc,
 		},
 	})

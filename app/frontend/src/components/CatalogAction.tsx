@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Target, FileWarning, Swords, Link2, History, Eye, Check, ArrowRight, Minus } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Target, FileWarning, Swords, Link2, History, Eye, Check, ArrowRight, Minus, Search, LockOpen, KeyRound } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
@@ -71,13 +71,18 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
   'intune.unassigned': { label: 'actions.intune.unassigned.label', hint: 'actions.intune.unassigned.hint', icon: <FileWarning size={16} /> },
   'intune.conflicts': { label: 'actions.intune.conflicts.label', hint: 'actions.intune.conflicts.hint', icon: <Swords size={16} /> },
   'intune.assign': { label: 'actions.intune.assign.label', hint: 'actions.intune.assign.hint', notes: ['actions.intune.assign.note'], icon: <Link2 size={16} /> },
+  'ad.findUser': { label: 'actions.ad.findUser.label', hint: 'actions.ad.findUser.hint', icon: <Search size={16} /> },
+  'ad.userState': { label: 'actions.ad.userState.label', hint: 'actions.ad.userState.hint', icon: <UserX size={16} /> },
+  'ad.unlock': { label: 'actions.ad.unlock.label', hint: 'actions.ad.unlock.hint', notes: ['actions.ad.unlock.note'], icon: <LockOpen size={16} /> },
+  'ad.resetPassword': { label: 'actions.ad.resetPassword.label', hint: 'actions.ad.resetPassword.hint', warn: ['actions.ad.resetPassword.note'], icon: <KeyRound size={16} /> },
+  'ad.groupMembership': { label: 'actions.ad.groupMembership.label', hint: 'actions.ad.groupMembership.hint', icon: <UsersRound size={16} /> },
   'config.restore': { label: 'actions.config.restore.label', hint: 'actions.config.restore.hint', warn: ['actions.config.restore.note'], icon: <History size={16} /> },
   'group.membership': { label: 'groups.tileAdd', hint: 'groups.hintAdd', notes: ['groups.noteAdd'], icon: <UserPlus size={16} /> },
   'license.assign': { label: 'licensing.tileAssign', hint: 'licensing.hintAssign', notes: ['licensing.noteAssign'], warn: ['licensing.noteRemove'], icon: <Plus size={16} /> },
 }
 
 // Display tokens the backend puts into Change.before/after.
-const VALUE_TOKENS = new Set(['allowed', 'blocked', 'active', 'revoked', 'shared', 'regular', 'enabled', 'disabled'])
+const VALUE_TOKENS = new Set(['allowed', 'blocked', 'active', 'revoked', 'shared', 'regular', 'enabled', 'disabled', 'locked', 'unlocked', 'newPassword', 'newPasswordMustChange'])
 
 // One fetch per connection (profile), shared by every page. A failed fetch is
 // not cached: the next page that mounts asks again.
@@ -85,9 +90,11 @@ let cached: { key: string; list: Promise<CatalogEntry[]> } | null = null
 
 // null until the first fetch for the current connection has landed.
 export function useCatalog(): CatalogEntry[] | null {
-  const { connected, status } = useStore()
-  // The profile's limits change what is available: they are part of the key.
-  const key = connected ? `on:${status?.profileName ?? ''}:${JSON.stringify((status as any)?.policy ?? null)}` : 'off'
+  const { connected, status, cache } = useStore()
+  // The profile's limits change what is available: they are part of the key;
+  // catalog.rev changes when the on-prem directory connects or disconnects.
+  const rev = cache['catalog.rev'] ?? ''
+  const key = (connected ? `on:${status?.profileName ?? ''}:${JSON.stringify((status as any)?.policy ?? null)}` : 'off') + `:${rev}`
   const [list, setList] = useState<CatalogEntry[] | null>(null)
   useEffect(() => {
     if (cached?.key !== key) {
@@ -285,6 +292,8 @@ function CatalogPanel({ entry, mark, askConfirm }: {
             ))}
           </div>
         )
+      case 'secret':
+        return <Input type="password" autoComplete="new-password" value={v} onChange={(e) => set(f.name, e.target.value)} />
       default:
         return <Input value={v} onChange={(e) => set(f.name, e.target.value)} />
     }

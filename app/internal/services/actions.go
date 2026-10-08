@@ -12,6 +12,7 @@ import (
 	"swissknife-app/internal/actions"
 	"swissknife-app/internal/auth"
 	"swissknife-app/internal/engine"
+	"swissknife-app/internal/ldapx"
 	"swissknife-app/internal/ops"
 	"swissknife-app/internal/secrets"
 	"swissknife-app/internal/exoapi"
@@ -40,8 +41,11 @@ func NewEngine(s *session.Session) *engine.Engine {
 	// Closing waits for a sign-in that may be in progress; Disconnect is a UI
 	// call and must not hang on it.
 	s.OnDisconnect(func(prev *graphapi.Client) { go pool.CloseFor(prev) })
+	dir := func() *ldapx.Client { return directoryFor(s) }
 	e := engine.New(s, engine.GraphProvider{}, exoapi.NewProvider(),
-		pwsh.NewExchangeProvider(psDetector), pwsh.NewTeamsProvider(psDetector))
+		pwsh.NewExchangeProvider(psDetector), pwsh.NewTeamsProvider(psDetector),
+		engine.LDAPProvider{Get: dir}, engine.LDAPProvider{Get: dir, Secure: true})
+	e.LDAP = dir
 	e.PS = pool
 	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr

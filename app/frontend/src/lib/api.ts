@@ -31,6 +31,7 @@ import * as Update from '../../wailsjs/go/services/UpdateService'
 import * as Journal from '../../wailsjs/go/services/JournalService'
 import * as Notify from '../../wailsjs/go/services/NotifyService'
 import * as Snapshot from '../../wailsjs/go/services/SnapshotService'
+import * as OnPrem from '../../wailsjs/go/services/OnPremService'
 import * as Actions from '../../wailsjs/go/services/ActionsService'
 import type { engine, journal, secrets, services } from '../../wailsjs/go/models'
 import { parseErr, type ParsedError } from './graphError'
@@ -62,6 +63,15 @@ export const api = {
     generateCertificate: (name: string) => Connect.GenerateCertificate(name) as Promise<services.CertInfo>,
     pickCertificate: () => Connect.PickCertificate() as Promise<string>,
     revealCertificate: (path: string) => Connect.RevealCertificate(path),
+  },
+  onprem: {
+    connections: () => OnPrem.Connections(),
+    save: (c: Record<string, unknown>, password: string) => OnPrem.SaveConnection(c as any, password),
+    remove: (id: string) => OnPrem.DeleteConnection(id),
+    connect: (id: string) => OnPrem.Connect(id),
+    disconnect: () => OnPrem.Disconnect(),
+    status: () => OnPrem.Status(),
+    pickCA: () => OnPrem.PickCAFile() as Promise<string>,
   },
   dashboard: {
     summary: () => Dashboard.Summary() as Promise<services.DashboardSummary>,

@@ -161,3 +161,16 @@ func (s *Session) GuardDestructiveChecked(target, confirm string) error {
 	}
 	return s.confirm(target, confirm)
 }
+
+// GuardDirectory guards a write to the on-prem directory: the read-only
+// switch and, for destructive ones, the typed confirmation. A tenant
+// profile's limits do not apply there.
+func (s *Session) GuardDirectory(destructive bool, target, confirm string) error {
+	if s.ReadOnly() {
+		return ErrReadOnly
+	}
+	if destructive {
+		return s.confirm(target, confirm)
+	}
+	return nil
+}
