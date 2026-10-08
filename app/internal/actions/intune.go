@@ -22,23 +22,41 @@ type policyFamily struct {
 	path   string // collection path (v1.0 unless beta)
 	beta   bool
 	name   string // property holding the display name
-	assign bool   // supports the bulk assign action
+	filter string // optional $filter to skip noise
 }
 
 var policyFamilies = []policyFamily{
-	{"configuration", "/deviceManagement/deviceConfigurations", false, "displayName", true},
-	{"compliance", "/deviceManagement/deviceCompliancePolicies", false, "displayName", true},
-	{"settingsCatalog", "/deviceManagement/configurationPolicies", true, "name", false},
-	{"app", "/deviceAppManagement/mobileApps", false, "displayName", false},
+	{"configuration", "/deviceManagement/deviceConfigurations", false, "displayName", ""},
+	{"compliance", "/deviceManagement/deviceCompliancePolicies", false, "displayName", ""},
+	{"settingsCatalog", "/deviceManagement/configurationPolicies", true, "name", ""},
+	// Built-in and store apps run into thousands; only assigned ones matter.
+	{"app", "/deviceAppManagement/mobileApps", false, "displayName", "isAssigned eq true"},
 }
 
+// Assignment target types, compared in full.
+const (
+	targetGroup      = "#microsoft.graph.groupAssignmentTarget"
+	targetExclusion  = "#microsoft.graph.exclusionGroupAssignmentTarget"
+	targetAllUsers   = "#microsoft.graph.allLicensedUsersAssignmentTarget"
+	targetAllDevices = "#microsoft.graph.allDevicesAssignmentTarget"
+)
+
+// intuneAssignment keeps the target as it came: rebuilding the list for
+// /assign must carry assignment filters and anything else unchanged.
 type intuneAssignment struct {
-	ID     string `json:"id,omitempty"`
-	Target struct {
-		Type    string `json:"@odata.type"`
-		GroupID string `json:"groupId,omitempty"`
-	} `json:"target"`
-	Intent string `json:"intent,omitempty"` // apps only
+	Target json.RawMessage `json:"target"`
+	Intent string          `json:"intent,omitempty"` // apps only
+}
+
+type targetView struct {
+	Type    string `json:"@odata.type"`
+	GroupID string `json:"groupId"`
+}
+
+func (a intuneAssignment) view() targetView {
+	var v targetView
+	_ = json.Unmarshal(a.Target, &v)
+	return v
 }
 
 type intunePolicy struct {
@@ -49,22 +67,40 @@ type intunePolicy struct {
 	Assignments []intuneAssignment
 }
 
-func listPolicies(env engine.Env, fams []policyFamily) ([]intunePolicy, error) {
+// listPolicies reads the families. A family the tenant does not have (beta
+// 400/404) is skipped quietly; one the app may not read (403) is skipped and
+// named in the returned list so reports can say they are incomplete; other
+// errors (throttling, outages) fail the read.
+func listPolicies(env engine.Env, fams []policyFamily) ([]intunePolicy, []string, error) {
 	var out []intunePolicy
+	var denied []string
 	for _, f := range fams {
 		path := f.path
 		if f.beta {
 			path = env.Graph.Beta(f.path)
 		}
-		raw, err := env.Graph.ListAll(env.Ctx, path, url.Values{"$expand": {"assignments"}}, 0)
+		q := url.Values{"$expand": {"assignments"}}
+		if f.filter != "" {
+			q.Set("$filter", f.filter)
+		}
+		raw, err := env.Graph.ListAll(env.Ctx, path, q, 0)
 		if err != nil {
-			// Settings catalog is beta-only and a tenant without Intune
-			// licenses answers 403/400 for some families: skip, not fail.
 			var ge *graphapi.GraphError
-			if errors.As(err, &ge) && (ge.StatusCode == 400 || ge.StatusCode == 403 || ge.StatusCode == 404) {
+			switch {
+			case errors.As(err, &ge) && ge.StatusCode == 403:
+				denied = append(denied, f.kind)
 				continue
+			case f.beta && errors.As(err, &ge) && (ge.StatusCode == 400 || ge.StatusCode == 404):
+				continue // a beta collection this tenant does not offer
+			case errors.As(err, &ge) && ge.StatusCode == 400 && f.filter != "":
+				// The filter is an optimisation; read the family without it.
+				raw, err = env.Graph.ListAll(env.Ctx, path, url.Values{"$expand": {"assignments"}}, 0)
+				if err != nil {
+					return nil, nil, err
+				}
+			default:
+				return nil, nil, err
 			}
-			return nil, err
 		}
 		for _, r := range raw {
 			var p map[string]json.RawMessage
@@ -77,14 +113,21 @@ func listPolicies(env engine.Env, fams []policyFamily) ([]intunePolicy, error) {
 			_ = json.Unmarshal(p["lastModifiedDateTime"], &modified)
 			var as []intuneAssignment
 			_ = json.Unmarshal(p["assignments"], &as)
-			// Apps without any assignment are just catalogue entries.
 			if f.kind == "app" && len(as) == 0 {
 				continue
 			}
 			out = append(out, intunePolicy{family: f, ID: id, Name: name, Modified: modified, Assignments: as})
 		}
 	}
-	return out, nil
+	return out, denied, nil
+}
+
+// deniedNote names the families a report could not read.
+func deniedNote(denied []string) *engine.Reason {
+	if len(denied) == 0 {
+		return nil
+	}
+	return &engine.Reason{Key: "intuneDenied", Params: map[string]string{"kinds": strings.Join(denied, ", ")}}
 }
 
 func intuneActions() []engine.Action {
@@ -115,14 +158,15 @@ type graphAssignedTo struct{}
 
 func (graphAssignedTo) Backend() engine.Backend { return engine.BackendGraph }
 
+// Read lists assignments reaching the user through their groups (device
+// groups of their devices are not followed) or reaching the group.
 func (graphAssignedTo) Read(env engine.Env, in engine.Inputs) (*engine.ReadResult, error) {
 	if (in["user"] == "") == (in["group"] == "") {
 		return nil, errors.New("pick either a user or a group")
 	}
-	// The groups whose assignments reach the target, with names for display.
 	groups := map[string]string{}
-	allUsers := in["user"] != ""
-	if in["user"] != "" {
+	forUser := in["user"] != ""
+	if forUser {
 		raw, err := env.Graph.ListAll(env.Ctx, "/users/"+url.PathEscape(in["user"])+"/transitiveMemberOf/microsoft.graph.group",
 			url.Values{"$select": {"id,displayName"}}, 0)
 		if err != nil {
@@ -141,26 +185,37 @@ func (graphAssignedTo) Read(env engine.Env, in engine.Inputs) (*engine.ReadResul
 		}
 		groups[g.ID] = g.DisplayName
 	}
-	policies, err := listPolicies(env, policyFamilies)
+	policies, denied, err := listPolicies(env, policyFamilies)
 	if err != nil {
 		return nil, err
 	}
-	res := &engine.ReadResult{Columns: []string{"kind", "policy", "via", "effect"}}
+	res := &engine.ReadResult{Columns: []string{"kind", "policy", "via", "effect"}, Note: deniedNote(denied)}
+	if forUser {
+		// Both caveats matter; the user-groups one most when others apply.
+		if res.Note != nil {
+			res.Note.Key = "intuneDeniedUserGroupsOnly"
+		} else {
+			res.Note = &engine.Reason{Key: "intuneUserGroupsOnly"}
+		}
+	}
 	for _, p := range policies {
 		for _, a := range p.Assignments {
+			t := a.view()
 			via, effect := "", "included"
-			switch {
-			case strings.HasSuffix(a.Target.Type, "exclusionGroupAssignmentTarget"):
-				if name, ok := groups[a.Target.GroupID]; ok {
+			switch t.Type {
+			case targetExclusion:
+				if name, ok := groups[t.GroupID]; ok {
 					via, effect = name, "excluded"
 				}
-			case strings.HasSuffix(a.Target.Type, "groupAssignmentTarget"):
-				if name, ok := groups[a.Target.GroupID]; ok {
+			case targetGroup:
+				if name, ok := groups[t.GroupID]; ok {
 					via = name
 				}
-			case strings.HasSuffix(a.Target.Type, "allLicensedUsersAssignmentTarget") && allUsers:
-				via = "allUsers"
-			case strings.HasSuffix(a.Target.Type, "allDevicesAssignmentTarget"):
+			case targetAllUsers:
+				if forUser {
+					via = "allUsers"
+				}
+			case targetAllDevices:
 				via = "allDevices"
 			}
 			if via == "" {
@@ -183,14 +238,14 @@ type graphUnassigned struct{}
 func (graphUnassigned) Backend() engine.Backend { return engine.BackendGraph }
 
 func (graphUnassigned) Read(env engine.Env, in engine.Inputs) (*engine.ReadResult, error) {
-	policies, err := listPolicies(env, policyFamilies[:3]) // apps without assignments are skipped anyway
+	policies, denied, err := listPolicies(env, policyFamilies[:3]) // apps are listed only when assigned
 	if err != nil {
 		return nil, err
 	}
-	res := &engine.ReadResult{Columns: []string{"kind", "policy", "lastModified"}}
+	res := &engine.ReadResult{Columns: []string{"kind", "policy", "lastModified"}, Note: deniedNote(denied)}
 	for _, p := range policies {
 		if len(p.Assignments) == 0 {
-			res.Rows = append(res.Rows, engine.Row{"kind": p.family.kind, "policy": p.Name, "lastModified": firstOf(p.Modified, "")})
+			res.Rows = append(res.Rows, engine.Row{"kind": p.family.kind, "policy": p.Name, "lastModified": p.Modified})
 		}
 	}
 	return res, nil
@@ -202,10 +257,11 @@ type graphConflicts struct{}
 
 func (graphConflicts) Backend() engine.Backend { return engine.BackendGraph }
 
-// Comparing thousands of settings by hand would guess; Intune already marks
-// devices whose policies disagree. This lists those reports.
+// Read lists device conflicts Intune reports for configuration and compliance
+// policies (settings catalog and endpoint security have no such report in
+// Graph). Comparing settings by hand would only guess.
 func (graphConflicts) Read(env engine.Env, in engine.Inputs) (*engine.ReadResult, error) {
-	policies, err := listPolicies(env, policyFamilies[:2])
+	policies, denied, err := listPolicies(env, policyFamilies[:2])
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +273,12 @@ func (graphConflicts) Read(env engine.Env, in engine.Inputs) (*engine.ReadResult
 		raw, err := env.Graph.ListAll(env.Ctx, p.family.path+"/"+url.PathEscape(p.ID)+"/deviceStatuses",
 			url.Values{"$filter": {"status eq 'conflict'"}}, 0)
 		if err != nil {
-			continue // a policy type without device statuses
+			var ge *graphapi.GraphError
+			if errors.As(err, &ge) && ge.StatusCode == 403 {
+				denied = append(denied, p.family.kind+" device status")
+				continue
+			}
+			return nil, err
 		}
 		for _, r := range raw {
 			var s struct {
@@ -225,12 +286,14 @@ func (graphConflicts) Read(env engine.Env, in engine.Inputs) (*engine.ReadResult
 				UserPrincipalName string `json:"userPrincipalName"`
 				Status            string `json:"status"`
 			}
-			if json.Unmarshal(r, &s) == nil {
+			// The $filter is not honoured everywhere: check the status too.
+			if json.Unmarshal(r, &s) == nil && s.Status == "conflict" {
 				res.Rows = append(res.Rows, engine.Row{"kind": p.family.kind, "policy": p.Name,
 					"device": s.DeviceDisplayName, "user": s.UserPrincipalName, "status": s.Status})
 			}
 		}
 	}
+	res.Note = deniedNote(denied)
 	return res, nil
 }
 
@@ -240,20 +303,27 @@ type graphIntuneAssign struct{}
 
 func (graphIntuneAssign) Backend() engine.Backend { return engine.BackendGraph }
 
-func familyOf(kind string) policyFamily {
-	for _, f := range policyFamilies {
+func familyOf(kind string) (policyFamily, error) {
+	for _, f := range policyFamilies[:2] {
 		if f.kind == kind {
-			return f
+			return f, nil
 		}
 	}
-	return policyFamilies[0]
+	return policyFamily{}, fmt.Errorf("policies of type %q cannot be assigned here", kind)
 }
 
-func (graphIntuneAssign) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, error) {
-	fam := familyOf(in["policyKind"])
-	policies, err := listPolicies(env, []policyFamily{fam})
+// findPolicy resolves the policy by its exact (case-insensitive) name.
+func findPolicy(env engine.Env, in engine.Inputs) (*intunePolicy, error) {
+	fam, err := familyOf(in["policyKind"])
 	if err != nil {
 		return nil, err
+	}
+	policies, denied, err := listPolicies(env, []policyFamily{fam})
+	if err != nil {
+		return nil, err
+	}
+	if len(denied) > 0 {
+		return nil, fmt.Errorf("no permission to read %s policies", fam.kind)
 	}
 	var hit []intunePolicy
 	for _, p := range policies {
@@ -265,47 +335,73 @@ func (graphIntuneAssign) Plan(env engine.Env, in engine.Inputs) ([]engine.Change
 	case 0:
 		return nil, fmt.Errorf("no %s policy named %q", fam.kind, in["policy"])
 	case 1:
+		return &hit[0], nil
 	default:
 		return nil, fmt.Errorf("%d %s policies are named %q — rename one first", len(hit), fam.kind, in["policy"])
 	}
-	p := hit[0]
+}
+
+// rebuild returns the assignment list to send: every existing target exactly
+// as it is (filters included), with the group's include target added or
+// removed. /assign replaces the whole list, so nothing may be lost here.
+func rebuild(p *intunePolicy, groupID, op string) (next []map[string]json.RawMessage, has bool, err error) {
+	// Never nil: removing the last assignment must send [], not null.
+	next = make([]map[string]json.RawMessage, 0, len(p.Assignments)+1)
+	for _, a := range p.Assignments {
+		t := a.view()
+		if t.GroupID == groupID {
+			switch t.Type {
+			case targetGroup:
+				has = true
+				if op == "remove" {
+					continue
+				}
+			case targetExclusion:
+				if op == "add" {
+					return nil, false, errors.New("this group is excluded from the policy — remove the exclusion in Intune first")
+				}
+			}
+		}
+		next = append(next, map[string]json.RawMessage{"target": a.Target})
+	}
+	if op == "add" && !has {
+		t, _ := json.Marshal(map[string]string{"@odata.type": targetGroup, "groupId": groupID})
+		next = append(next, map[string]json.RawMessage{"target": t})
+	}
+	return next, has, nil
+}
+
+func (graphIntuneAssign) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, error) {
+	p, err := findPolicy(env, in)
+	if err != nil {
+		return nil, err
+	}
 	var g struct{ ID, DisplayName string }
 	if err := env.Graph.Get(env.Ctx, "/groups/"+url.PathEscape(in["group"]), url.Values{"$select": {"id,displayName"}}, &g); err != nil {
 		return nil, err
 	}
-	has := false
-	for _, a := range p.Assignments {
-		if a.Target.GroupID == g.ID && strings.HasSuffix(a.Target.Type, ".groupAssignmentTarget") {
-			has = true
-		}
+	_, has, err := rebuild(p, g.ID, in["op"])
+	if err != nil {
+		return nil, err
 	}
-	// assign replaces the whole list: the plan carries the list to send.
-	next := make([]map[string]any, 0, len(p.Assignments)+1)
-	for _, a := range p.Assignments {
-		if in["op"] == "remove" && a.Target.GroupID == g.ID && strings.HasSuffix(a.Target.Type, ".groupAssignmentTarget") {
-			continue
-		}
-		// Everything else stays as it was: all-users/all-devices targets carry
-		// no group id, exclusions keep theirs.
-		target := map[string]any{"@odata.type": a.Target.Type}
-		if a.Target.GroupID != "" {
-			target["groupId"] = a.Target.GroupID
-		}
-		next = append(next, map[string]any{"target": target})
-	}
-	if in["op"] == "add" && !has {
-		next = append(next, map[string]any{"target": map[string]any{"@odata.type": "#microsoft.graph.groupAssignmentTarget", "groupId": g.ID}})
-	}
-	body, _ := json.Marshal(next)
 	ch := presence(p.Name, "intuneAssignment", in["op"], firstOf(g.DisplayName, g.ID), has,
-		map[string]string{"path": fam.path + "/" + url.PathEscape(p.ID) + "/assign", "assignments": string(body)})
+		map[string]string{"policy": p.ID, "group": g.ID})
 	return []engine.Change{ch}, nil
 }
 
+// Apply re-reads the policy: assignments changed in the portal since the
+// preview must not be overwritten by a stale list.
 func (graphIntuneAssign) Apply(env engine.Env, in engine.Inputs, ch engine.Change) error {
-	var list []map[string]any
-	if err := json.Unmarshal([]byte(ch.Ref["assignments"]), &list); err != nil {
+	p, err := findPolicy(env, in)
+	if err != nil {
 		return err
 	}
-	return env.Graph.Post(env.Ctx, ch.Ref["path"], map[string]any{"assignments": list}, nil)
+	if p.ID != ch.Ref["policy"] {
+		return errors.New("the policy changed since the preview — preview again")
+	}
+	next, _, err := rebuild(p, ch.Ref["group"], ch.Op)
+	if err != nil {
+		return err
+	}
+	return env.Graph.Post(env.Ctx, p.family.path+"/"+url.PathEscape(p.ID)+"/assign", map[string]any{"assignments": next}, nil)
 }
