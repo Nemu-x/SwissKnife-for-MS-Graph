@@ -287,6 +287,10 @@ func connectParams(env engine.Env, family string) (map[string]any, error) {
 		}
 		params := map[string]any{"token": tok}
 		switch {
+		case env.AppOnly && env.ExchangeOrg != "":
+			params["organization"] = env.ExchangeOrg
+		case !env.AppOnly && env.DelegatedOrg == "" && env.ExchangeUPN != "":
+			params["upn"] = env.ExchangeUPN
 		case env.AppOnly:
 			org, err := graphapi.InitialDomain(env.Ctx, env.Graph)
 			if err != nil {

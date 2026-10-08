@@ -43,13 +43,17 @@ func NewEngine(s *session.Session) *engine.Engine {
 	s.OnDisconnect(func(prev *graphapi.Client) { go pool.CloseFor(prev) })
 	dir := func() *ldapx.Client { return directoryFor(s) }
 	e := engine.New(s, engine.GraphProvider{}, exoapi.NewProvider(),
-		pwsh.NewExchangeProvider(psDetector), pwsh.NewTeamsProvider(psDetector),
+		workerAware{pwsh.NewExchangeProvider(psDetector), pwsh.FamilyExchange},
+		workerAware{pwsh.NewTeamsProvider(psDetector), pwsh.FamilyTeams},
 		engine.LDAPProvider{Get: dir}, engine.LDAPProvider{Get: dir, Secure: true})
 	e.LDAP = dir
-	e.PS = pool
+	// Cmdlets run here when this machine can, else on a paired worker.
+	e.PS = &psDispatch{s: s, local: pool, det: psDetector}
 	pool.Scripts = trustedScriptHashes(s)
 	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr
+	// The Exchange sign-in name cached for the worker ends with the connection.
+	s.OnDisconnect(func(prev *graphapi.Client) { signIns.Delete(prev) })
 	// A cross-tenant read belongs to the connection that started it.
 	s.OnDisconnect(func(*graphapi.Client) { s.Ops.CancelKind(ops.KindFanOut) })
 	// Service writes outside the catalog check their targets through the

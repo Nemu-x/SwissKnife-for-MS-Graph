@@ -69,7 +69,7 @@ func reloadPacks(s *session.Session, e *engine.Engine) []packs.Pack {
 	e.SetPacks(packActions(s, list))
 	// Pack hosts know their trusted scripts from the start: replace them
 	// (at their next use) only when that set changed.
-	if pool, ok := e.PS.(*pwsh.Pool); ok && strings.Join(scriptHashesLocked(s), ",") != before {
+	if pool, ok := e.PS.(interface{ ResetPacks() }); ok && strings.Join(scriptHashesLocked(s), ",") != before {
 		pool.ResetPacks()
 	}
 	return list

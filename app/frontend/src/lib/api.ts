@@ -33,6 +33,7 @@ import * as Notify from '../../wailsjs/go/services/NotifyService'
 import * as Snapshot from '../../wailsjs/go/services/SnapshotService'
 import * as OnPrem from '../../wailsjs/go/services/OnPremService'
 import * as Packs from '../../wailsjs/go/services/PacksService'
+import * as Worker from '../../wailsjs/go/services/WorkerService'
 import * as Actions from '../../wailsjs/go/services/ActionsService'
 import type { engine, journal, secrets, services } from '../../wailsjs/go/models'
 import { parseErr, type ParsedError } from './graphError'
@@ -64,6 +65,13 @@ export const api = {
     generateCertificate: (name: string) => Connect.GenerateCertificate(name) as Promise<services.CertInfo>,
     pickCertificate: () => Connect.PickCertificate() as Promise<string>,
     revealCertificate: (path: string) => Connect.RevealCertificate(path),
+  },
+  worker: {
+    status: () => Worker.Status(),
+    pair: (addr: string, code: string) => Worker.Pair(addr, code),
+    check: () => Worker.Check(),
+    unpair: () => Worker.Unpair(),
+    clientFingerprint: () => Worker.ClientFingerprint() as Promise<string>,
   },
   packs: {
     list: () => Packs.List(),
