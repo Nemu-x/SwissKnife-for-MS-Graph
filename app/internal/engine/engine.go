@@ -267,6 +267,9 @@ func (e *Engine) Catalog() []CatalogEntry {
 	out := make([]CatalogEntry, 0, len(all))
 	for _, a := range all {
 		entry := CatalogEntry{Manifest: a.Manifest, FanOut: graphReader(a) != nil}
+		if entry.Fields == nil {
+			entry.Fields = []Field{} // the UI maps over it: [] not null
+		}
 		impl, reason := e.resolve(a)
 		switch {
 		case !onDirectory(a) && !dangerAllowed(effectiveDanger(a), e.s.Policy().MaxDanger):
@@ -530,7 +533,7 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 	}
 
 	env := e.env(op.Ctx)
-	res := &Result{OpID: op.ID}
+	res := &Result{OpID: op.ID, Outcomes: []Outcome{}}
 	var firstErr error
 	for _, ch := range p.Changes {
 		out := Outcome{Change: ch, OK: true}
@@ -611,7 +614,7 @@ func (e *Engine) Execute(ctx context.Context, actionID string, in Inputs) (*Resu
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{}
+	res := &Result{Outcomes: []Outcome{}}
 	var firstErr error
 	for _, ch := range changes {
 		out := Outcome{Change: ch, OK: true}

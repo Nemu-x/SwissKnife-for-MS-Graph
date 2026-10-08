@@ -92,6 +92,7 @@ const en = {
     keysHint: 'The project’s own key is built in. Add an author’s minisign public key to trust packs they sign.',
     badge: 'Pack: {{name}}',
   },
+  crash: { title: 'This page ran into a problem', body: 'The rest of the app still works. Please report the message below.', home: 'Go to the start page', retry: 'Try again' },
   explorer: {
     objects: 'Objects',
     kinds: { users: 'Users', groups: 'Groups', teams: 'Teams' },

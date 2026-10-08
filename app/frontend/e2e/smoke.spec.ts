@@ -30,7 +30,9 @@ async function stubWails(page: Page, opts: { connected?: boolean } = {}) {
         { id: 'teams.effectivePolicies', page: 'teams', danger: 'read', available: true, backend: 'teams-ps',
           fields: [{ name: 'user', kind: 'user', required: true }] },
         { id: 'mailbox.fullAccess', page: 'users', danger: 'write', available: false,
-          reason: { key: 'backendMissing', params: { backend: 'pwsh' } }, fields: [] },
+          reason: { key: 'backendMissing', params: { backend: 'pwsh' } }, fields: null },
+        // Go marshals an action without inputs as fields: null.
+        { id: 'report.guests', page: 'reports', danger: 'read', available: true, backend: 'graph', fields: null, fanOut: true },
         { id: 'pack.contoso.hold', page: 'users', danger: 'write', available: false, pack: 'contoso',
           label: { en: 'Put a mailbox on hold' }, reason: { key: 'packUntrusted' }, fields: [] },
       ] : [],
@@ -304,5 +306,36 @@ test('an on-prem-only setup hides the Microsoft 365 pages and starts on AD', asy
   await expect(page.getByRole('button', { name: 'Connect', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Users & Admin' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+// Every screen, every tile, connected and with both workspaces on: a page
+// that crashes (blank window) or throws shows up here.
+test('every screen opens and every tile can be clicked without crashing', async ({ page }) => {
+  test.setTimeout(180_000)
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => localStorage.setItem('workspaces', JSON.stringify({ cloud: true, onprem: true })))
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  const names = await page.locator('nav button').evaluateAll((els) =>
+    els.filter((e) => !e.hasAttribute('aria-expanded')).map((e) => (e.textContent || '').trim()))
+  expect(names.length).toBeGreaterThan(20)
+  const crashed = page.getByText('This page ran into a problem')
+  for (const name of names) {
+    const open = () => page.locator('nav button').filter({ hasText: name }).first().click()
+    await open()
+    await expect(page.locator('main h1').first(), name).toBeVisible()
+    await expect(crashed, name).toHaveCount(0)
+    const tiles = await page.locator('main [data-tile]').evaluateAll((els) =>
+      els.filter((e) => e.getAttribute('aria-disabled') !== 'true').map((e) => e.getAttribute('data-tile')))
+    for (const id of tiles) {
+      await page.locator(`main [data-tile="${id}"]`).first().click()
+      await page.waitForTimeout(30)
+      await expect(crashed, `${name} → ${id}`).toHaveCount(0)
+      expect(errors, `${name} → ${id}`).toEqual([])
+      await open() // back to a clean page (a tile may navigate or open a panel)
+    }
+  }
   expect(errors).toEqual([])
 })

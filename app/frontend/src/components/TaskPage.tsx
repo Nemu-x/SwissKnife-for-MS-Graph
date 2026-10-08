@@ -192,6 +192,7 @@ export function TaskPage({
                 return (
                   <div key={a.id} className="contents">
                     <button
+                      data-tile={a.id}
                       onClick={() => trigger(a)}
                       aria-disabled={!!a.disabledReason}
                       aria-describedby={a.disabledReason ? `${pageId}-${a.id}-reason` : undefined}

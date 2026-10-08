@@ -65,9 +65,9 @@ export function PacksCard() {
             {p.description && <p className="mt-1 text-xs text-[var(--text-dim)]">{p.description}</p>}
             {p.error && <p className="mt-1 text-xs text-[var(--danger)]">{p.error}</p>}
             {p.signer && <p className="mt-1 text-xs text-[var(--text-faint)]">{t('packs.signedBy', { key: p.signer })}</p>}
-            {p.actions.length > 0 && (
+            {(p.actions ?? []).length > 0 && (
               <ul className="mt-1 list-disc pl-5 text-xs text-[var(--text-dim)]">
-                {p.actions.map((a) => (
+                {(p.actions ?? []).map((a) => (
                   <li key={a.id}>{localized(a.label) || a.id} · {t(`nav.${a.page}`, { defaultValue: a.page })} · {t(`packs.danger.${a.danger}`)} · {a.module === 'teams' ? 'Teams PS' : 'Exchange PS'}</li>
                 ))}
               </ul>

@@ -266,7 +266,7 @@ function CatalogPanel({ entry, mark, askConfirm }: {
       const ok = r.failed === 0
       const text = ok
         ? t('actions.result.ok', { applied: r.applied, skipped: r.skipped })
-        : t('actions.result.failed', { failed: r.failed, total: r.outcomes.length })
+        : t('actions.result.failed', { failed: r.failed, total: r.outcomes?.length ?? 0 })
       mark(entry.id, ok, text)
       toast(ok ? 'ok' : 'err', text)
     } catch (e) {
@@ -369,7 +369,7 @@ function CatalogPanel({ entry, mark, askConfirm }: {
 
       {result && result.failed > 0 && (
         <ul className="flex flex-col gap-1 text-xs text-[var(--danger)]">
-          {result.outcomes.filter((o) => !o.ok).map((o, i) => (
+          {(result.outcomes ?? []).filter((o) => !o.ok).map((o, i) => (
             <li key={i}>{o.target}: {o.error === 'canceled' ? t('common.canceled') : errMessage(o.error)}</li>
           ))}
         </ul>

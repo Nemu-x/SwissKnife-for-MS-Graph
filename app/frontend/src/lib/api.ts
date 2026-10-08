@@ -307,13 +307,14 @@ export const api = {
     revealInstaller: (installerPath: string) => Update.RevealInstaller(installerPath) as Promise<void>,
   },
   actions: {
-    catalog: () => Actions.Catalog().then((v) => v ?? []) as Promise<engine.CatalogEntry[]>,
+    // Go marshals an empty list as null: normalise here so no page has to.
+    catalog: () => Actions.Catalog().then((v) => (v ?? []).map((e) => ({ ...e, fields: e.fields ?? [] }))) as Promise<engine.CatalogEntry[]>,
     plan: (id: string, inputs: Record<string, string>) => Actions.Plan(id, inputs) as Promise<engine.Plan>,
     apply: (planId: string, confirm: string) => Actions.Apply(planId, confirm) as Promise<engine.Result>,
     run: (id: string, inputs: Record<string, string>) => Actions.Run(id, inputs) as Promise<engine.ReadResult>,
     runAcross: (id: string, inputs: Record<string, string>, profileIds: string[]) =>
       Actions.RunAcross(id, inputs, profileIds) as Promise<engine.ReadResult>,
-    fanOutProfiles: () => Actions.FanOutProfiles() as Promise<Profile[]>,
+    fanOutProfiles: () => Actions.FanOutProfiles().then((v) => v ?? []) as Promise<Profile[]>,
     cancelAcross: () => Actions.CancelAcross(),
     powerShellStatus: () => Actions.PowerShellStatus() as Promise<services.PowerShellStatus>,
     refreshPowerShell: () => Actions.RefreshPowerShell() as Promise<services.PowerShellStatus>,
