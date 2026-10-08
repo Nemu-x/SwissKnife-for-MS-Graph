@@ -258,3 +258,18 @@ func TestSignInValidUntilReadsExp(t *testing.T) {
 		t.Fatalf("fallback %v", got)
 	}
 }
+
+func TestCloseForLeavesANewerConnection(t *testing.T) {
+	p := fakePool(t, "Get-Connects")
+	oldEnv, newEnv := poolEnv(t), poolEnv(t)
+	if _, err := p.Invoke(newEnv, FamilyExchange, "Get-Connects", nil); err != nil {
+		t.Fatal(err)
+	}
+	p.CloseFor(oldEnv.Graph) // a late cleanup of the previous connection
+	if len(p.hosts) != 1 {
+		t.Fatal("the newer connection's host must survive")
+	}
+	if _, err := p.Invoke(oldEnv, FamilyExchange, "Get-Connects", nil); err == nil {
+		t.Fatal("a closed connection must not get a host again")
+	}
+}

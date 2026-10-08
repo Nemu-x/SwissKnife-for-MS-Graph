@@ -14,29 +14,30 @@ export function PowerShellCard() {
   const { t } = useTranslation()
   const { toast, jobs, patchJob } = useStore()
   const [st, setSt] = useState<services.PowerShellStatus | null>(null)
-  const [checking, setChecking] = useState(false)
   // An install takes minutes: it lives in the store's job slot so leaving
   // Settings and coming back neither loses it nor allows a second one.
   const job = jobs.psInstall
   const installing = job?.running ? job.progress : null
+  const checking = !!jobs.psCheck?.running
   const busy = installing || (checking ? 'refresh' : null)
 
   useEffect(() => {
     let alive = true
     api.actions.powerShellStatus().then((s) => alive && setSt(s)).catch(() => {})
     return () => { alive = false }
-  }, [job?.running])
+  }, [job?.running, jobs.psCheck?.running])
 
   const refresh = async () => {
-    setChecking(true)
-    try { setSt(await api.actions.refreshPowerShell()) } finally { setChecking(false) }
+    if (jobs.psCheck?.running) return
+    patchJob('psCheck', { running: true, startedAt: Date.now() })
+    try { setSt(await api.actions.refreshPowerShell()) } finally { patchJob('psCheck', { running: false }) }
   }
 
   const install = async (name: string) => {
     if (jobs.psInstall?.running) return
     patchJob('psInstall', { running: true, progress: name, error: null, startedAt: Date.now() })
     try {
-      await api.actions.installModule(name)
+      setSt(await api.actions.installModule(name))
       toast('ok', t('powershell.installed', { name }))
     } catch (e) {
       const m = errMessage(e)

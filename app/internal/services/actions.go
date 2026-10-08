@@ -7,6 +7,7 @@ import (
 	"swissknife-app/internal/actions"
 	"swissknife-app/internal/engine"
 	"swissknife-app/internal/exoapi"
+	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/pwsh"
 	"swissknife-app/internal/session"
 )
@@ -28,7 +29,7 @@ func NewEngine(s *session.Session) *engine.Engine {
 	pool := pwsh.NewPool(psDetector, actions.PowerShellCmdlets())
 	// Closing waits for a sign-in that may be in progress; Disconnect is a UI
 	// call and must not hang on it.
-	s.OnDisconnect(func() { go pool.Close() })
+	s.OnDisconnect(func(prev *graphapi.Client) { go pool.CloseFor(prev) })
 	e := engine.New(s, engine.GraphProvider{}, exoapi.NewProvider(), pwsh.NewExchangeProvider(psDetector))
 	e.PS = pool
 	e.WrapErr = wrapOpErr

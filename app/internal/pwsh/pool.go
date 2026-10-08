@@ -46,13 +46,14 @@ type Pool struct {
 
 	mu    sync.Mutex
 	hosts map[string]*entry
-	gen   uint64 // bumped by Close: a host started before it is discarded
+	gen    uint64                    // bumped by Close: a host started before it is discarded
+	closed map[*graphapi.Client]bool // connections whose hosts were closed
 	start func(exe string, allow []string) (*Host, error)
 	now   func() time.Time
 }
 
 func NewPool(det *Detector, allow map[string][]string) *Pool {
-	return &Pool{det: det, allow: allow, hosts: map[string]*entry{}, start: Start, now: time.Now}
+	return &Pool{det: det, allow: allow, hosts: map[string]*entry{}, closed: map[*graphapi.Client]bool{}, start: Start, now: time.Now}
 }
 
 // Invoke implements engine.PSRunner. An authentication failure (the token
@@ -124,7 +125,7 @@ func (p *Pool) host(env engine.Env, family string) (*Host, error) {
 		if err != nil {
 			return nil, err
 		}
-		if gen != p.gen {
+		if gen != p.gen || p.closed[env.Graph] {
 			h.Close()
 			return nil, errors.New("disconnected")
 		}
@@ -177,7 +178,24 @@ func (p *Pool) drop(family string, h *Host) {
 	}
 }
 
-// Close stops every host (disconnect, shutdown).
+// CloseFor stops the hosts signed in for one connection (it ended). Hosts of
+// a newer connection stay; a start still in flight for conn is discarded.
+func (p *Pool) CloseFor(conn *graphapi.Client) {
+	if conn == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closed[conn] = true
+	for f, e := range p.hosts {
+		if e.conn == conn {
+			e.host.Close()
+			delete(p.hosts, f)
+		}
+	}
+}
+
+// Close stops every host (shutdown).
 func (p *Pool) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()

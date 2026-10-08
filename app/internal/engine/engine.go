@@ -305,7 +305,17 @@ func (e *Engine) Plan(actionID string, in Inputs) (*Plan, error) {
 	// caller edited after the fact.
 	out := *p
 	out.Inputs = cloneInputs(p.Inputs)
-	out.Changes = append([]Change(nil), p.Changes...)
+	out.Changes = make([]Change, len(p.Changes))
+	for i, ch := range p.Changes {
+		if ch.Ref != nil {
+			ref := make(map[string]string, len(ch.Ref))
+			for k, v := range ch.Ref {
+				ref[k] = v
+			}
+			ch.Ref = ref
+		}
+		out.Changes[i] = ch
+	}
 	return &out, nil
 }
 
