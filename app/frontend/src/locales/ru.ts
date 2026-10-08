@@ -55,6 +55,7 @@ const ru: Dict<typeof en> = {
     summaryLine: 'Итог: {{copied}} готово · {{skipped}} пропущено · {{failed}} с ошибкой',
   },
   summary: {
+    compromised: 'Реагирование на взлом {{upn}}: шагов {{steps}}, ошибок {{failed}}',
     offboard: 'Оффбординг {{upn}}: шагов {{steps}}, с ошибкой {{failed}}',
     onboard: 'Онбординг {{upn}}: шагов {{steps}}, с ошибкой {{failed}}',
   },
@@ -116,6 +117,7 @@ const ru: Dict<typeof en> = {
     },
   },
   tasks: {
+    compromisedAccount: 'Учётку взломали — реагирование',
     findUser: 'Найти пользователя в каталоге',
     userSnapshot: 'Посмотреть всё о пользователе',
     createUser: 'Создать учётную запись',
@@ -777,6 +779,19 @@ const ru: Dict<typeof en> = {
     refresh: 'Обновить',
   },
   playbooks: {
+    compromised: 'Скомпрометированная учётка',
+    tileCompromised: 'Учётку взломали',
+    hintCompromised: 'Выкинуть атакующего, затем убрать то, что он оставил в ящике.',
+    noteCompromised: 'Когда пароль знает кто-то ещё: сначала блокируется вход, чтобы дальнейшие действия атакующего ничего не значили. Разблокируйте учётку, когда у человека будут новый пароль и MFA.',
+    compromisedAlways: 'Всегда: заблокировать вход и выкинуть из всех сессий.',
+    compromised_resetPassword: 'Задать новый временный пароль (покажется один раз)',
+    compromised_resetMfa: 'Удалить зарегистрированные способы MFA',
+    compromised_clearForwarding: 'Отключить переадресацию ящика (Exchange PowerShell)',
+    compromised_disableRules: 'Выключить подозрительные правила ящика',
+    runCompromised: 'Выкинуть и почистить',
+    tempPasswordTitle: 'Временный пароль — показывается только сейчас',
+    tempPasswordNote: 'Передайте по телефону или лично; при следующем входе его нужно сменить.',
+    recentSignIns: 'Последние входы',
     convertToShared: 'Перевести ящик в общий (почта сохранится без лицензии)',
     fullAccessTo: 'Полный доступ к ящику получит',
     fullAccessHint: 'Обычно руководитель. Ящик сам появится у него в Outlook.',
@@ -854,6 +869,10 @@ const ru: Dict<typeof en> = {
   },
   // Ключи шагов плейбука с бэкенда (Go шлёт ключи + параметры, UI переводит).
   steps: {
+    resetPassword: 'Сброс пароля',
+    resetMfa: 'Сброс MFA',
+    clearForwarding: 'Отключение переадресации',
+    disableRules: 'Выключение подозрительных правил',
     convertToShared: 'Перевод в общий ящик',
     grantMailboxAccess: 'Доступ к ящику',
     createUser: 'Создание пользователя',
@@ -1211,12 +1230,12 @@ const ru: Dict<typeof en> = {
     transportRule: {
       state: { label: 'Включить или выключить правило потока почты', hint: 'Включить или отключить транспортное правило по имени.', note: 'Правила потока почты действуют на каждое письмо тенанта — проверьте имя правила дважды.' },
     },
-    fields: { category: 'Отправить как', recipient: 'Получатель', identity: 'Identity письма', releaseTo: 'Кому выпустить', sender: 'Отправитель (адрес или домен)', subject: 'Тема содержит', since: 'Получено с (ГГГГ-ММ-ДД)', purgeType: 'Как удалить', policyType: 'Тип политики', policy: 'Имя политики', type: 'Перевести в', forwardTo: 'Пересылать кому', keepCopy: 'Оставлять копию в ящике', address: 'Адрес почты', automate: 'Приглашения на встречи', rule: 'Имя правила', mailbox: 'Ящик', delegate: 'Делегат', folder: 'Папка', access: 'Доступ', user: 'Пользователь', group: 'Группа', role: 'Как', op: 'Действие', sku: 'Лицензия', state: 'Вход', manager: 'Руководитель', country: 'Код страны (например, US, DE)' },
+    fields: { category: 'Отправить как', recipient: 'Получатель', identity: 'Identity письма', sender: 'Отправитель (адрес или домен)', subject: 'Тема содержит', since: 'Получено с (ГГГГ-ММ-ДД)', purgeType: 'Как удалить', policyType: 'Тип политики', policy: 'Имя политики', type: 'Перевести в', forwardTo: 'Пересылать кому', keepCopy: 'Оставлять копию в ящике', address: 'Адрес почты', automate: 'Приглашения на встречи', rule: 'Имя правила', mailbox: 'Ящик', delegate: 'Делегат', folder: 'Папка', access: 'Доступ', user: 'Пользователь', group: 'Группа', role: 'Как', op: 'Действие', sku: 'Лицензия', state: 'Вход', manager: 'Руководитель', country: 'Код страны (например, US, DE)' },
     user: {
       manager: { label: 'Назначить руководителя', hint: 'Кому подчиняется — текущий виден в предпросмотре.' },
       usageLocation: { label: 'Страна использования', hint: 'От неё зависит, какие лицензии можно выдать.', note: 'Двухбуквенный ISO-код. Пока поле пустое, выдача лицензии падает.' },
     },
-    options: { phishing: 'Фишинг', spam: 'Спам', malware: 'Вредонос', notJunk: 'Не спам', recipients: 'Исходным получателям', all: 'Всем получателям', recoverable: 'С восстановлением', permanent: 'Безвозвратно', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', shared: 'Общий', regular: 'Ящик пользователя', set: 'Пересылать', clear: 'Отключить пересылку', yes: 'Да', no: 'Нет', AutoAccept: 'Принимать автоматически', AutoUpdate: 'Только под вопросом', None: 'Оставить делегату', enabled: 'Вкл.', disabled: 'Выкл.', calendar: 'Календарь', inbox: 'Входящие', AvailabilityOnly: 'Только занятость', LimitedDetails: 'Ограниченные сведения', Reviewer: 'Читатель', Author: 'Автор', Editor: 'Редактор', Owner: 'Владелец', none: 'Убрать доступ', blocked: 'Заблокировать', allowed: 'Разрешить', member: 'Участник', owner: 'Владелец', add: 'Добавить', remove: 'Убрать' },
+    options: { phishing: 'Фишинг', spam: 'Спам', malware: 'Вредонос', notJunk: 'Не спам', recoverable: 'С восстановлением', permanent: 'Безвозвратно', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', shared: 'Общий', regular: 'Ящик пользователя', set: 'Пересылать', clear: 'Отключить пересылку', yes: 'Да', no: 'Нет', AutoAccept: 'Принимать автоматически', AutoUpdate: 'Только под вопросом', None: 'Оставить делегату', enabled: 'Вкл.', disabled: 'Выкл.', calendar: 'Календарь', inbox: 'Входящие', AvailabilityOnly: 'Только занятость', LimitedDetails: 'Ограниченные сведения', Reviewer: 'Читатель', Author: 'Автор', Editor: 'Редактор', Owner: 'Владелец', none: 'Убрать доступ', blocked: 'Заблокировать', allowed: 'Разрешить', member: 'Участник', owner: 'Владелец', add: 'Добавить', remove: 'Убрать' },
     changeFields: {
       threatReport: 'отправка в Microsoft',
       blockedSender: 'заблокированный отправитель',
@@ -1240,7 +1259,7 @@ const ru: Dict<typeof en> = {
       usageLocation: 'страна использования',
       group: { member: 'участник', owner: 'владелец' },
     },
-    notes: { purge: { recoverable: 'перенесены в Recoverable Items — можно вернуть', permanent: 'удалены безвозвратно — не вернуть', recoverableOverLimit: 'больше 100 на ящик: за один проход с восстановлением удаляется не больше 100 на ящик — запустите ещё раз для остальных' }, forwardKeepCopy: 'копия остаётся в ящике', forwardNoCopy: 'копия в ящике не остаётся', inheritedLicense: 'Выдана через группу — уберите пользователя из группы (или лицензию у группы).' },
+    notes: { purge: { recoverable: 'перенесены в Recoverable Items — можно вернуть', permanent: 'удалены безвозвратно — не вернуть', recoverableOverLimit: 'вероятно, больше 100 в некоторых ящиках: за проход удаляется не больше 100 на ящик — проверьте дело в Purview после' }, forwardKeepCopy: 'копия остаётся в ящике', forwardNoCopy: 'копия в ящике не остаётся', inheritedLicense: 'Выдана через группу — уберите пользователя из группы (или лицензию у группы).' },
     values: { yes: 'да', no: 'нет', released: 'выпущено', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', Global: 'Global (стандартная)', shared: 'общий', regular: 'ящик пользователя', enabled: 'вкл.', disabled: 'выкл.', allowed: 'разрешён', blocked: 'заблокирован', active: 'активны', revoked: 'отозваны' },
     reasons: {
       pwshMissing: 'Нужен PowerShell 7 — установите его и проверьте снова в Настройки → PowerShell.',

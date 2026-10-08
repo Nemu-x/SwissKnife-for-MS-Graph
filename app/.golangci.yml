@@ -19,6 +19,6 @@ linters:
       # Playbook and mirror steps are best-effort by design: r.do records the
       # error in the per-step report; the return value is only consulted for
       # gating steps (e.g. a channel add that depends on its team add).
-      - path: internal/services/(playbooks|mirror)\.go
+      - path: internal/services/(playbooks|playbook_[a-z]+|mirror)\.go
         linters: [errcheck]
         text: 'r\.do'

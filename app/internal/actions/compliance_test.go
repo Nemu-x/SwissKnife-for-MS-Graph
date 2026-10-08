@@ -35,9 +35,9 @@ type purgeFake struct {
 
 func newPurgeFake(t *testing.T, estimates ...int64) (*purgeFake, *engine.Engine, *session.Session) {
 	t.Helper()
-	old := pollEvery
-	pollEvery = time.Millisecond
-	t.Cleanup(func() { pollEvery = old })
+	old, oldSettle := pollEvery, settle
+	pollEvery, settle = time.Millisecond, 0
+	t.Cleanup(func() { pollEvery, settle = old, oldSettle })
 
 	f := &purgeFake{estimates: estimates, status: "succeeded"}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -136,6 +136,8 @@ func TestPurgeRefusesBroadOrUnsafeQueries(t *testing.T) {
 		{"sender": "a@b.com", "subject": "x:*"},
 		{"sender": "a@b.com", "since": "2026-13-45"},
 		{"sender": "a@b.com", "since": "2999-01-01"},
+		{"sender": "ceo@contoso.com"}, // a colleague's whole mailbox
+		{"sender": "onmicrosoft.com", "subject": "x"},
 	} {
 		if q, err := purgeQuery(in, internal); err == nil {
 			t.Errorf("purgeQuery(%v) = %q, want a refusal", in, q)

@@ -39,6 +39,9 @@ var (
 	estimateDeadline = 5 * time.Minute
 	purgeDeadline    = 10 * time.Minute
 	purgeRounds      = 5 // Microsoft purges at most 100 items per mailbox per run
+	// settle lets the index catch up after a hard delete before the count is
+	// compared again; without it, just-deleted items can still be counted.
+	settle = 30 * time.Second
 )
 
 // perRunLimit is Microsoft's cap on items purged per mailbox per run.
@@ -77,7 +80,7 @@ var freeMail = map[string]bool{
 	"msn.com": true, "yahoo.com": true, "icloud.com": true, "me.com": true, "aol.com": true,
 	"proton.me": true, "protonmail.com": true, "gmx.com": true, "gmx.de": true, "web.de": true,
 	"mail.ru": true, "yandex.ru": true, "ya.ru": true, "bk.ru": true, "inbox.ru": true, "list.ru": true,
-	"rambler.ru": true, "zoho.com": true, "qq.com": true, "163.com": true,
+	"rambler.ru": true, "zoho.com": true, "qq.com": true, "163.com": true, "onmicrosoft.com": true,
 }
 
 // purgeQuery builds the KQL from validated values. internal holds the
@@ -90,6 +93,11 @@ func purgeQuery(in engine.Inputs, internal map[string]bool) (string, error) {
 	bareDomain := false
 	switch {
 	case senderAddrRe.MatchString(sender):
+		// A colleague's mailbox (a compromised account sending phishing) is a
+		// valid target, but all of its mail is not: narrow it.
+		if internal[sender[strings.LastIndex(sender, "@")+1:]] && subject == "" && since == "" {
+			return "", errors.New("an address in this tenant needs a subject or a date as well, to keep the search narrow")
+		}
 	case senderDomRe.MatchString(sender):
 		bareDomain = true
 	default:
@@ -319,13 +327,17 @@ func (graphPurge) Apply(env engine.Env, in engine.Inputs, ch engine.Change) erro
 			return errOutcomeUnknown
 		}
 		if _, err := waitOperation(env.Ctx, env, loc, purgeDeadline); err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				return errOutcomeUnknown
-			}
-			return err
+			// The purge was submitted: whatever went wrong while watching it,
+			// running it again could start a second purge.
+			return fmt.Errorf("%w (%v)", errOutcomeUnknown, err)
 		}
 		if rounds == 1 {
 			return nil
+		}
+		select {
+		case <-env.Ctx.Done():
+			return errOutcomeUnknown
+		case <-time.After(settle):
 		}
 		est, err := runEstimate(env, path)
 		if err != nil {

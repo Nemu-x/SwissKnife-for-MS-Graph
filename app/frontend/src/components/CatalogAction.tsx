@@ -299,8 +299,9 @@ function RowsView({ result }: { result: engine.ReadResult }) {
   const word = (v: string) => (/^[A-Za-z]+$/.test(v) && i18n.exists(`actions.values.${v}`) ? t(`actions.values.${v}`) : v)
   // "why" cells hold reason tokens: "externalForward=addr; deletes".
   const why = (v: string) => v.split('; ').map((tok) => {
-    const [k, val] = tok.split('=')
-    return t(`actions.why.${k}`, { value: val ?? '', defaultValue: tok })
+    const i = tok.indexOf('=')
+    const k = i < 0 ? tok : tok.slice(0, i)
+    return t(`actions.why.${k}`, { value: i < 0 ? '' : tok.slice(i + 1), defaultValue: tok })
   }).join('; ')
   const show = (c: string, v: string) => (c === 'why' ? why(v) : word(v))
   const note = result.note && <p className="text-xs text-[var(--text-faint)]">{t(`actions.readNotes.${result.note.key}`, { ...result.note.params, defaultValue: result.note.key })}</p>

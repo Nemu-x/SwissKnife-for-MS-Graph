@@ -22,7 +22,7 @@ func securityActions() []engine.Action {
 	return []engine.Action{
 		{Manifest: engine.Manifest{ID: "mail.ruleAudit", Page: "security", Danger: engine.Read,
 			Fields:      []engine.Field{{Name: "user", Kind: engine.FieldUser}},
-			Permissions: []string{"MailboxSettings.Read", "User.Read.All", "Domain.Read.All"}},
+			Permissions: []string{"MailboxSettings.Read", "Mail.ReadBasic.All", "User.Read.All", "Domain.Read.All"}},
 			Impls: []engine.Impl{engine.ReadImpl(graphRuleAudit{})}},
 		{Manifest: engine.Manifest{ID: "mail.reportThreat", Page: "audit", Danger: engine.Write,
 			Fields: []engine.Field{
@@ -43,6 +43,7 @@ type graphRuleAudit struct{}
 func (graphRuleAudit) Backend() engine.Backend { return engine.BackendGraph }
 
 type messageRule struct {
+	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
 	IsEnabled   bool   `json:"isEnabled"`
 	Actions     struct {
@@ -109,7 +110,7 @@ func (graphRuleAudit) Read(env engine.Env, in engine.Inputs) (*engine.ReadResult
 		all, err := graphapi.ListAllInto[struct {
 			UPN  string `json:"userPrincipalName"`
 			Mail string `json:"mail"`
-		}](env.Ctx, env.Graph, "/users", url.Values{"$select": {"userPrincipalName,mail"}, "$top": {"999"}}, 0)
+		}](env.Ctx, env.Graph, "/users", url.Values{"$select": {"userPrincipalName,mail"}, "$filter": {"userType eq 'Member'"}, "$top": {"999"}}, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -129,6 +130,7 @@ func (graphRuleAudit) Read(env engine.Env, in engine.Inputs) (*engine.ReadResult
 		mu      sync.Mutex
 		hits    []found
 		skipped int
+		lastErr error
 		wg      sync.WaitGroup
 		sem     = make(chan struct{}, ruleScanConcurrency)
 	)
@@ -141,21 +143,31 @@ func (graphRuleAudit) Read(env engine.Env, in engine.Inputs) (*engine.ReadResult
 		go func(upn string) {
 			defer func() { <-sem; wg.Done() }()
 			base := "/users/" + url.PathEscape(upn) + "/mailFolders"
-			// Well-known folders the "hide it" pattern moves mail into, by id.
-			hidden := map[string]bool{}
-			for _, wk := range []string{"deleteditems", "junkemail", "archive", "conversationhistory"} {
-				var f struct {
-					ID string `json:"id"`
-				}
-				if env.Graph.Get(env.Ctx, base+"/"+wk, url.Values{"$select": {"id"}}, &f) == nil && f.ID != "" {
-					hidden[f.ID] = true
-				}
-			}
 			rules, err := graphapi.ListAllInto[messageRule](env.Ctx, env.Graph, base+"/inbox/messageRules", nil, 0)
+			// Well-known folders the "hide it" pattern moves mail into, by id —
+			// looked up only when a rule moves mail at all.
+			hidden := map[string]bool{}
+			for _, r := range rules {
+				if r.Actions.MoveToFolder == "" {
+					continue
+				}
+				for _, wk := range []string{"deleteditems", "junkemail", "archive", "conversationhistory"} {
+					var f struct {
+						ID string `json:"id"`
+					}
+					if env.Graph.Get(env.Ctx, base+"/"+wk, url.Values{"$select": {"id"}}, &f) == nil && f.ID != "" {
+						hidden[f.ID] = true
+					}
+				}
+				break
+			}
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
 				skipped++ // no mailbox, or no access to it
+				if lastErr == nil {
+					lastErr = err
+				}
 				return
 			}
 			for _, r := range rules {
@@ -169,11 +181,17 @@ func (graphRuleAudit) Read(env engine.Env, in engine.Inputs) (*engine.ReadResult
 	if err := env.Ctx.Err(); err != nil {
 		return nil, err
 	}
+	// Not one mailbox readable is a permission problem, not a clean tenant.
+	if len(users) > 0 && skipped == len(users) {
+		return nil, fmt.Errorf("no mailbox could be read — grant MailboxSettings.Read: %w", lastErr)
+	}
 
 	sort.Slice(hits, func(i, j int) bool { return hits[i].user < hits[j].user })
 	res := &engine.ReadResult{Columns: []string{"user", "rule", "enabled", "why"}}
 	for _, h := range hits {
-		res.Rows = append(res.Rows, engine.Row{"user": h.user, "rule": h.rule.DisplayName, "enabled": yesNo(h.rule.IsEnabled), "why": h.why})
+		// ruleId is not a column (not shown); the compromised-account
+		// playbook uses it to disable exactly these rules.
+		res.Rows = append(res.Rows, engine.Row{"user": h.user, "rule": h.rule.DisplayName, "enabled": yesNo(h.rule.IsEnabled), "why": h.why, "ruleId": h.rule.ID})
 	}
 	if len(users) > 1 {
 		res.Note = &engine.Reason{Key: "rulesScanned", Params: map[string]string{
@@ -212,8 +230,10 @@ func (graphReportThreat) Plan(env engine.Env, in engine.Inputs) ([]engine.Change
 			Received time.Time `json:"receivedDateTime"`
 		} `json:"value"`
 	}
+	// Graph refuses $orderby on a property the $filter does not start with
+	// ("InefficientFilter"), hence the always-true date clause first.
 	q := url.Values{
-		"$filter":  {"from/emailAddress/address eq '" + escapeOData(sender) + "'"},
+		"$filter":  {"receivedDateTime ge 1900-01-01T00:00:00Z and from/emailAddress/address eq '" + escapeOData(sender) + "'"},
 		"$select":  {"id,subject,receivedDateTime"},
 		"$orderby": {"receivedDateTime desc"},
 		"$top":     {"1"},

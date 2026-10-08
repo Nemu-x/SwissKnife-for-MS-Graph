@@ -162,6 +162,7 @@ export const api = {
   playbooks: {
     onboard: (req: any) => Playbook.Onboard(req) as Promise<services.PlaybookResult>,
     offboard: (req: any) => Playbook.Offboard(req) as Promise<services.PlaybookResult>,
+    compromised: (req: any) => Playbook.Compromised(req) as Promise<services.CompromisedResult>,
     cancel: () => Playbook.Cancel() as Promise<void>,
   },
   access: {

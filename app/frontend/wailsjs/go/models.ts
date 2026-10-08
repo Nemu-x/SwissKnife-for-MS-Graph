@@ -577,6 +577,114 @@ export namespace services {
 	        this.chatType = source["chatType"];
 	    }
 	}
+	export class CompromisedRequest {
+	    upn: string;
+	    confirm: string;
+	    resetPassword: boolean;
+	    resetMfa: boolean;
+	    clearForwarding: boolean;
+	    disableRules: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new CompromisedRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.upn = source["upn"];
+	        this.confirm = source["confirm"];
+	        this.resetPassword = source["resetPassword"];
+	        this.resetMfa = source["resetMfa"];
+	        this.clearForwarding = source["clearForwarding"];
+	        this.disableRules = source["disableRules"];
+	    }
+	}
+	export class SignInRow {
+	    when: string;
+	    app: string;
+	    ip: string;
+	    location: string;
+	    result: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SignInRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.when = source["when"];
+	        this.app = source["app"];
+	        this.ip = source["ip"];
+	        this.location = source["location"];
+	        this.result = source["result"];
+	    }
+	}
+	export class Step {
+	    name: string;
+	    nameKey?: string;
+	    ok: boolean;
+	    detail?: string;
+	    detailKey?: string;
+	    params?: Record<string, any>;
+	    error?: string;
+	    errorCode?: string;
+	    hint?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Step(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.nameKey = source["nameKey"];
+	        this.ok = source["ok"];
+	        this.detail = source["detail"];
+	        this.detailKey = source["detailKey"];
+	        this.params = source["params"];
+	        this.error = source["error"];
+	        this.errorCode = source["errorCode"];
+	        this.hint = source["hint"];
+	    }
+	}
+	export class CompromisedResult {
+	    ok: boolean;
+	    canceled: boolean;
+	    steps: Step[];
+	    tempPassword?: string;
+	    signIns: SignInRow[];
+	
+	    static createFrom(source: any = {}) {
+	        return new CompromisedResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.canceled = source["canceled"];
+	        this.steps = this.convertValues(source["steps"], Step);
+	        this.tempPassword = source["tempPassword"];
+	        this.signIns = this.convertValues(source["signIns"], SignInRow);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ConnectRequest {
 	    profileId: string;
 	    tenantId: string;
@@ -1119,34 +1227,6 @@ export namespace services {
 		    return a;
 		}
 	}
-	export class Step {
-	    name: string;
-	    nameKey?: string;
-	    ok: boolean;
-	    detail?: string;
-	    detailKey?: string;
-	    params?: Record<string, any>;
-	    error?: string;
-	    errorCode?: string;
-	    hint?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new Step(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
-	        this.nameKey = source["nameKey"];
-	        this.ok = source["ok"];
-	        this.detail = source["detail"];
-	        this.detailKey = source["detailKey"];
-	        this.params = source["params"];
-	        this.error = source["error"];
-	        this.errorCode = source["errorCode"];
-	        this.hint = source["hint"];
-	    }
-	}
 	export class PlaybookResult {
 	    ok: boolean;
 	    canceled: boolean;
@@ -1277,6 +1357,7 @@ export namespace services {
 	        this.top = source["top"];
 	    }
 	}
+	
 	export class SiteUsage {
 	    id: string;
 	    name: string;

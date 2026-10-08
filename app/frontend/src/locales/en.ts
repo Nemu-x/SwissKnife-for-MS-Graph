@@ -55,6 +55,7 @@ const en = {
     kindAction: 'Action',
   },
   summary: {
+    compromised: 'Compromised-account response for {{upn}}: {{steps}} step(s), {{failed}} failed',
     offboard: 'Offboarded {{upn}}: {{steps}} step(s), {{failed}} failed',
     onboard: 'Onboarded {{upn}}: {{steps}} step(s), {{failed}} failed',
   },
@@ -116,6 +117,7 @@ const en = {
     },
   },
   tasks: {
+    compromisedAccount: 'Respond to a compromised (hacked) account',
     findUser: 'Find a user in the directory',
     userSnapshot: 'See everything about a user',
     createUser: 'Create a user account',
@@ -777,6 +779,19 @@ const en = {
     refresh: 'Refresh',
   },
   playbooks: {
+    compromised: 'Compromised account',
+    tileCompromised: 'Respond to a compromised account',
+    hintCompromised: 'Lock the attacker out, then remove what they left in the mailbox.',
+    noteCompromised: 'Use it when someone else has the password: sign-in is blocked first, so nothing the attacker does later counts. Unblock the account once the person has a new password and MFA.',
+    compromisedAlways: 'Always: block sign-in and sign out of every session.',
+    compromised_resetPassword: 'Set a new temporary password (shown once)',
+    compromised_resetMfa: 'Remove the registered MFA methods',
+    compromised_clearForwarding: 'Stop mailbox forwarding (Exchange PowerShell)',
+    compromised_disableRules: 'Turn off suspicious inbox rules',
+    runCompromised: 'Lock out and clean up',
+    tempPasswordTitle: 'Temporary password — shown only now',
+    tempPasswordNote: 'Hand it over by phone or in person; it must be changed at the next sign-in.',
+    recentSignIns: 'Recent sign-ins',
     convertToShared: 'Convert the mailbox to shared (keeps the mail without a license)',
     fullAccessTo: 'Give full mailbox access to',
     fullAccessHint: 'Usually the manager. The mailbox appears in their Outlook by itself.',
@@ -854,6 +869,10 @@ const en = {
   },
   // Backend-emitted playbook step keys (Go sends keys + params, UI translates).
   steps: {
+    resetPassword: 'Reset password',
+    resetMfa: 'Reset MFA',
+    clearForwarding: 'Clear mailbox forwarding',
+    disableRules: 'Disable suspicious inbox rules',
     convertToShared: 'Convert to shared mailbox',
     grantMailboxAccess: 'Grant mailbox access',
     createUser: 'Create user',
@@ -1211,12 +1230,12 @@ const en = {
     transportRule: {
       state: { label: 'Turn a mail flow rule on or off', hint: 'Enable or disable a transport rule by its name.', note: 'Mail flow rules act on every message in the tenant — check the rule name twice.' },
     },
-    fields: { category: 'Report as', recipient: 'Recipient', identity: 'Message identity', releaseTo: 'Release to', sender: 'Sender (address or domain)', subject: 'Subject contains', since: 'Received since (YYYY-MM-DD)', purgeType: 'How to delete', policyType: 'Policy type', policy: 'Policy name', type: 'Convert to', forwardTo: 'Forward to', keepCopy: 'Keep a copy in the mailbox', address: 'Email address', automate: 'Meeting requests', rule: 'Rule name', mailbox: 'Mailbox', delegate: 'Delegate', folder: 'Folder', access: 'Access', user: 'User', group: 'Group', role: 'As', op: 'Action', sku: 'License', state: 'Sign-in', manager: 'Manager', country: 'Country code (e.g. US, DE)' },
+    fields: { category: 'Report as', recipient: 'Recipient', identity: 'Message identity', sender: 'Sender (address or domain)', subject: 'Subject contains', since: 'Received since (YYYY-MM-DD)', purgeType: 'How to delete', policyType: 'Policy type', policy: 'Policy name', type: 'Convert to', forwardTo: 'Forward to', keepCopy: 'Keep a copy in the mailbox', address: 'Email address', automate: 'Meeting requests', rule: 'Rule name', mailbox: 'Mailbox', delegate: 'Delegate', folder: 'Folder', access: 'Access', user: 'User', group: 'Group', role: 'As', op: 'Action', sku: 'License', state: 'Sign-in', manager: 'Manager', country: 'Country code (e.g. US, DE)' },
     user: {
       manager: { label: 'Set a manager', hint: 'Who they report to — the preview shows the current one.' },
       usageLocation: { label: 'Set usage location', hint: 'The country that decides which licenses can be assigned.', note: 'Two-letter ISO code. License assignment fails while it is empty.' },
     },
-    options: { phishing: 'Phishing', spam: 'Spam', malware: 'Malware', notJunk: 'Not junk', recipients: 'Original recipients', all: 'All recipients', recoverable: 'Recoverable', permanent: 'Permanently', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
+    options: { phishing: 'Phishing', spam: 'Spam', malware: 'Malware', notJunk: 'Not junk', recoverable: 'Recoverable', permanent: 'Permanently', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
     changeFields: {
       threatReport: 'report to Microsoft',
       blockedSender: 'blocked sender',
@@ -1240,7 +1259,7 @@ const en = {
       usageLocation: 'usage location',
       group: { member: 'member of', owner: 'owner of' },
     },
-    notes: { purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone', recoverableOverLimit: 'more than 100 per mailbox: one recoverable run removes at most 100 per mailbox — run again for the rest' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
+    notes: { purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone', recoverableOverLimit: 'likely more than 100 in some mailboxes: one run removes at most 100 per mailbox — check the case in Purview afterwards' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
     values: { yes: 'yes', no: 'no', released: 'released', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', Global: 'Global (org default)', shared: 'shared', regular: 'user mailbox', enabled: 'on', disabled: 'off', allowed: 'allowed', blocked: 'blocked', active: 'active', revoked: 'revoked' },
     reasons: {
       pwshMissing: 'Needs PowerShell 7 — install it, then recheck in Settings → PowerShell.',

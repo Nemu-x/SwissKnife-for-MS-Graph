@@ -32,10 +32,8 @@ func securityPSActions() []engine.Action {
 			}, Permissions: perms},
 			Impls: []engine.Impl{engine.ReadImpl(psQuarantineList{})}},
 		psAction(engine.Manifest{ID: "mail.releaseQuarantine", Page: "security", Danger: engine.Write,
-			Fields: []engine.Field{
-				{Name: "identity", Kind: engine.FieldText, Required: true},
-				{Name: "releaseTo", Kind: engine.FieldChoice, Required: true, Options: []string{"recipients", "all"}, Default: "recipients"},
-			}, Permissions: perms}, psReleaseQuarantine{}),
+			Fields:      []engine.Field{{Name: "identity", Kind: engine.FieldText, Required: true}},
+			Permissions: perms}, psReleaseQuarantine{}),
 	}
 }
 
@@ -56,6 +54,17 @@ func (psBlockSender) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, er
 	if err != nil {
 		return nil, err
 	}
+	// Blocking a whole domain of the tenant, or a free-mail provider, would
+	// cut off far more than one attacker.
+	if !strings.Contains(entry, "@") && in["op"] == "add" {
+		internal, err := tenantDomains(env)
+		if err != nil {
+			return nil, err
+		}
+		if internal[entry] || freeMail[entry] {
+			return nil, fmt.Errorf("refusing to block the whole domain %s — block the sender's address instead", entry)
+		}
+	}
 	rows, err := exo(env, "Get-TenantAllowBlockListItems", map[string]any{"ListType": "Sender", "Entry": entry}, "Value", "Action")
 	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "not found") {
 		return nil, err
@@ -63,7 +72,13 @@ func (psBlockSender) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, er
 	blocked := false
 	for _, raw := range rows {
 		var r struct{ Value, Action string }
-		if json.Unmarshal(raw, &r) == nil && strings.EqualFold(r.Value, entry) && strings.EqualFold(r.Action, "Block") {
+		if json.Unmarshal(raw, &r) != nil || !strings.EqualFold(r.Value, entry) {
+			continue
+		}
+		if strings.EqualFold(r.Action, "Allow") && in["op"] == "add" {
+			return nil, fmt.Errorf("%s is on the allow list — remove that entry first", entry)
+		}
+		if strings.EqualFold(r.Action, "Block") {
 			blocked = true
 		}
 	}
@@ -145,10 +160,8 @@ func (psReleaseQuarantine) Plan(env engine.Env, in engine.Inputs) ([]engine.Chan
 }
 
 func (psReleaseQuarantine) Apply(env engine.Env, in engine.Inputs, ch engine.Change) error {
-	params := map[string]any{"Identity": ch.Ref["identity"]}
-	if in["releaseTo"] == "all" {
-		params["ReleaseToAll"] = true
-	}
-	_, err := exo(env, "Release-QuarantineMessage", params)
+	// The cmdlet needs -ReleaseToAll or -User; ReleaseToAll means the
+	// message's original recipients.
+	_, err := exo(env, "Release-QuarantineMessage", map[string]any{"Identity": ch.Ref["identity"], "ReleaseToAll": true})
 	return err
 }
