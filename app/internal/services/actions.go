@@ -167,6 +167,22 @@ func (a *ActionsService) InstallModule(name string) (PowerShellStatus, error) {
 	return a.PowerShellStatus(), err
 }
 
+// PowerShellInstallMethod says whether the app can install PowerShell 7 here
+// and, if not, what to run by hand.
+func (a *ActionsService) PowerShellInstallMethod() pwsh.InstallMethod { return pwsh.Method() }
+
+// InstallPowerShell downloads and installs PowerShell 7 (checked against the
+// published checksum; the system asks for admin rights once). Progress
+// arrives as "pwsh:install" events.
+func (a *ActionsService) InstallPowerShell() (PowerShellStatus, error) {
+	err := pwsh.InstallPowerShell(a.s.Ctx(), func(stage string, pct int) {
+		emitEvent(a.s.Ctx(), "pwsh:install", map[string]any{"stage": stage, "pct": pct})
+	})
+	a.s.Record("powershell.install", pwsh.Method().How, "", err)
+	psDetector.Invalidate()
+	return a.PowerShellStatus(), err
+}
+
 // RefreshPowerShell re-detects after the operator installed something by hand.
 func (a *ActionsService) RefreshPowerShell() PowerShellStatus {
 	psDetector.Invalidate()

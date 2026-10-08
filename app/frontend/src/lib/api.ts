@@ -319,6 +319,8 @@ export const api = {
     powerShellStatus: () => Actions.PowerShellStatus() as Promise<services.PowerShellStatus>,
     refreshPowerShell: () => Actions.RefreshPowerShell() as Promise<services.PowerShellStatus>,
     installModule: (name: string) => Actions.InstallModule(name) as Promise<services.PowerShellStatus>,
+    powerShellInstallMethod: () => Actions.PowerShellInstallMethod() as Promise<{ auto: boolean; how: string; commands?: string[]; url: string }>,
+    installPowerShell: () => Actions.InstallPowerShell() as Promise<services.PowerShellStatus>,
   },
   journal: {
     list: (limit = 100) => Journal.List(limit) as Promise<journal.RunSummary[]>,
