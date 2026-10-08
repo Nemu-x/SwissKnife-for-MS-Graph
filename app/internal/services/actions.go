@@ -52,6 +52,8 @@ func NewEngine(s *session.Session) *engine.Engine {
 	pool.Scripts = trustedScriptHashes(s)
 	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr
+	// The Exchange sign-in name cached for the worker ends with the connection.
+	s.OnDisconnect(func(prev *graphapi.Client) { signIns.Delete(prev) })
 	// A cross-tenant read belongs to the connection that started it.
 	s.OnDisconnect(func(*graphapi.Client) { s.Ops.CancelKind(ops.KindFanOut) })
 	// Service writes outside the catalog check their targets through the

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -53,6 +54,25 @@ func (r *Remote) Health(ctx context.Context) (*Health, error) {
 	}
 	var h Health
 	return &h, json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&h)
+}
+
+// TokenSource hands out access tokens per resource (the session's broker).
+type TokenSource interface {
+	TokenFor(ctx context.Context, resource string) (string, error)
+}
+
+// InvokeWith fills the request's tokens for the given resources just before
+// sending it: callers choose resources, never handle the tokens themselves.
+func (r *Remote) InvokeWith(ctx context.Context, in InvokeRequest, src TokenSource, resources ...string) ([]json.RawMessage, error) {
+	in.Tokens = map[string]string{}
+	for _, res := range resources {
+		t, err := src.TokenFor(ctx, res)
+		if err != nil {
+			return nil, err
+		}
+		in.Tokens[res] = t
+	}
+	return r.Invoke(ctx, in)
 }
 
 // Invoke runs one cmdlet on the worker; a PowerShell failure comes back as
@@ -122,7 +142,8 @@ func Pair(ctx context.Context, addr, code, name string, id *Identity) (fp, worke
 	}
 	hc := &http.Client{Transport: &http.Transport{TLSClientConfig: cfg, DisableKeepAlives: true}, Timeout: 30 * time.Second}
 	// The proof needs the fingerprint seen in the handshake: handshake first.
-	conn, err := tls.Dial("tcp", addr, cfg)
+	dialer := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 15 * time.Second}, Config: cfg}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return "", "", fmt.Errorf("worker %s: %w", addr, err)
 	}

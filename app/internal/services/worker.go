@@ -158,19 +158,15 @@ func (d *psDispatch) Invoke(env engine.Env, family, cmdlet string, params map[st
 			return nil, err
 		}
 	}
-	toks := map[string]string{}
-	for _, res := range resources {
-		t, err := env.Tokens.TokenFor(env.Ctx, res)
-		if err != nil {
-			return nil, err
-		}
-		toks[res] = t
-	}
-	req.Tokens = toks
-	out, err := r.Invoke(env.Ctx, req)
+	out, err := r.InvokeWith(env.Ctx, req, env.Tokens, resources...)
 	d.s.Record("worker.invoke", cmdlet, "worker="+w.Name+" ("+w.Addr+")", err)
 	return out, err
 }
+
+// signIns caches the Exchange sign-in name per connection (*graphapi.Client).
+var signIns sync.Map
+
+type exoSignIn struct{ org, upn string }
 
 // exchangeSignIn fills what Exchange PowerShell signs in with: the
 // tenant's initial domain (app-only), the customer org (GDAP) or the
@@ -179,6 +175,16 @@ func exchangeSignIn(env engine.Env, req *worker.InvokeRequest) error {
 	if env.Graph == nil {
 		return session.ErrNotConnected
 	}
+	if v, ok := signIns.Load(env.Graph); ok {
+		si := v.(exoSignIn)
+		req.ExchangeOrg, req.ExchangeUPN = si.org, si.upn
+		return nil
+	}
+	defer func() {
+		if req.ExchangeOrg != "" || req.ExchangeUPN != "" {
+			signIns.Store(env.Graph, exoSignIn{req.ExchangeOrg, req.ExchangeUPN})
+		}
+	}()
 	switch {
 	case env.AppOnly:
 		org, err := graphapi.InitialDomain(env.Ctx, env.Graph)

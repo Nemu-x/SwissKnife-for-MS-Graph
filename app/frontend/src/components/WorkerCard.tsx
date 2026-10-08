@@ -25,14 +25,15 @@ export function WorkerCard() {
   // PowerShell actions may become available (or not) through the worker.
   const refreshCatalog = () => setCache('catalog.rev', Date.now())
 
-  const run = async (fn: () => Promise<unknown>, ok?: string) => {
+  const run = async (fn: () => Promise<unknown>, ok?: string): Promise<boolean> => {
     setBusy(true)
     try {
       const x = await fn()
       setW((x as Worker) ?? null)
       refreshCatalog()
       if (ok) toast('ok', ok)
-    } catch (e) { toast('err', errMessage(e)) } finally { setBusy(false) }
+      return true
+    } catch (e) { toast('err', errMessage(e)); return false } finally { setBusy(false) }
   }
 
   return (
@@ -64,7 +65,7 @@ export function WorkerCard() {
           <Field label={t('worker.address')}><Input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="srv-ps01:8743" /></Field>
           <Field label={t('worker.code')}><Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="XXXX-XXXX-XX" className="font-mono" /></Field>
           <Button variant="primary" disabled={busy || !addr.trim() || !code.trim()}
-            onClick={() => run(() => api.worker.pair(addr, code), t('worker.paired')).then(() => setCode(''))}>
+            onClick={() => run(() => api.worker.pair(addr, code), t('worker.paired')).then((ok) => { if (ok) setCode('') })}>
             <Link2 size={14} /> {t('worker.pair')}
           </Button>
         </div>
