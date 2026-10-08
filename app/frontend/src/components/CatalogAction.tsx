@@ -126,12 +126,16 @@ function CatalogPanel({ entry, mark, askConfirm }: {
   askConfirm: (target: string, action: (confirm: string) => void) => void
 }) {
   const { t } = useTranslation()
-  const { readOnly, toast } = useStore()
-  const initial = () => Object.fromEntries(entry.fields.map((f) => [f.name, f.default ?? '']))
+  const { readOnly, toast, cache, setCache } = useStore()
+  // A read's last answer lives in the store cache with the values that
+  // produced it, so leaving the page and coming back shows it again.
+  const cacheKey = `catalog.read.${entry.id}`
+  const cached = cache[cacheKey] as { values: Record<string, string>; result: engine.ReadResult } | undefined
+  const initial = () => cached?.values ?? Object.fromEntries(entry.fields.map((f) => [f.name, f.default ?? '']))
   const [values, setValues] = useState<Record<string, string>>(initial)
   const [plan, setPlan] = useState<engine.Plan | null>(null)
   const [result, setResult] = useState<engine.Result | null>(null)
-  const [rows, setRows] = useState<engine.ReadResult | null>(null)
+  const [rows, setRows] = useState<engine.ReadResult | null>(cached?.result ?? null)
   const [busy, setBusy] = useState(false)
   const isRead = entry.danger === 'read'
   // Only the newest read may show its rows: an edit or a second click makes
@@ -157,6 +161,7 @@ function CatalogPanel({ entry, mark, askConfirm }: {
       const r = await api.actions.run(entry.id, values)
       if (seq !== runSeq.current) return
       setRows(r)
+      setCache(cacheKey, { values, result: r })
       mark(entry.id, true, t('actions.rows', { count: r.rows?.length ?? 0 }))
     } catch (e) {
       const m = errMessage(e)
