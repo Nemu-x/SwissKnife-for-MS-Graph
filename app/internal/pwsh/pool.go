@@ -244,12 +244,11 @@ func connectParams(env engine.Env, family string) (map[string]any, error) {
 			params["organization"] = org
 		case env.DelegatedOrg != "":
 			// GDAP: the partner's user is no object of the customer
-			// directory, so there is no /me; the customer names the org.
-			org, err := graphapi.InitialDomain(env.Ctx, env.Graph)
-			if err != nil {
-				return nil, err
-			}
-			params["organization"], params["delegatedOrg"] = org, org
+			// directory, so there is no /me. With -AccessToken the module
+			// takes exactly one of Organization, DelegatedOrganization or
+			// UserPrincipalName; partners use DelegatedOrganization with the
+			// customer's tenant id.
+			params["delegatedOrg"] = env.TenantID
 		default:
 			var me struct {
 				UPN string `json:"userPrincipalName"`
