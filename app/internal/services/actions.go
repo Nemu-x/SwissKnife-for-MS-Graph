@@ -78,7 +78,8 @@ func cachedGrants(s *session.Session) func() map[string]bool {
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		if c != conn || time.Since(at) > 5*time.Minute {
+		// A failed read (nil) is not cached: the next listing tries again.
+		if c != conn || have == nil || time.Since(at) > 5*time.Minute {
 			conn, at, have = c, time.Now(), graphGrants(s)
 		}
 		return have
