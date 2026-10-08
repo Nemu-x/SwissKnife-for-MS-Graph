@@ -38,7 +38,7 @@ func NewEngine(s *session.Session) *engine.Engine {
 	s.OnDisconnect(func(prev *graphapi.Client) { go pool.CloseFor(prev) })
 	e := engine.New(s, engine.GraphProvider{}, exoapi.NewProvider(), pwsh.NewExchangeProvider(psDetector))
 	e.PS = pool
-	e.Grants = func() map[string]bool { return graphGrants(s) }
+	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr
 	e.Register(actions.Builtin()...)
 	return e
@@ -59,6 +59,30 @@ func EngineFor(s *session.Session) *engine.Engine {
 
 func NewActionsService(s *session.Session) *ActionsService {
 	return &ActionsService{e: EngineFor(s)}
+}
+
+// cachedGrants reads the token's grants once per connection (and again after
+// five minutes, when a consent may have changed), so listing the catalog does
+// not wait on the token broker every time.
+func cachedGrants(s *session.Session) func() map[string]bool {
+	var (
+		mu   sync.Mutex
+		conn *graphapi.Client
+		at   time.Time
+		have map[string]bool
+	)
+	return func() map[string]bool {
+		c, err := s.Client()
+		if err != nil {
+			return nil
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if c != conn || time.Since(at) > 5*time.Minute {
+			conn, at, have = c, time.Now(), graphGrants(s)
+		}
+		return have
+	}
 }
 
 // graphGrants reads the permissions from the connection's Graph token:

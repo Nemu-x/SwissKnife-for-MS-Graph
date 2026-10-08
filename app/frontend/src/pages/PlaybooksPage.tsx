@@ -90,7 +90,8 @@ export function PlaybooksPage() {
   const BUILTIN_PRESETS: Record<string, Partial<OffOptions>> = {
     __phase1: {
       block: true, revokeSessions: true, hideFromGal: true, removeFromGroups: true,
-      removeAllLicenses: false, convertToShared: false, delete: false,
+      // A remembered recipient must not ride along into a preset run.
+      removeAllLicenses: false, convertToShared: false, fullAccessTo: '', delete: false,
     },
     __phase2: {
       block: false, revokeSessions: false, oof: false, hideFromGal: false, removeFromGroups: false,
