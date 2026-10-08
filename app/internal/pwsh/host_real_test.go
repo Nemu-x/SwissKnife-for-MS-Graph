@@ -53,3 +53,31 @@ func TestRealHostScript(t *testing.T) {
 		t.Fatalf("after refusal: %v", err)
 	}
 }
+
+// TestRealHostRunsOnlyTrustedScripts: a pack script runs when its hash was
+// trusted at start, any other script is refused, parameters stay data.
+func TestRealHostRunsOnlyTrustedScripts(t *testing.T) {
+	exe := findExe()
+	if exe == "" {
+		t.Skip("PowerShell 7 is not installed")
+	}
+	script := "param($Mode, $Inputs)\n[pscustomobject]@{ mode = $Mode; name = $Inputs.name }"
+	h, err := StartWithScripts(exe, nil, []string{ScriptHash(script)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	out, err := h.RunScript(ctx, script, map[string]any{"Mode": "read", "Inputs": map[string]any{"name": "x'; Remove-Item /; '"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row struct{ Mode, Name string }
+	if len(out) != 1 || json.Unmarshal(out[0], &row) != nil || row.Mode != "read" || row.Name != "x'; Remove-Item /; '" {
+		t.Fatalf("out %s", out)
+	}
+	if _, err := h.RunScript(ctx, script+"\n# changed", nil); err == nil || !strings.Contains(err.Error(), "not trusted") {
+		t.Fatalf("an untrusted script must be refused: %v", err)
+	}
+}

@@ -32,6 +32,7 @@ import * as Journal from '../../wailsjs/go/services/JournalService'
 import * as Notify from '../../wailsjs/go/services/NotifyService'
 import * as Snapshot from '../../wailsjs/go/services/SnapshotService'
 import * as OnPrem from '../../wailsjs/go/services/OnPremService'
+import * as Packs from '../../wailsjs/go/services/PacksService'
 import * as Actions from '../../wailsjs/go/services/ActionsService'
 import type { engine, journal, secrets, services } from '../../wailsjs/go/models'
 import { parseErr, type ParsedError } from './graphError'
@@ -63,6 +64,17 @@ export const api = {
     generateCertificate: (name: string) => Connect.GenerateCertificate(name) as Promise<services.CertInfo>,
     pickCertificate: () => Connect.PickCertificate() as Promise<string>,
     revealCertificate: (path: string) => Connect.RevealCertificate(path),
+  },
+  packs: {
+    list: () => Packs.List(),
+    trust: (name: string, digest: string) => Packs.Trust(name, digest),
+    untrust: (name: string) => Packs.Untrust(name),
+    disable: (name: string) => Packs.Disable(name),
+    enable: (name: string) => Packs.Enable(name),
+    keys: () => Packs.Keys() as Promise<string[]>,
+    addKey: (k: string) => Packs.AddKey(k) as Promise<string[]>,
+    removeKey: (k: string) => Packs.RemoveKey(k) as Promise<string[]>,
+    openFolder: () => Packs.OpenFolder(),
   },
   onprem: {
     connections: () => OnPrem.Connections(),

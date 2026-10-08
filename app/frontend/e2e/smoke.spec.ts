@@ -31,6 +31,8 @@ async function stubWails(page: Page, opts: { connected?: boolean } = {}) {
           fields: [{ name: 'user', kind: 'user', required: true }] },
         { id: 'mailbox.fullAccess', page: 'users', danger: 'write', available: false,
           reason: { key: 'backendMissing', params: { backend: 'pwsh' } }, fields: [] },
+        { id: 'pack.contoso.hold', page: 'users', danger: 'write', available: false, pack: 'contoso',
+          label: { en: 'Put a mailbox on hold' }, reason: { key: 'packUntrusted' }, fields: [] },
       ] : [],
       Plan: { id: 'p1', actionId: 'user.signIn', backend: 'graph', inputs: {}, changes: [
         { target: 'ann@contoso.com', field: 'signIn', op: 'set', before: 'allowed', after: 'blocked' }] },
@@ -221,6 +223,9 @@ test('a catalog action previews its change before applying it', async ({ page })
 
   // An action whose backend is missing stays visible and says why.
   await expect(page.getByText('Needs the pwsh backend, which is not set up.')).toBeVisible()
+  // A community pack's action carries its own label and says why it is off.
+  await expect(page.getByText('Put a mailbox on hold')).toBeVisible()
+  await expect(page.getByText('not trusted yet', { exact: false })).toBeVisible()
 
   await page.getByRole('button', { name: /Block or unblock sign-in/ }).click()
   await page.getByRole('button', { name: 'User', exact: true }).click()

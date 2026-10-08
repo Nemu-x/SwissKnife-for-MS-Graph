@@ -68,6 +68,7 @@ export namespace engine {
 	    required: boolean;
 	    options?: string[];
 	    default?: string;
+	    label?: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new Field(source);
@@ -80,6 +81,7 @@ export namespace engine {
 	        this.required = source["required"];
 	        this.options = source["options"];
 	        this.default = source["default"];
+	        this.label = source["label"];
 	    }
 	}
 	export class CatalogEntry {
@@ -89,6 +91,9 @@ export namespace engine {
 	    fields: Field[];
 	    confirmField?: string;
 	    permissions?: string[];
+	    label?: Record<string, string>;
+	    hint?: Record<string, string>;
+	    pack?: string;
 	    available: boolean;
 	    backend?: string;
 	    reason?: Reason;
@@ -107,6 +112,9 @@ export namespace engine {
 	        this.fields = this.convertValues(source["fields"], Field);
 	        this.confirmField = source["confirmField"];
 	        this.permissions = source["permissions"];
+	        this.label = source["label"];
+	        this.hint = source["hint"];
+	        this.pack = source["pack"];
 	        this.available = source["available"];
 	        this.backend = source["backend"];
 	        this.reason = this.convertValues(source["reason"], Reason);
@@ -1407,6 +1415,74 @@ export namespace services {
 	        this.groupIds = source["groupIds"];
 	        this.teamIds = source["teamIds"];
 	        this.channelRefs = this.convertValues(source["channelRefs"], ChannelRef);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PackActionInfo {
+	    id: string;
+	    label: Record<string, string>;
+	    page: string;
+	    danger: string;
+	    module: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PackActionInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.page = source["page"];
+	        this.danger = source["danger"];
+	        this.module = source["module"];
+	    }
+	}
+	export class PackInfo {
+	    name: string;
+	    version: string;
+	    author: string;
+	    description: string;
+	    dir: string;
+	    status: string;
+	    signer?: string;
+	    error?: string;
+	    digest: string;
+	    actions: PackActionInfo[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PackInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.version = source["version"];
+	        this.author = source["author"];
+	        this.description = source["description"];
+	        this.dir = source["dir"];
+	        this.status = source["status"];
+	        this.signer = source["signer"];
+	        this.error = source["error"];
+	        this.digest = source["digest"];
+	        this.actions = this.convertValues(source["actions"], PackActionInfo);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

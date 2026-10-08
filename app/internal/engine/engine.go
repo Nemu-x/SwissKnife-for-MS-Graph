@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/ldapx"
@@ -69,6 +70,8 @@ type Field struct {
 	Required bool      `json:"required"`
 	Options  []string  `json:"options,omitempty"` // FieldChoice
 	Default  string    `json:"default,omitempty"`
+	// Label by language, for actions from packs (built-in ones use i18n).
+	Label map[string]string `json:"label,omitempty"`
 }
 
 // Manifest describes an action independently of how it runs.
@@ -82,6 +85,11 @@ type Manifest struct {
 	ConfirmField string `json:"confirmField,omitempty"`
 	// Permissions the implementations need, for the preflight hint.
 	Permissions []string `json:"permissions,omitempty"`
+	// Label, Hint and Pack describe actions from community packs; built-in
+	// actions are labelled by the UI from i18n.
+	Label map[string]string `json:"label,omitempty"`
+	Hint  map[string]string `json:"hint,omitempty"`
+	Pack  string            `json:"pack,omitempty"`
 }
 
 // Inputs are the operator's field values, keyed by Field.Name.
@@ -118,8 +126,8 @@ type Env struct {
 	// DelegatedOrg is the customer tenant a partner (GDAP) profile manages.
 	DelegatedOrg string
 	// LDAP is the active on-prem directory connection (nil if none).
-	LDAP *ldapx.Client
-	AppOnly  bool
+	LDAP    *ldapx.Client
+	AppOnly bool
 	// PS runs PowerShell cmdlets for the PowerShell backends; nil when the
 	// engine has none.
 	PS PSRunner
@@ -132,6 +140,11 @@ type Env struct {
 // ("exo", "teams", "ipps"), connecting it for env's connection first.
 type PSRunner interface {
 	Invoke(env Env, family, cmdlet string, params map[string]any, sel ...string) ([]json.RawMessage, error)
+}
+
+// ScriptRunner runs a trusted action-pack script (the pwsh pool implements it).
+type ScriptRunner interface {
+	RunScript(env Env, family, script string, params map[string]any) ([]json.RawMessage, error)
 }
 
 // Impl is one way to run an action on one backend.
@@ -147,6 +160,8 @@ type Impl interface {
 type Action struct {
 	Manifest
 	Impls []Impl
+	// Gate, when set, can make the action unavailable (an untrusted pack).
+	Gate func() *Reason
 }
 
 // Reason explains why an action is unavailable: an i18n key plus params.
@@ -172,6 +187,7 @@ func (e *Error) Error() string { return e.Msg }
 
 // Engine wires actions, providers and plans to one session.
 type Engine struct {
+	mu        sync.RWMutex // guards actions (packs are swapped at run time)
 	s         *session.Session
 	actions   map[string]Action
 	providers map[Backend]Provider
@@ -204,6 +220,8 @@ func New(s *session.Session, providers ...Provider) *Engine {
 
 // Register adds actions; a duplicate id is a programming error.
 func (e *Engine) Register(actions ...Action) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	for _, a := range actions {
 		if _, dup := e.actions[a.ID]; dup {
 			panic("engine: duplicate action id " + a.ID)
@@ -231,16 +249,22 @@ type CatalogEntry struct {
 
 // Catalog lists every action, sorted by id for a stable UI.
 func (e *Engine) Catalog() []CatalogEntry {
-	out := make([]CatalogEntry, 0, len(e.actions))
 	var have map[string]bool
 	if e.Grants != nil && e.s.Connected() {
 		have = e.Grants()
 	}
+	e.mu.RLock()
+	all := make([]Action, 0, len(e.actions))
 	for _, a := range e.actions {
+		all = append(all, a)
+	}
+	e.mu.RUnlock()
+	out := make([]CatalogEntry, 0, len(all))
+	for _, a := range all {
 		entry := CatalogEntry{Manifest: a.Manifest, FanOut: graphReader(a) != nil}
 		impl, reason := e.resolve(a)
 		switch {
-		case !onDirectory(a) && !dangerAllowed(a.Danger, e.s.Policy().MaxDanger):
+		case !onDirectory(a) && !dangerAllowed(effectiveDanger(a), e.s.Policy().MaxDanger):
 			entry.Reason = &Reason{Key: "policy"}
 		case impl != nil:
 			entry.Available, entry.Backend = true, impl.Backend()
@@ -254,9 +278,33 @@ func (e *Engine) Catalog() []CatalogEntry {
 	return out
 }
 
+// SetPacks replaces every action from community packs (ids "pack.…").
+func (e *Engine) SetPacks(actions []Action) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for id := range e.actions {
+		if strings.HasPrefix(id, "pack.") {
+			delete(e.actions, id)
+		}
+	}
+	for _, a := range actions {
+		if !strings.HasPrefix(a.ID, "pack.") || len(a.Impls) == 0 {
+			continue
+		}
+		if _, dup := e.actions[a.ID]; !dup {
+			e.actions[a.ID] = a
+		}
+	}
+}
+
 // resolve returns the first implementation whose backend is usable, or the
 // reason the most preferred one is not.
 func (e *Engine) resolve(a Action) (Impl, *Reason) {
+	if a.Gate != nil {
+		if r := a.Gate(); r != nil {
+			return nil, r
+		}
+	}
 	var first *Reason
 	for _, impl := range a.Impls {
 		reason := &Reason{Key: "backendMissing", Params: map[string]string{"backend": string(impl.Backend())}}
@@ -296,7 +344,9 @@ func (e *Engine) env(ctx context.Context) Env {
 }
 
 func (e *Engine) lookup(id string) (Action, error) {
+	e.mu.RLock()
 	a, ok := e.actions[id]
+	e.mu.RUnlock()
 	if !ok {
 		return Action{}, &Error{Code: "unknownAction", Msg: "unknown action " + id}
 	}
@@ -409,6 +459,13 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 	a, err := e.lookup(p.ActionID)
 	if err != nil {
 		return nil, err
+	}
+	// A pack may have lost its trust since the preview.
+	if a.Gate != nil {
+		if r := a.Gate(); r != nil {
+			e.plans.drop(planID)
+			return nil, &Error{Code: "unavailable", Msg: "action unavailable: " + r.Key}
+		}
 	}
 	// The plan holds object ids of the connection it was computed on (the
 	// tenant, or the on-prem directory): a disconnect or a switch invalidates it.

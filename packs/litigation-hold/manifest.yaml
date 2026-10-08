@@ -1,0 +1,26 @@
+# Sample action pack: litigation hold. Copy this folder into
+# %APPDATA%\SwissKnifeGraph\actions\ (Linux/macOS: the app's config folder),
+# then trust it in Settings → Action packs.
+name: litigation-hold
+version: 1.0.0
+author: SwissKnife sample
+description: List mailboxes on litigation hold and turn the hold on or off.
+actions:
+  - id: list
+    page: reports
+    danger: read
+    module: exo
+    script: list.ps1
+    label: { en: Mailboxes on litigation hold, ru: Ящики на удержании для судебных разбирательств }
+    hint: { en: Every mailbox with litigation hold enabled, ru: Все ящики с включённым удержанием }
+    columns: [name, address, duration]
+  - id: set
+    page: users
+    danger: write
+    module: exo
+    script: set.ps1
+    label: { en: Turn litigation hold on or off, ru: Включить или выключить удержание }
+    hint: { en: Keeps every item of the mailbox, ru: Сохраняет все элементы ящика }
+    fields:
+      - { name: mailbox, kind: user, required: true, label: { en: Mailbox, ru: Ящик } }
+      - { name: state, kind: choice, required: true, options: ["on", "off"], default: "on", label: { en: Hold, ru: Удержание } }
