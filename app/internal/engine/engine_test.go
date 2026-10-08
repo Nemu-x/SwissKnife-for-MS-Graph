@@ -30,6 +30,10 @@ func (f fakeImpl) Apply(_ Env, _ Inputs, ch Change) error {
 	if ch.Target == f.failOn {
 		return errors.New("boom")
 	}
+	if id, ok := ch.Ref["id"]; ok && id != ch.Target {
+		*f.applied = append(*f.applied, "ref:"+id)
+		return nil
+	}
 	*f.applied = append(*f.applied, ch.Target)
 	return nil
 }
@@ -256,5 +260,26 @@ func TestConnectionChangeInvalidatesPlan(t *testing.T) {
 	}
 	if len(applied) != 0 {
 		t.Fatalf("nothing may run: %v", applied)
+	}
+}
+
+func TestEditingTheReturnedPlanDoesNotChangeWhatRuns(t *testing.T) {
+	s := newSession(t)
+	var applied []string
+	e := New(s, GraphProvider{})
+	e.Register(Action{Manifest: Manifest{ID: "a", Danger: Write},
+		Impls: []Impl{fakeImpl{backend: BackendGraph, applied: &applied, changes: []Change{{Target: "x", Op: "set", Ref: map[string]string{"id": "x"}}}}}})
+	p, _ := e.Plan("a", Inputs{})
+	p.Changes[0].Target = "tampered"
+	p.Inputs["extra"] = "y"
+	if p.Changes[0].Ref == nil {
+		p.Changes[0].Ref = map[string]string{}
+	}
+	p.Changes[0].Ref["id"] = "tampered"
+	if _, err := e.Apply(p.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(applied) != 1 || applied[0] != "x" {
+		t.Fatalf("applied %v", applied)
 	}
 }

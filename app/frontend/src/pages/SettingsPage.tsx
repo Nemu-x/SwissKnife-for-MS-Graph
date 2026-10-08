@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Moon, Sun, Lock, RefreshCw, Download, Heart, Copy, FolderOpen } from 'lucide-react'
 import { Page } from '../components/Layout'
+import { PowerShellCard } from '../components/PowerShellCard'
 import { Card, Select, Button, Badge, Spinner } from '../components/ui'
 import { useStore } from '../lib/store'
 import { ACCENT_PRESETS, isHex } from '../lib/color'
@@ -214,6 +215,8 @@ export function SettingsPage() {
             </div>
           </div>
         </Card>
+
+        <PowerShellCard />
 
         <Card title={t('settings.support')}>
           <p className="flex items-center gap-2 text-sm text-[var(--text-dim)]">

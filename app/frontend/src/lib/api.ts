@@ -273,6 +273,9 @@ export const api = {
     catalog: () => Actions.Catalog().then((v) => v ?? []) as Promise<engine.CatalogEntry[]>,
     plan: (id: string, inputs: Record<string, string>) => Actions.Plan(id, inputs) as Promise<engine.Plan>,
     apply: (planId: string, confirm: string) => Actions.Apply(planId, confirm) as Promise<engine.Result>,
+    powerShellStatus: () => Actions.PowerShellStatus() as Promise<services.PowerShellStatus>,
+    refreshPowerShell: () => Actions.RefreshPowerShell() as Promise<services.PowerShellStatus>,
+    installModule: (name: string) => Actions.InstallModule(name) as Promise<services.PowerShellStatus>,
   },
   journal: {
     list: (limit = 100) => Journal.List(limit) as Promise<journal.RunSummary[]>,

@@ -301,7 +301,22 @@ func (e *Engine) Plan(actionID string, in Inputs) (*Plan, error) {
 		p.ConfirmTarget = in[a.ConfirmField]
 	}
 	e.plans.put(p)
-	return p, nil
+	// The caller gets a copy: Apply must run the stored preview, not one a
+	// caller edited after the fact.
+	out := *p
+	out.Inputs = cloneInputs(p.Inputs)
+	out.Changes = make([]Change, len(p.Changes))
+	for i, ch := range p.Changes {
+		if ch.Ref != nil {
+			ref := make(map[string]string, len(ch.Ref))
+			for k, v := range ch.Ref {
+				ref[k] = v
+			}
+			ch.Ref = ref
+		}
+		out.Changes[i] = ch
+	}
+	return &out, nil
 }
 
 // Apply executes a stored plan. confirm must equal the plan's ConfirmTarget
