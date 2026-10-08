@@ -5,6 +5,7 @@ import { CommandPalette } from './components/CommandPalette'
 import { StoreProvider, useStore } from './lib/store'
 import { pages, type PageId } from './pages/registry'
 import { homePage, pageEnabled } from './lib/workspaces'
+import { PageErrorBoundary } from './components/PageErrorBoundary'
 
 function Shell() {
   const { connected, requestAction, setNavigator, workspaces } = useStore()
@@ -53,7 +54,9 @@ function Shell() {
 
   return (
     <Layout page={effective} onNavigate={navigate} onOpenPalette={() => setPaletteOpen(true)}>
-      <Current />
+      <PageErrorBoundary key={effective} onHome={() => navigate(homePage(workspaces))}>
+        <Current />
+      </PageErrorBoundary>
       <Toasts />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onNavigate={navigate} />
     </Layout>

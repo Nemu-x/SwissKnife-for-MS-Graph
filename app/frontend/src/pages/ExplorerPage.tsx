@@ -52,7 +52,7 @@ export function ExplorerPage() {
   const field = KINDS.find((k) => k.id === kind)!.field
   // Write and read actions whose inputs take this kind of object.
   const actions = useMemo(() => (catalog || [])
-    .filter((e) => e.available && e.fields.some((f) => f.kind === field))
+    .filter((e) => e.available && (e.fields ?? []).some((f) => f.kind === field))
     .sort((a, b) => entryLabel(a, t).localeCompare(entryLabel(b, t))), [catalog, field, t])
 
   const open = (entryId: string, page: string) => {

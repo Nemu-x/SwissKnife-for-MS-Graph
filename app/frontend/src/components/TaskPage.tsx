@@ -177,7 +177,7 @@ export function TaskPage({
 
       <div className={`flex min-h-0 flex-1 flex-col ${showData && showActions ? '' : ''}`}>
         {showActions && (
-          <div className={`min-h-0 overflow-auto p-4 ${showData ? 'max-h-[55%] shrink-0' : 'flex-1'}`}>
+          <div data-catalog-ready={ready ? 'true' : 'false'} className={`min-h-0 overflow-auto p-4 ${showData ? 'max-h-[55%] shrink-0' : 'flex-1'}`}>
             {readOnly && (
               <p className="mb-3 flex items-center gap-1.5 text-xs text-[var(--warn)]">
                 <Lock size={12} /> {t('safety.readOnlyOn')}
@@ -192,6 +192,7 @@ export function TaskPage({
                 return (
                   <div key={a.id} className="contents">
                     <button
+                      data-tile={a.id}
                       onClick={() => trigger(a)}
                       aria-disabled={!!a.disabledReason}
                       aria-describedby={a.disabledReason ? `${pageId}-${a.id}-reason` : undefined}
