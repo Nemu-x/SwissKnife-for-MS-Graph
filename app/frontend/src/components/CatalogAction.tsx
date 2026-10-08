@@ -10,7 +10,7 @@ import { useTaskStatus } from '../lib/useTaskStatus'
 import { loadGroups, loadSkus, loadUsers, loadSnapshots } from '../lib/pickers'
 import { skuFriendly } from '../lib/skuNames'
 import { toCSV, downloadText } from '../lib/format'
-import { api, errMessage, errParsed } from '../lib/api'
+import { api, errMessage, errParsed, type Profile } from '../lib/api'
 import type { engine } from '../../wailsjs/go/models'
 
 // Catalog actions (ADR-008) rendered as ordinary page tiles. A page places one
@@ -152,13 +152,30 @@ function CatalogPanel({ entry, mark, askConfirm }: {
   // produced it, so leaving the page and coming back shows it again.
   const cacheKey = `catalog.read.${entry.id}`
   const cached = cache[cacheKey] as { values: Record<string, string>; result: engine.ReadResult } | undefined
-  const initial = () => cached?.values ?? Object.fromEntries(entry.fields.map((f) => [f.name, f.default ?? '']))
+  const initial = () => {
+    if (!cached?.values) return Object.fromEntries(entry.fields.map((f) => [f.name, f.default ?? '']))
+    const { __across: _, ...v } = cached.values
+    return v
+  }
   const [values, setValues] = useState<Record<string, string>>(initial)
   const [plan, setPlan] = useState<engine.Plan | null>(null)
   const [result, setResult] = useState<engine.Result | null>(null)
   const [rows, setRows] = useState<engine.ReadResult | null>(cached?.result ?? null)
   const [busy, setBusy] = useState(false)
   const isRead = entry.danger === 'read'
+  // Cross-tenant read: the chosen app-only profiles (empty = this tenant only).
+  const [across, setAcross] = useState<string[]>(cached?.values?.__across ? cached.values.__across.split(',') : [])
+  const [fanProfiles, setFanProfiles] = useState<Profile[]>([])
+  useEffect(() => {
+    if (entry.fanOut) api.actions.fanOutProfiles().then(setFanProfiles).catch(() => {})
+  }, [entry.fanOut])
+  // Only profiles that still exist count, and only while the choice is shown.
+  const acrossActive = fanProfiles.length > 1 ? across.filter((id) => fanProfiles.some((p) => p.id === id)) : []
+  const toggleAcross = (id: string) => {
+    setAcross((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]))
+    setRows(null)
+    runSeq.current++
+  }
   // Only the newest read may show its rows: an edit or a second click makes
   // an answer still in flight stale.
   const runSeq = useRef(0)
@@ -179,10 +196,12 @@ function CatalogPanel({ entry, mark, askConfirm }: {
     const seq = ++runSeq.current
     setBusy(true)
     try {
-      const r = await api.actions.run(entry.id, values)
+      const r = acrossActive.length > 0
+        ? await api.actions.runAcross(entry.id, values, acrossActive)
+        : await api.actions.run(entry.id, values)
       if (seq !== runSeq.current) return
       setRows(r)
-      setCache(cacheKey, { values, result: r })
+      setCache(cacheKey, { values: { ...values, __across: acrossActive.join(',') }, result: r })
       mark(entry.id, true, t('actions.rows', { count: r.rows?.length ?? 0 }))
     } catch (e) {
       const m = errMessage(e)
@@ -271,10 +290,27 @@ function CatalogPanel({ entry, mark, askConfirm }: {
         )
         : <Field key={f.name} label={t(`actions.fields.${f.name}`, { defaultValue: f.name })}>{field(f)}</Field>)}
 
+      {isRead && entry.fanOut && fanProfiles.length > 1 && (
+        <details className="text-xs text-[var(--text-dim)]" open={acrossActive.length > 0}>
+          <summary className="cursor-pointer select-none">{t('actions.across.title')}</summary>
+          <p className="mt-1 text-[var(--text-faint)]">{t('actions.across.hint')}</p>
+          <div className="mt-1 flex flex-col gap-1">
+            {fanProfiles.map((p) => (
+              <label key={p.id} className="flex items-center gap-2">
+                <input type="checkbox" checked={across.includes(p.id)} onChange={() => toggleAcross(p.id)} />
+                {p.name}
+              </label>
+            ))}
+          </div>
+        </details>
+      )}
       {isRead && (
         <Button variant="primary" disabled={busy || !ready} onClick={run}>
           {busy ? <Spinner /> : <Play size={15} />} {t('actions.run')}
         </Button>
+      )}
+      {isRead && busy && acrossActive.length > 0 && (
+        <Button variant="subtle" onClick={() => api.actions.cancelAcross()}>{t('common.cancel')}</Button>
       )}
       {isRead && rows && <RowsView result={rows} />}
 
@@ -321,7 +357,14 @@ function RowsView({ result }: { result: engine.ReadResult }) {
     return t(`actions.why.${k}`, { value: i < 0 ? '' : tok.slice(i + 1), defaultValue: tok })
   }).join('; ')
   const show = (c: string, v: string) => (c === 'why' ? why(v) : word(v))
-  const note = result.note && <p className="text-xs text-[var(--text-faint)]">{t(`actions.readNotes.${result.note.key}`, { ...result.note.params, defaultValue: result.note.key })}</p>
+  const note = (result.note || result.tenantNotes?.length) ? (
+    <div className="flex flex-col gap-0.5 text-xs text-[var(--text-faint)]">
+      {result.note && <p>{t(`actions.readNotes.${result.note.key}`, { ...result.note.params, defaultValue: result.note.key })}</p>}
+      {result.tenantNotes?.map((n, i) => (
+        <p key={i}>{n.tenant}: {t(`actions.readNotes.${n.note.key}`, { ...n.note.params, defaultValue: n.note.key })}</p>
+      ))}
+    </div>
+  ) : null
   if (!result.rows?.length) return <><p className="text-sm text-[var(--text-dim)]">{t('actions.noRows')}</p>{note}</>
   return (
     <>

@@ -15,7 +15,7 @@ export function ConnectPage() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [limitsFor, setLimitsFor] = useState<string | null>(null)
   const [form, setForm] = useState({
-    id: '', name: '', tenantId: '', clientId: '', secret: '', authMode: 'client_secret', certPath: '', remember: false,
+    id: '', name: '', tenantId: '', clientId: '', secret: '', authMode: 'client_secret', certPath: '', remember: false, delegatedOrg: '',
   })
   // A certificate generated in this form: the .cer still has to be uploaded.
   const [cert, setCert] = useState<{ cerPath: string; thumbprint: string; notAfter: string } | null>(null)
@@ -35,7 +35,7 @@ export function ConnectPage() {
 
   const selectProfile = (p: Profile) => {
     setCert(null)
-    setForm({ id: p.id, name: p.name, tenantId: p.tenantId, clientId: p.clientId, secret: '', authMode: p.authMode, certPath: p.certPath || '', remember: true })
+    setForm({ id: p.id, name: p.name, tenantId: p.tenantId, clientId: p.clientId, secret: '', authMode: p.authMode, certPath: p.certPath || '', remember: true, delegatedOrg: (p as any).delegatedOrg || '' })
   }
 
   const connectProfile = async (p: Profile) => {
@@ -62,7 +62,8 @@ export function ConnectPage() {
   const saveProfile = async () => {
     try {
       await api.connect.saveProfile(
-        { id: form.id, name: form.name, tenantId: form.tenantId, clientId: form.clientId, authMode: form.authMode, certPath: form.certPath },
+        { id: form.id, name: form.name, tenantId: form.tenantId, clientId: form.clientId, authMode: form.authMode, certPath: form.certPath,
+          delegatedOrg: form.authMode === 'device_code' ? form.delegatedOrg.trim() : '' } as any,
         form.secret,
       )
       toast('ok', t('common.save')); loadProfiles()
@@ -151,6 +152,11 @@ export function ConnectPage() {
             <Field label={t('connect.clientId')}>
               <Input value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} />
             </Field>
+            {form.authMode === 'device_code' && (
+              <Field label={t('connect.delegatedOrg')} hint={t('connect.delegatedOrgHint')}>
+                <Input value={form.delegatedOrg} placeholder="customer.onmicrosoft.com" onChange={(e) => setForm({ ...form, delegatedOrg: e.target.value })} />
+              </Field>
+            )}
             {form.authMode === 'client_secret' && (
               <Field label={t('connect.secret')} hint={form.id ? t('connect.secretKept') : t('connect.rememberHint')}>
                 <Input type="password" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} />

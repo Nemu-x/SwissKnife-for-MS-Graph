@@ -132,7 +132,11 @@ func connectProfile(ctx context.Context, p secrets.Profile, readOnly bool, stder
 	gc := graphapi.New(provider)
 	// Same self-test as the GUI Connect: bad credentials fail here, not on the
 	// first command, and the audit log never records a connect that did not work.
-	var org map[string]any
+	var org struct {
+		Value []struct {
+			ID string `json:"id"`
+		} `json:"value"`
+	}
 	if err := gc.Get(ctx, "/organization", url.Values{"$select": {"id"}}, &org); err != nil {
 		// A 403 means the token itself is fine and only Organization.Read.All is
 		// missing — commands that need other permissions must still work, so
@@ -150,7 +154,12 @@ func connectProfile(ctx context.Context, p secrets.Profile, readOnly bool, stder
 	sess.SetPolicy(cr.ProfileID, cr.Policy)
 	sess.SetClient(gc, cr.Name)
 	sess.SetTokens(provider)
-	sess.SetIdentity(cr.TenantID, cr.AuthMode != string(auth.ModeDeviceCode))
+	tenant := cr.TenantID
+	if len(org.Value) == 1 && org.Value[0].ID != "" {
+		tenant = org.Value[0].ID // the directory id, as in the GUI
+	}
+	sess.SetIdentity(tenant, cr.AuthMode != string(auth.ModeDeviceCode))
+	sess.SetDelegatedOrg(cr.DelegatedOrg)
 	sess.Record("session.connect", cr.TenantID, "mode="+cr.AuthMode+" via=cli", nil)
 	return sess, nil
 }

@@ -235,13 +235,22 @@ func connectParams(env engine.Env, family string) (map[string]any, error) {
 			return nil, err
 		}
 		params := map[string]any{"token": tok}
-		if env.AppOnly {
+		switch {
+		case env.AppOnly:
 			org, err := graphapi.InitialDomain(env.Ctx, env.Graph)
 			if err != nil {
 				return nil, err
 			}
 			params["organization"] = org
-		} else {
+		case env.DelegatedOrg != "":
+			// GDAP: the partner's user is no object of the customer
+			// directory, so there is no /me; the customer names the org.
+			org, err := graphapi.InitialDomain(env.Ctx, env.Graph)
+			if err != nil {
+				return nil, err
+			}
+			params["organization"], params["delegatedOrg"] = org, org
+		default:
 			var me struct {
 				UPN string `json:"userPrincipalName"`
 			}

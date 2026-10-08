@@ -12,6 +12,8 @@ import (
 	"swissknife-app/internal/actions"
 	"swissknife-app/internal/auth"
 	"swissknife-app/internal/engine"
+	"swissknife-app/internal/ops"
+	"swissknife-app/internal/secrets"
 	"swissknife-app/internal/exoapi"
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/pwsh"
@@ -21,8 +23,9 @@ import (
 // ActionsService exposes the action catalog (ADR-008): list what can run,
 // preview a change, apply the preview.
 type ActionsService struct {
-	e *engine.Engine
-	s *session.Session
+	e     *engine.Engine
+	s     *session.Session
+	store *secrets.Store // saved profiles, for cross-tenant reads
 }
 
 // psDetector is shared by every engine in the process: detecting PowerShell
@@ -42,6 +45,8 @@ func NewEngine(s *session.Session) *engine.Engine {
 	e.PS = pool
 	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr
+	// A cross-tenant read belongs to the connection that started it.
+	s.OnDisconnect(func(*graphapi.Client) { s.Ops.CancelKind(ops.KindFanOut) })
 	// Service writes outside the catalog check their targets through the
 	// session guards; the engine does the lookup.
 	s.SetScopeCheck(func(t session.Target) error {
@@ -65,8 +70,8 @@ func EngineFor(s *session.Session) *engine.Engine {
 	return e.(*engine.Engine)
 }
 
-func NewActionsService(s *session.Session) *ActionsService {
-	return &ActionsService{e: EngineFor(s), s: s}
+func NewActionsService(s *session.Session, store *secrets.Store) *ActionsService {
+	return &ActionsService{e: EngineFor(s), s: s, store: store}
 }
 
 // cachedGrants reads the token's grants once per connection (and again after

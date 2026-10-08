@@ -63,6 +63,16 @@ func (c *ConnectService) SaveProfile(p secrets.Profile, secret string) (secrets.
 	if p.ID != "" {
 		if old, ok := c.findProfile(p.ID); ok {
 			p.Policy = old.Policy
+			// Group ids belong to a tenant: another tenant voids the scope.
+			if p.Policy != nil && p.Policy.Scoped() && (!strings.EqualFold(old.TenantID, p.TenantID) || !strings.EqualFold(old.DelegatedOrg, p.DelegatedOrg)) {
+				pol := *p.Policy
+				pol.AllowedGroups, pol.GroupLabels = nil, nil
+				if pol.MaxDanger == "" {
+					p.Policy = nil
+				} else {
+					p.Policy = &pol
+				}
+			}
 		}
 	} else {
 		p.Policy = nil
@@ -182,6 +192,8 @@ type Credentials struct {
 	// ProfileID and Policy come from a saved profile (empty when ad hoc).
 	ProfileID string
 	Policy    session.Policy
+	// DelegatedOrg: a partner profile signs in to this customer tenant.
+	DelegatedOrg string
 }
 
 // ResolveCredentials turns a ConnectRequest into concrete credentials. A
@@ -218,6 +230,10 @@ func ResolveCredentials(store *secrets.Store, req ConnectRequest) (Credentials, 
 	}
 	cr.TenantID, cr.ClientID, cr.AuthMode, cr.Name = found.TenantID, found.ClientID, found.AuthMode, found.Name
 	cr.CertPath, cr.ProfileID = found.CertPath, found.ID
+	// GDAP: the partner's user signs in to the customer tenant directly.
+	if found.DelegatedOrg != "" && cr.AuthMode == string(auth.ModeDeviceCode) {
+		cr.TenantID, cr.DelegatedOrg = found.DelegatedOrg, found.DelegatedOrg
+	}
 	if found.Policy != nil {
 		cr.Policy = *found.Policy
 	}
@@ -287,6 +303,16 @@ func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
 	if err := gc.Get(c.s.Ctx(), "/organization", nil, &org); err != nil {
 		return nil, err
 	}
+	// The directory's own id, whatever the profile calls the tenant (a
+	// domain, a GDAP customer): tenant checks compare ids.
+	var orgList struct {
+		Value []struct {
+			ID string `json:"id"`
+		} `json:"value"`
+	}
+	if json.Unmarshal(org, &orgList) == nil && len(orgList.Value) == 1 && orgList.Value[0].ID != "" {
+		tenant = orgList.Value[0].ID
+	}
 
 	if name == "" {
 		name = "ad-hoc (" + tenant + ")"
@@ -314,6 +340,7 @@ func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
 	c.s.SetClient(gc, name)
 	c.s.SetTokens(provider)
 	c.s.SetIdentity(tenant, mode != string(auth.ModeDeviceCode))
+	c.s.SetDelegatedOrg(cr.DelegatedOrg)
 	c.s.Record("session.connect", tenant, "mode="+mode, nil)
 
 	st := c.GetStatus()

@@ -33,6 +33,9 @@ type Profile struct {
 	// lives in the keychain in place of the client secret.
 	CertPath string `json:"certPath,omitempty"`
 	HasSecret bool  `json:"hasSecret"` // whether a secret exists in the keychain
+	// DelegatedOrg is the customer tenant (id or domain) a partner signs in
+	// to through GDAP; delegated (device code) profiles only.
+	DelegatedOrg string `json:"delegatedOrg,omitempty"`
 	// Policy limits what this profile may do once connected.
 	Policy *session.Policy `json:"policy,omitempty"`
 }

@@ -15,6 +15,14 @@ type ReadResult struct {
 	// Note is an optional line under the table (an i18n key + params), e.g.
 	// how many mailboxes a scan covered.
 	Note *Reason `json:"note,omitempty"`
+	// TenantNotes are the notes of each tenant in a cross-tenant run.
+	TenantNotes []TenantNote `json:"tenantNotes,omitempty"`
+}
+
+// TenantNote is one tenant's note in a cross-tenant run.
+type TenantNote struct {
+	Tenant string `json:"tenant"`
+	Note   Reason `json:"note"`
 }
 
 // Reader is implemented by read actions (Danger Read). They answer with rows
