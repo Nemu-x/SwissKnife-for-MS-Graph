@@ -12,9 +12,11 @@ package pwsh
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,7 +85,11 @@ const startTimeout = 30 * time.Second
 
 // Start launches pwsh (exe) with the embedded host script and sends the
 // cmdlet allow-list.
-func Start(exe string, allow []string) (*Host, error) {
+func Start(exe string, allow []string) (*Host, error) { return StartWithScripts(exe, allow, nil) }
+
+// StartWithScripts also trusts scripts by the SHA-256 of their text (action
+// packs); the host refuses any other script.
+func StartWithScripts(exe string, allow, scripts []string) (*Host, error) {
 	cmd := exec.Command(exe, "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedScript)
 	cmd.WaitDelay = 2 * time.Second
 	hideWindow(cmd)
@@ -107,7 +113,10 @@ func Start(exe string, allow []string) (*Host, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
 	defer cancel()
-	if _, err := h.call(ctx, map[string]any{"op": "init", "allow": allow}); err != nil {
+	if scripts == nil {
+		scripts = []string{}
+	}
+	if _, err := h.call(ctx, map[string]any{"op": "init", "allow": allow, "scripts": scripts}); err != nil {
 		h.Close()
 		return nil, err
 	}
@@ -199,6 +208,17 @@ func (h *Host) Invoke(ctx context.Context, cmdlet string, params map[string]any,
 		req["select"] = sel
 	}
 	return h.call(ctx, req)
+}
+
+// RunScript runs a trusted script with named parameters.
+func (h *Host) RunScript(ctx context.Context, script string, params map[string]any) ([]json.RawMessage, error) {
+	return h.call(ctx, map[string]any{"op": "script", "script": script, "params": params})
+}
+
+// ScriptHash is how the host identifies a trusted script.
+func ScriptHash(script string) string {
+	sum := sha256.Sum256([]byte(script))
+	return hex.EncodeToString(sum[:])
 }
 
 // Alive reports whether the process is still running.

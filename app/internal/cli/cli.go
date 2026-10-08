@@ -181,6 +181,7 @@ func init() {
 	commands = []command{
 		{name: "help", args: "[command]", summary: "show this help or one command's flags", setup: setupHelp},
 		{name: "version", summary: "print the application version", setup: setupVersion},
+		{name: "pack", args: "digest <folder>", summary: "for pack authors: write pack.digest for minisign to sign", setup: setupPack},
 		{name: "profiles", summary: "list saved connection profiles (id, name, tenant, mode)", setup: setupProfiles},
 		{name: "get", args: "<graph path> [--top N] [--all]", summary: "raw Graph GET; prints the JSON response (--all follows @odata.nextLink)", setup: setupGet},
 		{name: "user", args: "<upn>", summary: "user snapshot: profile, group membership, licenses", setup: setupUser},

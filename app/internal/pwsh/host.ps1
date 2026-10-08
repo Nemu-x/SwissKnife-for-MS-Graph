@@ -7,6 +7,10 @@
 #   {"id":1,"op":"init","allow":["Get-Mailbox", ...]}
 #   {"id":2,"op":"connect","family":"exo","token":"...","organization":"t","upn":""}
 #   {"id":3,"op":"invoke","cmdlet":"Get-Mailbox","params":{...},"select":["Name"]}
+#   {"id":4,"op":"script","script":"param($Mode) ...","params":{...}}
+#
+# A script (from a trusted action pack) runs only if the SHA-256 of its text
+# was in the init request: the trust decision is made before the host starts.
 # Replies: {"id":N,"ok":true,"data":[...]} or {"id":N,"ok":false,"error":{...}}
 #
 # Only allow-listed cmdlets run, and parameters are splatted from the decoded
@@ -24,6 +28,7 @@ $InformationPreference = 'SilentlyContinue'
 $WarningPreference = 'SilentlyContinue'
 $marker = [char]1 + 'SKG '
 $allow = @{}
+$scripts = @{}
 $initialized = $false
 
 function Reply($obj) {
@@ -56,6 +61,7 @@ while ($true) {
                 if ($initialized) { throw 'already initialized' }
                 $initialized = $true
                 foreach ($c in $req.allow) { $allow[$c] = $true }
+                foreach ($h in $req.scripts) { $scripts[$h] = $true }
                 Reply @{ id = $req.id; ok = $true; data = @(@{ version = $PSVersionTable.PSVersion.ToString() }) }
             }
             'connect' {
@@ -91,6 +97,15 @@ while ($true) {
                 if ($req.params) { $splat = $req.params }
                 $out = & $req.cmdlet @splat
                 if ($req.select) { $out = $out | Select-Object -Property $req.select }
+                Reply @{ id = $req.id; ok = $true; data = @($out) }
+            }
+            'script' {
+                $bytes = [Text.Encoding]::UTF8.GetBytes($req.script)
+                $hash = -join ([Security.Cryptography.SHA256]::HashData($bytes) | ForEach-Object { $_.ToString('x2') })
+                if (-not $scripts.ContainsKey($hash)) { throw 'script not trusted' }
+                $splat = @{}
+                if ($req.params) { $splat = $req.params }
+                $out = & ([scriptblock]::Create($req.script)) @splat
                 Reply @{ id = $req.id; ok = $true; data = @($out) }
             }
             default { throw "unknown op: $($req.op)" }

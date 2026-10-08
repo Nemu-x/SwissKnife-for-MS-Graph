@@ -44,16 +44,19 @@ type Pool struct {
 	det   *Detector
 	allow map[string][]string // family → cmdlets the host may run
 
-	mu    sync.Mutex
-	hosts map[string]*entry
+	mu     sync.Mutex
+	hosts  map[string]*entry
 	gen    uint64                    // bumped by Close: a host started before it is discarded
 	closed map[*graphapi.Client]bool // connections whose hosts were closed
-	start func(exe string, allow []string) (*Host, error)
-	now   func() time.Time
+	start  func(exe string, allow, scripts []string) (*Host, error)
+	// Scripts returns the hashes of trusted pack scripts; read when a host
+	// starts (Reset restarts hosts after the trust changed).
+	Scripts func() []string
+	now     func() time.Time
 }
 
 func NewPool(det *Detector, allow map[string][]string) *Pool {
-	return &Pool{det: det, allow: allow, hosts: map[string]*entry{}, closed: map[*graphapi.Client]bool{}, start: Start, now: time.Now}
+	return &Pool{det: det, allow: allow, hosts: map[string]*entry{}, closed: map[*graphapi.Client]bool{}, start: StartWithScripts, now: time.Now}
 }
 
 // Invoke implements engine.PSRunner. An authentication failure (the token
@@ -126,7 +129,11 @@ func (p *Pool) host(env engine.Env, family string) (*Host, error) {
 			return nil, errors.New("PowerShell 7.2 or later is not installed")
 		}
 		gen := p.gen
-		h, err := p.start(pe.Exe, p.allow[family])
+		var scripts []string
+		if p.Scripts != nil {
+			scripts = p.Scripts()
+		}
+		h, err := p.start(pe.Exe, p.allow[family], scripts)
 		if err != nil {
 			return nil, err
 		}
@@ -199,6 +206,27 @@ func (p *Pool) CloseFor(conn *graphapi.Client) {
 		}
 	}
 }
+
+// RunScript implements engine.ScriptRunner: a trusted pack script in the
+// family's signed-in host. Not retried: it may write.
+func (p *Pool) RunScript(env engine.Env, family, script string, params map[string]any) ([]json.RawMessage, error) {
+	h, err := p.host(env, family)
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.RunScript(env.Ctx, script, params)
+	if errors.Is(err, ErrHostExited) || !h.Alive() {
+		p.drop(family, h)
+	}
+	if isAuthError(err) {
+		p.expire(family, h)
+	}
+	return out, err
+}
+
+// Reset stops every host so the next call starts one with the current
+// trusted scripts.
+func (p *Pool) Reset() { p.Close() }
 
 // Close stops every host (shutdown).
 func (p *Pool) Close() {

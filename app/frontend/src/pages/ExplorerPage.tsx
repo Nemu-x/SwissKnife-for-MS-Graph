@@ -5,7 +5,7 @@ import { Page } from '../components/Layout'
 import { Card, Input, Spinner, ErrorNote } from '../components/ui'
 import { useStore } from '../lib/store'
 import { api, errMessage, type GraphObject } from '../lib/api'
-import { useCatalog, catalogLabel, prefillAction } from '../components/CatalogAction'
+import { useCatalog, entryLabel, prefillAction } from '../components/CatalogAction'
 
 type Kind = 'users' | 'groups' | 'teams'
 
@@ -53,7 +53,7 @@ export function ExplorerPage() {
   // Write and read actions whose inputs take this kind of object.
   const actions = useMemo(() => (catalog || [])
     .filter((e) => e.available && e.fields.some((f) => f.kind === field))
-    .sort((a, b) => t(catalogLabel(a.id)).localeCompare(t(catalogLabel(b.id)))), [catalog, field, t])
+    .sort((a, b) => entryLabel(a, t).localeCompare(entryLabel(b, t))), [catalog, field, t])
 
   const open = (entryId: string, page: string) => {
     if (!picked) return
@@ -109,7 +109,7 @@ export function ExplorerPage() {
                   {actions.map((e) => (
                     <button key={e.id} onClick={() => open(e.id, e.page)}
                       className="flex items-center justify-between rounded-md border border-[var(--border)] px-2.5 py-1.5 text-left text-sm hover:bg-[var(--surface)]">
-                      {t(catalogLabel(e.id))}
+                      {entryLabel(e, t)}
                       <span className="text-xs text-[var(--text-faint)]">{t(`nav.${e.page}`, { defaultValue: e.page })}</span>
                     </button>
                   ))}

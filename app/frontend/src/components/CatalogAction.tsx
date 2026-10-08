@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import i18n from '../i18n'
 import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Target, FileWarning, Swords, Link2, History, Eye, Check, ArrowRight, Minus, Search, LockOpen, KeyRound } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
@@ -31,6 +32,17 @@ export const prefillAction = (id: string, values: Record<string, string>) => { p
 
 // The i18n key of an action's label.
 export const catalogLabel = (id: string) => UI[id]?.label ?? id
+
+// A pack's text in the UI language (English when it has no translation).
+export const localized = (m?: Record<string, string>) => {
+  if (!m) return ''
+  const lang = (i18n.language || 'en').split('-')[0]
+  return m[lang] || m.en || ''
+}
+
+// An action's label: built-in ones from i18n, pack ones from their manifest.
+export const entryLabel = (e: CatalogEntry, t: (k: string, o?: any) => string) =>
+  e.label ? localized(e.label) || e.id : t(UI[e.id]?.label ?? `actions.${e.id}.label`, { defaultValue: e.id })
 
 // Built-in actions reuse the wording of the tiles they replaced; anything else
 // falls back to actions.<id>.label / .hint.
@@ -125,12 +137,13 @@ export function useCatalogTiles(pageId: string, actions: TaskAction[]) {
       ...(ui?.warn ?? []).map((k) => <p key={k} className="text-[var(--warn)]">{t(k)}</p>)]
     return {
       id: e.id,
-      label: t(ui?.label ?? `actions.${e.id}.label`, { defaultValue: e.id }),
-      hint: t(ui?.hint ?? `actions.${e.id}.hint`, { defaultValue: '' }) || undefined,
+      label: entryLabel(e, t),
+      hint: (e.hint ? localized(e.hint) : t(ui?.hint ?? `actions.${e.id}.hint`, { defaultValue: '' })) || undefined,
       icon: ui?.icon ?? <Zap size={16} />,
       variant: e.danger === 'destructive' ? 'danger' : undefined,
       write: e.danger !== 'read',
-      badge: e.backend && e.backend !== 'graph' ? t(`actions.backends.${e.backend}`, { defaultValue: e.backend }) : undefined,
+      badge: e.pack ? t('packs.badge', { name: e.pack })
+        : e.backend && e.backend !== 'graph' ? t(`actions.backends.${e.backend}`, { defaultValue: e.backend }) : undefined,
       disabledReason: e.available ? undefined : reason,
       warning: e.missingPermissions?.length ? t('actions.missingPermissions', { list: e.missingPermissions.join(', ') }) : undefined,
       note: notes.length ? <>{notes}</> : undefined,
@@ -270,7 +283,7 @@ function CatalogPanel({ entry, mark, askConfirm }: {
 
   const field = (f: engine.Field) => {
     const v = values[f.name] ?? ''
-    const label = t(`actions.fields.${f.name}`, { defaultValue: f.name })
+    const label = (localized(f.label) || t(`actions.fields.${f.name}`, { defaultValue: f.name }))
     switch (f.kind) {
       case 'user':
         return <EntityPicker value={v} onChange={(x) => set(f.name, x)} load={loadUsers} placeholder={t('users.pickUser')} />
@@ -305,11 +318,11 @@ function CatalogPanel({ entry, mark, askConfirm }: {
         // Not a <label>: it would forward clicks on the caption to the first option.
         ? (
           <div key={f.name} className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-[var(--text-dim)]">{t(`actions.fields.${f.name}`, { defaultValue: f.name })}</span>
+            <span className="text-xs font-medium text-[var(--text-dim)]">{(localized(f.label) || t(`actions.fields.${f.name}`, { defaultValue: f.name }))}</span>
             {field(f)}
           </div>
         )
-        : <Field key={f.name} label={t(`actions.fields.${f.name}`, { defaultValue: f.name })}>{field(f)}</Field>)}
+        : <Field key={f.name} label={(localized(f.label) || t(`actions.fields.${f.name}`, { defaultValue: f.name }))}>{field(f)}</Field>)}
 
       {isRead && entry.fanOut && fanProfiles.length > 1 && (
         <details className="text-xs text-[var(--text-dim)]" open={acrossActive.length > 0}>
