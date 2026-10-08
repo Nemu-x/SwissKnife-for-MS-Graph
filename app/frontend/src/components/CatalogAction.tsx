@@ -160,7 +160,9 @@ function CatalogPanel({ entry, mark, askConfirm }: {
   // produced it, so leaving the page and coming back shows it again.
   const cacheKey = `catalog.read.${entry.id}`
   const cached = cache[cacheKey] as { values: Record<string, string>; result: engine.ReadResult } | undefined
-  const [prefill] = useState(() => { const p = prefills.get(entry.id); prefills.delete(entry.id); return p })
+  // Read in the initializer, consumed after mount (StrictMode runs initializers twice).
+  const [prefill] = useState(() => prefills.get(entry.id))
+  useEffect(() => { prefills.delete(entry.id) }, [entry.id])
   const initial = () => {
     if (prefill) return { ...Object.fromEntries(entry.fields.map((f) => [f.name, f.default ?? ''])), ...prefill }
     if (!cached?.values) return Object.fromEntries(entry.fields.map((f) => [f.name, f.default ?? '']))

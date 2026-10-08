@@ -19,7 +19,7 @@ const KINDS: { id: Kind; icon: JSX.Element; field: 'user' | 'group' }[] = [
 // that takes the chosen one, with the object already filled in.
 export function ExplorerPage() {
   const { t } = useTranslation()
-  const { connected, goTo } = useStore()
+  const { connected, goTo, cache, setCache } = useStore()
   const catalog = useCatalog()
   const [kind, setKind] = useState<Kind>('users')
   const [q, setQ] = useState('')
@@ -38,13 +38,16 @@ export function ExplorerPage() {
         else if (kind === 'groups') list = await api.groups.list(q, 50)
         else {
           const needle = q.trim().toLowerCase()
-          list = (await api.teams.all()).filter((x: GraphObject) => !needle || (x.displayName || '').toLowerCase().includes(needle)).slice(0, 50)
+          // All teams come in one call: fetch once, filter as the operator types.
+          let all = cache['explorer.teams'] as GraphObject[] | undefined
+          if (!all) { all = await api.teams.all(); setCache('explorer.teams', all) }
+          list = all.filter((x: GraphObject) => !needle || (x.displayName || '').toLowerCase().includes(needle)).slice(0, 50)
         }
         if (alive) setItems(list)
       } catch (e) { if (alive) setError(errMessage(e)) }
     }, 300)
     return () => { alive = false; clearTimeout(timer) }
-  }, [kind, q, connected])
+  }, [kind, q, connected]) // eslint-disable-line react-hooks/exhaustive-deps -- cache is read, not watched
 
   const field = KINDS.find((k) => k.id === kind)!.field
   // Write and read actions whose inputs take this kind of object.
