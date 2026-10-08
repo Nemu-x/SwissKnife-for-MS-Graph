@@ -41,7 +41,14 @@ export function cellText(v: any): string {
 }
 
 export function toCSV(cols: string[], rows: GraphRow[]): string {
-  const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s)
+  // A cell starting with = + - @ (or a tab/CR) would run as a formula in a
+  // spreadsheet: a crafted display name must stay text.
+  const esc = (raw: string) => {
+    const s = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw
+    // Quote anything with a delimiter or a line break (\r too: a reader may
+    // split the record there and see the rest as a new, formula-led cell).
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
   const head = cols.map(esc).join(',')
   const body = rows.map((r) => cols.map((c) => esc(cellText(r[c]))).join(',')).join('\n')
   return '﻿' + head + '\n' + body
