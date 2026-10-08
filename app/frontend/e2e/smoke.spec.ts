@@ -39,7 +39,8 @@ async function stubWails(page: Page, opts: { connected?: boolean } = {}) {
       Apply: { opId: 'o1', applied: 1, skipped: 0, failed: 0, canceled: false, outcomes: [
         { target: 'ann@contoso.com', field: 'signIn', op: 'set', ok: true, skipped: false }] },
     }
-    const method = (name: string) => () => Promise.resolve(results[name] ?? null)
+    // A test can override single bindings through window.__stub.
+    const method = (name: string) => () => Promise.resolve((window as any).__stub?.[name] ?? results[name] ?? null)
     const service = new Proxy({}, { get: (_t, m: string) => method(m) })
     const namespace = new Proxy({}, { get: () => service })
     ;(window as any).go = new Proxy({}, { get: () => namespace })
@@ -250,5 +251,24 @@ test('a read action shows its rows in the tile', async ({ page }) => {
   await page.getByRole('button', { name: 'Show', exact: true }).click()
   await expect(page.getByRole('cell', { name: 'NoRecording' })).toBeVisible()
   await expect(page.getByRole('cell', { name: 'Meetings' })).toBeVisible() // translated value
+  expect(errors).toEqual([])
+})
+
+test('the explorer opens an action with the picked object filled in', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    ;(window as any).__stub = { List: [{ id: 'u1', displayName: 'Ann Lee', userPrincipalName: 'ann@contoso.com' }] }
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Explorer', exact: true }).click()
+  await page.getByRole('button', { name: /Ann Lee/ }).click()
+  await page.getByRole('button', { name: /Block or unblock sign-in/ }).click()
+
+  // The Users page opens with the action's panel and the user already chosen.
+  await expect(page.getByRole('button', { name: 'Preview changes' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Preview changes' }).click()
+  await expect(page.getByText('What will change')).toBeVisible()
   expect(errors).toEqual([])
 })

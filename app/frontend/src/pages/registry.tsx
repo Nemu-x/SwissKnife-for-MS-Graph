@@ -23,11 +23,12 @@ import { AuditPage } from './AuditPage'
 import { RawPage } from './RawPage'
 import { HistoryPage } from './HistoryPage'
 import { SettingsPage } from './SettingsPage'
+import { ExplorerPage } from './ExplorerPage'
 
 export type PageId =
   | 'connect' | 'dashboard' | 'playbooks' | 'bulk' | 'users' | 'licensing' | 'roles' | 'groups' | 'teams' | 'chats'
   | 'mail' | 'files' | 'offboarding' | 'intune' | 'devices' | 'apps' | 'security' | 'reports' | 'cleanup' | 'health'
-  | 'audit' | 'raw' | 'history' | 'settings'
+  | 'audit' | 'raw' | 'history' | 'settings' | 'explorer'
 
 export const pages: Record<PageId, ComponentType> = {
   connect: ConnectPage,
@@ -54,4 +55,5 @@ export const pages: Record<PageId, ComponentType> = {
   raw: RawPage,
   history: HistoryPage,
   settings: SettingsPage,
+  explorer: ExplorerPage,
 }

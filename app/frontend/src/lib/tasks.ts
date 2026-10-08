@@ -101,6 +101,7 @@ export const TASKS: Task[] = [
   { id: 'snapshot', group: 'insight', page: 'security', action: 'snapshot', keywords: 'snapshot export config baseline backup settings снимок конфигурация бэкап настроек' },
   { id: 'drift', group: 'insight', page: 'security', action: 'drift', keywords: 'drift diff what changed compare config изменения что поменялось сравнить дрифт' },
   { id: 'runHistory', group: 'insight', page: 'history', keywords: 'history past runs resume история запусков продолжить' },
+  { id: 'explorer', group: 'insight', page: 'explorer', keywords: 'explore browse objects navigator find user group team обзор объекты найти навигатор' },
   { id: 'rawGraph', group: 'insight', page: 'raw', keywords: 'raw graph endpoint api request запрос вручную эндпоинт' },
   { id: 'dashboard', group: 'insight', page: 'dashboard', keywords: 'overview tenant counts обзор тенант дашборд' },
   { id: 'connectTenant', group: 'insight', page: 'connect', keywords: 'connect tenant profile switch подключиться тенант профиль сменить' },
