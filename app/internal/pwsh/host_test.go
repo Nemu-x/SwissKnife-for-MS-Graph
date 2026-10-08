@@ -272,4 +272,7 @@ func TestCloseForLeavesANewerConnection(t *testing.T) {
 	if _, err := p.Invoke(oldEnv, FamilyExchange, "Get-Connects", nil); err == nil {
 		t.Fatal("a closed connection must not get a host again")
 	}
+	if e := p.hosts[FamilyExchange]; e == nil || e.conn != newEnv.Graph || !e.host.Alive() {
+		t.Fatal("the rejected call must leave the newer connection's host alone")
+	}
 }

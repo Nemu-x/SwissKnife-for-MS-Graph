@@ -109,6 +109,11 @@ func (p *Pool) expire(family string, h *Host) {
 func (p *Pool) host(env engine.Env, family string) (*Host, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// A call from a connection that already ended must not touch the pool —
+	// the family's host may belong to a newer connection by now.
+	if p.closed[env.Graph] {
+		return nil, errors.New("disconnected")
+	}
 	e := p.hosts[family]
 	if e != nil && (!e.host.Alive() || e.conn != env.Graph) {
 		e.host.Close()
