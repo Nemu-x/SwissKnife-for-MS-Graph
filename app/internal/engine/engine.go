@@ -154,6 +154,9 @@ type Engine struct {
 	plans     *planStore
 	// PS is handed to implementations through Env.
 	PS PSRunner
+	// Grants returns the Graph permissions the connection holds, or nil when
+	// unknown; the catalog warns about the ones a manifest lacks.
+	Grants func() map[string]bool
 	// WrapErr converts implementation errors for display (services sets the
 	// operr envelope with permission hints); identity by default.
 	WrapErr func(error) error
@@ -192,16 +195,25 @@ type CatalogEntry struct {
 	Available bool    `json:"available"`
 	Backend   Backend `json:"backend,omitempty"` // implementation that would run
 	Reason    *Reason `json:"reason,omitempty"`
+	// MissingPermissions are Graph permissions the token does not carry: the
+	// action stays available (a policy may still allow it) but is likely to
+	// fail with 403.
+	MissingPermissions []string `json:"missingPermissions,omitempty"`
 }
 
 // Catalog lists every action, sorted by id for a stable UI.
 func (e *Engine) Catalog() []CatalogEntry {
 	out := make([]CatalogEntry, 0, len(e.actions))
+	var have map[string]bool
+	if e.Grants != nil && e.s.Connected() {
+		have = e.Grants()
+	}
 	for _, a := range e.actions {
 		entry := CatalogEntry{Manifest: a.Manifest}
 		impl, reason := e.resolve(a)
 		if impl != nil {
 			entry.Available, entry.Backend = true, impl.Backend()
+			entry.MissingPermissions = missingPermissions(a.Manifest, have)
 		} else {
 			entry.Reason = reason
 		}
@@ -422,6 +434,65 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 		fmt.Sprintf("backend=%s applied=%d skipped=%d failed=%d %s", p.Backend, res.Applied, res.Skipped, res.Failed, describe(p.Changes)),
 		firstErr)
 	return res, nil
+}
+
+// Execute plans and applies an action in one go on ctx, for multi-step runs
+// (playbooks) that already show their own preview, hold their own operation
+// and journal, and have passed the destructive confirmation for the whole
+// run. Only the write guard is checked here. It returns the first
+// implementation error as is (not display-wrapped) so the caller can read
+// its structure.
+func (e *Engine) Execute(ctx context.Context, actionID string, in Inputs) (*Result, error) {
+	a, err := e.lookup(actionID)
+	if err != nil {
+		return nil, err
+	}
+	in = cloneInputs(in)
+	if err := validate(a.Manifest, in); err != nil {
+		return nil, err
+	}
+	if a.Danger != Read {
+		if err := e.s.GuardWrite(); err != nil {
+			return nil, err
+		}
+	}
+	impl, reason := e.resolve(a)
+	if impl == nil {
+		return nil, &Error{Code: "unavailable", Msg: "action unavailable: " + reason.Key}
+	}
+	env := e.env(ctx)
+	changes, err := impl.Plan(env, in)
+	if err != nil {
+		return nil, err
+	}
+	res := &Result{}
+	var firstErr error
+	for _, ch := range changes {
+		out := Outcome{Change: ch, OK: true}
+		switch {
+		case ch.Op == "none":
+			res.Skipped++
+			out.Skipped = true
+		case ctx.Err() != nil:
+			res.Canceled, res.Failed = true, res.Failed+1
+			out.OK, out.Error = false, "canceled"
+		default:
+			if err := impl.Apply(env, in, ch); err != nil {
+				out.OK, out.Error = false, e.WrapErr(err).Error()
+				res.Failed++
+				if firstErr == nil {
+					firstErr = err
+				}
+			} else {
+				res.Applied++
+			}
+		}
+		res.Outcomes = append(res.Outcomes, out)
+	}
+	e.s.Record("action."+a.ID, (&Plan{Changes: changes}).target(),
+		fmt.Sprintf("backend=%s applied=%d skipped=%d failed=%d %s", impl.Backend(), res.Applied, res.Skipped, res.Failed, describe(changes)),
+		firstErr)
+	return res, firstErr
 }
 
 // Cancel aborts a running apply by op id.

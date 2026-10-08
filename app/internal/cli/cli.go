@@ -591,6 +591,8 @@ func setupOffboard(fs *flag.FlagSet) func(*env, *globals, []string) int {
 	fs.BoolVar(&req.HideFromGal, "hide-gal", false, "hide from address lists")
 	fs.StringVar(&req.CalendarTo, "share-calendar", "", "share the calendar (read) with this UPN")
 	fs.BoolVar(&req.RemoveFromGroups, "remove-groups", false, "remove from all groups")
+	fs.BoolVar(&req.ConvertToShared, "convert-shared", false, "convert the mailbox to a shared mailbox (Exchange PowerShell) before licenses go")
+	fs.StringVar(&req.FullAccessTo, "full-access", "", "give this UPN full access to the mailbox")
 	fs.BoolVar(&req.RemoveAllLicenses, "remove-licenses", false, "remove all licenses")
 	fs.StringVar(&req.BackupToUser, "backup-to", "", "copy OneDrive to this user's drive (server-side)")
 	fs.StringVar(&req.BackupFolder, "backup-folder", "", "target folder for the backup (default: the leaver's UPN)")
@@ -624,7 +626,8 @@ func setupOffboard(fs *flag.FlagSet) func(*env, *globals, []string) int {
 		hasAction := req.Block || req.RevokeSessions || req.Oof || req.ForwardTo != "" || req.HideFromGal ||
 			req.CalendarTo != "" || req.RemoveFromGroups || req.RemoveAllLicenses || req.BackupToUser != "" ||
 			req.IntuneAction != "" || req.RemoveMfaMethods || req.DeleteRegisteredDevices ||
-			req.TransferOwnershipTo != "" || req.CancelFutureEvents || req.Delete
+			req.TransferOwnershipTo != "" || req.CancelFutureEvents || req.Delete ||
+			req.ConvertToShared || req.FullAccessTo != ""
 		if !hasAction {
 			return report(e, usagef("offboard: nothing to do — pass at least one action flag (see '%s help offboard')", binName))
 		}

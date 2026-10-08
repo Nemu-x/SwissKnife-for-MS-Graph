@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -281,5 +282,41 @@ func TestEditingTheReturnedPlanDoesNotChangeWhatRuns(t *testing.T) {
 	}
 	if len(applied) != 1 || applied[0] != "x" {
 		t.Fatalf("applied %v", applied)
+	}
+}
+
+func TestExecuteRunsPlanAndApplyAndGuardsWrites(t *testing.T) {
+	s := newSession(t)
+	var applied []string
+	e := New(s, GraphProvider{})
+	e.Register(Action{Manifest: Manifest{ID: "a", Danger: Destructive},
+		Impls: []Impl{fakeImpl{backend: BackendGraph, applied: &applied, failOn: "bad",
+			changes: []Change{{Target: "x", Op: "set"}, {Target: "y", Op: "none"}, {Target: "bad", Op: "set"}}}}})
+	s.SetReadOnly(true)
+	if _, err := e.Execute(context.Background(), "a", Inputs{}); !errors.Is(err, session.ErrReadOnly) {
+		t.Fatalf("read-only: %v", err)
+	}
+	s.SetReadOnly(false)
+	r, err := e.Execute(context.Background(), "a", Inputs{})
+	if err == nil || err.Error() != "boom" {
+		t.Fatalf("the raw first error must come back: %v", err)
+	}
+	if r.Applied != 1 || r.Skipped != 1 || r.Failed != 1 || len(applied) != 1 {
+		t.Fatalf("result %+v applied %v", r, applied)
+	}
+}
+
+func TestCatalogReportsMissingGraphPermissions(t *testing.T) {
+	s := newSession(t)
+	e := New(s, GraphProvider{})
+	e.Register(Action{Manifest: Manifest{ID: "a", Permissions: []string{"User.ReadWrite.All", "GroupMember.ReadWrite.All", "Calendars.Read", "Exchange.ManageAsApp + Recipient Management"}},
+		Impls: []Impl{fakeImpl{backend: BackendGraph}}})
+	e.Grants = func() map[string]bool { return map[string]bool{"Directory.ReadWrite.All": true} }
+	if got := e.Catalog()[0].MissingPermissions; len(got) != 1 || got[0] != "Calendars.Read" {
+		t.Fatalf("missing = %v, want only Calendars.Read (Directory.ReadWrite.All covers the rest; Exchange entries are not Graph)", got)
+	}
+	e.Grants = func() map[string]bool { return nil }
+	if got := e.Catalog()[0].MissingPermissions; got != nil {
+		t.Fatalf("unknown grants must not warn: %v", got)
 	}
 }

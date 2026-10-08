@@ -28,6 +28,7 @@ export interface TaskAction {
   catalog?: boolean
   badge?: string // backend other than Graph, e.g. "Exchange"
   disabledReason?: string // unavailable right now, and why
+  warning?: string // runnable, but likely to fail (e.g. a missing permission)
 }
 
 // What the last run of an action did, shown on its tile. Toasts vanish after a
@@ -214,6 +215,7 @@ export function TaskPage({
                       {a.disabledReason
                         ? <span id={`${pageId}-${a.id}-reason`} className="text-xs leading-snug text-[var(--warn)]">{a.disabledReason}</span>
                         : a.hint && <span className="text-xs leading-snug text-[var(--text-faint)]">{a.hint}</span>}
+                      {a.warning && !a.disabledReason && <span className="text-xs leading-snug text-[var(--warn)]">{a.warning}</span>}
                       {st && (
                         <span className={`mt-auto text-xs ${st.ok ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
                           {st.text} · {new Date(st.at).toLocaleTimeString(i18n.language)}

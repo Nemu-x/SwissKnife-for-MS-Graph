@@ -92,6 +92,7 @@ export function useCatalogTiles(pageId: string, actions: TaskAction[]) {
       write: e.danger !== 'read',
       badge: e.backend && e.backend !== 'graph' ? t(`actions.backends.${e.backend}`, { defaultValue: e.backend }) : undefined,
       disabledReason: e.available ? undefined : reason,
+      warning: e.missingPermissions?.length ? t('actions.missingPermissions', { list: e.missingPermissions.join(', ') }) : undefined,
       note: notes.length ? <>{notes}</> : undefined,
       panel: e.available ? <CatalogPanel entry={e} mark={mark} askConfirm={askConfirm} /> : undefined,
     }

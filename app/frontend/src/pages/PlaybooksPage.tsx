@@ -83,17 +83,18 @@ export function PlaybooksPage() {
     backupChats: false, intuneAction: '', removeMfaMethods: false, deleteRegisteredDevices: false,
     transferOwnershipTo: remembered('transferOwnershipTo'), cancelFutureEvents: false, delete: false,
     mailboxToUser: remembered('mailboxToUser'), mailboxFolder: '', mailboxIncludeContacts: false, mailboxIncludeCalendar: false,
+    convertToShared: false, fullAccessTo: remembered('fullAccessTo'),
   })
 
   type OffOptions = Omit<typeof off, 'upn'>
   const BUILTIN_PRESETS: Record<string, Partial<OffOptions>> = {
     __phase1: {
       block: true, revokeSessions: true, hideFromGal: true, removeFromGroups: true,
-      removeAllLicenses: false, delete: false,
+      removeAllLicenses: false, convertToShared: false, delete: false,
     },
     __phase2: {
       block: false, revokeSessions: false, oof: false, hideFromGal: false, removeFromGroups: false,
-      removeAllLicenses: true, delete: false, forwardTo: '', calendarTo: '', backupToUser: '', backupFolder: '', mailboxToUser: '',
+      removeAllLicenses: true, convertToShared: true, delete: false, forwardTo: '', calendarTo: '', backupToUser: '', backupFolder: '', mailboxToUser: '',
     },
   }
   const [presets, setPresets] = useState(() => loadStore<Partial<OffOptions>>('playbook.presets'))
@@ -203,7 +204,7 @@ export function PlaybooksPage() {
     startPlaybook('offboard', off.upn, () => api.playbooks.offboard({ ...off, confirm })).then((r) => {
       if (r) setStatus((s) => ({ ...s, offboard: { ok: !!r.ok, text: off.upn, at: Date.now() } }))
       if (!r || r.canceled) return // failed or canceled run: keep the previous defaults
-      for (const k of ['forwardTo', 'calendarTo', 'backupToUser', 'backupFolder', 'transferOwnershipTo', 'mailboxToUser'] as const) {
+      for (const k of ['forwardTo', 'calendarTo', 'backupToUser', 'backupFolder', 'transferOwnershipTo', 'mailboxToUser', 'fullAccessTo'] as const) {
         const key = 'defaults.offboard.' + k
         // An emptied field must not come back after a reload and send a later
         // run's mail or files to last time's destination.
@@ -313,7 +314,7 @@ export function PlaybooksPage() {
       note: (
         <>
           <p>{t('playbooks.noteOffboard')}</p>
-          {off.removeAllLicenses && <p className="text-[var(--warn)]">{t('playbooks.removeLicensesWarn')}</p>}
+          {off.removeAllLicenses && !off.convertToShared && <p className="text-[var(--warn)]">{t('playbooks.removeLicensesWarn')}</p>}
           {off.intuneAction === 'wipe' && <p className="text-[var(--danger)]">{t('playbooks.intuneWipeWarn')}</p>}
           {off.delete && <p className="text-[var(--danger)]">{t('playbooks.deleteUserWarn')}</p>}
         </>
@@ -341,7 +342,7 @@ export function PlaybooksPage() {
           <div className="my-1 border-t border-[var(--border)]" />
           <Field label={t('playbooks.upn')}><UpnInput value={off.upn} onChange={(v) => setOff({ ...off, upn: v })} /></Field>
 
-          {([['block', 'block'], ['revokeSessions', 'revoke'], ['removeMfaMethods', 'removeMfa'], ['oof', 'oof'], ['hideFromGal', 'hideFromGal'], ['cancelFutureEvents', 'cancelEvents'], ['removeFromGroups', 'removeFromGroups'], ['deleteRegisteredDevices', 'deleteRegisteredDevices'], ['removeAllLicenses', 'removeLicenses'], ['delete', 'deleteUser']] as const).map(([k, label]) => (
+          {([['block', 'block'], ['revokeSessions', 'revoke'], ['removeMfaMethods', 'removeMfa'], ['oof', 'oof'], ['hideFromGal', 'hideFromGal'], ['cancelFutureEvents', 'cancelEvents'], ['removeFromGroups', 'removeFromGroups'], ['deleteRegisteredDevices', 'deleteRegisteredDevices'], ['convertToShared', 'convertToShared'], ['removeAllLicenses', 'removeLicenses'], ['delete', 'deleteUser']] as const).map(([k, label]) => (
             <label key={k} className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
               <input type="checkbox" checked={(off as any)[k]} onChange={(e) => setOff({ ...off, [k]: e.target.checked })} />
               <span className={k === 'delete' ? 'text-[var(--danger)]' : ''}>{t(`playbooks.${label}`)}</span>
@@ -365,6 +366,9 @@ export function PlaybooksPage() {
             <UpnInput value={off.transferOwnershipTo} onChange={(v) => setOff({ ...off, transferOwnershipTo: v })} placeholder="lead@contoso.com" />
           </Field>
           <Field label={t('playbooks.forwardTo')}><UpnInput value={off.forwardTo} onChange={(v) => setOff({ ...off, forwardTo: v })} placeholder="manager@contoso.com" /></Field>
+          <Field label={t('playbooks.fullAccessTo')} hint={t('playbooks.fullAccessHint')}>
+            <UpnInput value={off.fullAccessTo} onChange={(v) => setOff({ ...off, fullAccessTo: v })} placeholder="manager@contoso.com" />
+          </Field>
           <Field label={t('playbooks.calendarTo')}><UpnInput value={off.calendarTo} onChange={(v) => setOff({ ...off, calendarTo: v })} placeholder="manager@contoso.com" /></Field>
           <Field label={t('playbooks.backupTo')}><UpnInput value={off.backupToUser} onChange={(v) => setOff({ ...off, backupToUser: v })} placeholder="backup@contoso.com" /></Field>
           <Field label={t('playbooks.backupFolder')}><Input value={off.backupFolder} onChange={(e) => setOff({ ...off, backupFolder: e.target.value })} /></Field>

@@ -777,6 +777,9 @@ const en = {
     refresh: 'Refresh',
   },
   playbooks: {
+    convertToShared: 'Convert the mailbox to shared (keeps the mail without a license)',
+    fullAccessTo: 'Give full mailbox access to',
+    fullAccessHint: 'Usually the manager. The mailbox appears in their Outlook by itself.',
     title: 'Playbooks',
     subtitle: 'Multi-step workflows in one click',
     tileOnboard: 'Onboard a new employee',
@@ -846,11 +849,13 @@ const en = {
     intuneRetire: 'Retire — remove company data, keep personal',
     intuneWipe: 'Wipe — factory reset (irreversible)',
     intuneWipeWarn: 'Wipe factory-resets every enrolled device of this user. Personal data on the devices is destroyed.',
-    removeLicensesWarn: 'Without a license the mailbox is permanently deleted after ~30 days. To keep the mail, convert the user to a shared mailbox in the admin center first, then remove licenses.',
+    removeLicensesWarn: 'Without a license the mailbox is permanently deleted after ~30 days. Tick “Convert the mailbox to shared” to keep the mail.',
     deleteUserWarn: 'Deleting the account also deletes its mailbox (shared too) and OneDrive. Recoverable for 30 days only.',
   },
   // Backend-emitted playbook step keys (Go sends keys + params, UI translates).
   steps: {
+    convertToShared: 'Convert to shared mailbox',
+    grantMailboxAccess: 'Grant mailbox access',
     createUser: 'Create user',
     assignLicenses: 'Assign licenses',
     addToGroup: 'Add to group',
@@ -1163,6 +1168,7 @@ const en = {
     preview: 'Preview changes',
     apply: 'Apply',
     planTitle: 'What will change',
+    missingPermissions: 'The app’s token lacks {{list}} — this will likely fail with 403.',
     nothingToDo: 'Nothing to change — already in this state.',
     result: {
       ok: 'Done: {{applied}} changed, {{skipped}} already in place',
