@@ -15,22 +15,21 @@ export function PowerShellCard() {
   const { toast, jobs, patchJob } = useStore()
   const [st, setSt] = useState<services.PowerShellStatus | null>(null)
   const [method, setMethod] = useState<{ auto: boolean; how: string; commands?: string[]; url: string } | null>(null)
-  const [step, setStep] = useState('')
   // Installing PowerShell itself: a job slot too, so it survives navigation.
   const pwshJob = jobs.pwshInstall
   useEffect(() => { api.actions.powerShellInstallMethod().then(setMethod).catch(() => {}) }, [])
+  // The stage lives in the job, so it is still there after navigating away.
   useEffect(() => EventsOn('pwsh:install', (d: any) => {
-    setStep(d.stage === 'download' && d.pct >= 0 ? t('powershell.stage.downloadPct', { pct: d.pct }) : t(`powershell.stage.${d.stage}`))
-  }), [t])
+    patchJob('pwshInstall', { progress: d.stage === 'download' && d.pct >= 0 ? t('powershell.stage.downloadPct', { pct: d.pct }) : t(`powershell.stage.${d.stage}`) })
+  }), [t, patchJob])
   const installPwsh = async () => {
     if (jobs.pwshInstall?.running) return
-    patchJob('pwshInstall', { running: true, startedAt: Date.now() })
-    setStep(t('powershell.stage.download'))
+    patchJob('pwshInstall', { running: true, startedAt: Date.now(), progress: t('powershell.stage.download') })
     try {
       const s = await api.actions.installPowerShell()
       setSt(s)
       toast('ok', t('powershell.pwshInstalled'))
-    } catch (e) { toast('err', errMessage(e)) } finally { patchJob('pwshInstall', { running: false }); setStep('') }
+    } catch (e) { toast('err', errMessage(e)) } finally { patchJob('pwshInstall', { running: false, progress: '' }) }
   }
   // An install takes minutes: it lives in the store's job slot so leaving
   // Settings and coming back neither loses it nor allows a second one.
@@ -76,7 +75,7 @@ export function PowerShellCard() {
               <Button variant="primary" disabled={!!pwshJob?.running} onClick={installPwsh}>
                 {pwshJob?.running ? <Spinner /> : <Download size={14} />} {t('powershell.installPwsh')}
               </Button>
-              <p className="text-xs text-[var(--text-faint)]">{pwshJob?.running && step ? step : t(`powershell.how.${method.how}`)}</p>
+              <p className="text-xs text-[var(--text-faint)]">{pwshJob?.running && pwshJob.progress ? pwshJob.progress : t(`powershell.how.${method.how}`)}</p>
             </>
           )}
           {method && !method.auto && (method.commands ?? []).length > 0 && (
@@ -85,7 +84,7 @@ export function PowerShellCard() {
               {(method.commands ?? []).map((c) => (
                 <div key={c} className="flex items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1">
                   <code className="min-w-0 flex-1 break-all font-mono text-xs">{c}</code>
-                  <button aria-label={t('common.copy')} onClick={() => { ClipboardSetText(c); toast('ok', t('common.copied')) }}><Copy size={13} /></button>
+                  <button aria-label={t('common.copy')} onClick={() => ClipboardSetText(c).then((ok) => toast(ok ? 'ok' : 'err', ok ? t('common.copied') : t('common.copyFailed'))).catch(() => toast('err', t('common.copyFailed')))}><Copy size={13} /></button>
                 </div>
               ))}
             </div>

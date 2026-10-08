@@ -18,7 +18,7 @@ func installPlatform(ctx context.Context, progress InstallProgress) error {
 	if runtime.GOARCH == "arm64" {
 		arch = "arm64"
 	}
-	path, err := fetch(ctx, func(v string) string { return "powershell-" + v + "-osx-" + arch + ".pkg" }, progress)
+	path, _, err := fetch(ctx, func(v string) string { return "powershell-" + v + "-osx-" + arch + ".pkg" }, progress)
 	if err != nil {
 		return err
 	}

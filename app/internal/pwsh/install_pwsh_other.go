@@ -59,7 +59,10 @@ func installPlatform(ctx context.Context, progress InstallProgress) error {
 		if errors.As(err, &ee) && (ee.ExitCode() == 126 || ee.ExitCode() == 127) {
 			return ErrDeclined
 		}
-		return fmt.Errorf("snap: %s", strings.TrimSpace(string(out)))
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			return fmt.Errorf("snap: %s", msg)
+		}
+		return fmt.Errorf("snap: %w", err)
 	}
 	return nil
 }

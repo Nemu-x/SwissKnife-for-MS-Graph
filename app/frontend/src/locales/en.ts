@@ -145,6 +145,7 @@ const en = {
     confirm: 'Confirm',
     copy: 'Copy',
     copied: 'Copied',
+    copyFailed: 'Could not copy',
     exportCsv: 'Export CSV',
     user: 'User (UPN or ID)',
     owner: 'Owner',

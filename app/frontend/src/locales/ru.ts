@@ -145,6 +145,7 @@ const ru: Dict<typeof en> = {
     confirm: 'Подтвердить',
     copy: 'Копировать',
     copied: 'Скопировано',
+    copyFailed: 'Не удалось скопировать',
     exportCsv: 'Экспорт CSV',
     user: 'Пользователь (UPN или ID)',
     owner: 'Владелец',

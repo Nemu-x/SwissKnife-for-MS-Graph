@@ -45,18 +45,25 @@ type InstallMethod struct {
 var (
 	releaseInfoURL = "https://aka.ms/pwsh-buildinfo-stable"
 	downloadBase   = "https://github.com/PowerShell/PowerShell/releases/download/"
-	httpClient     = &http.Client{Timeout: 15 * time.Minute}
+	// No overall timeout: a slow package download is fine while it moves;
+	// the small metadata requests get their own deadline.
+	httpClient = &http.Client{}
 )
 
 const maxPackage = 400 << 20
 
 func latestVersion(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, releaseInfoURL, nil)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("release information: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("release information: %s", resp.Status)
+	}
 	var info struct {
 		ReleaseTag string `json:"ReleaseTag"`
 	}
@@ -80,6 +87,8 @@ func decodeText(b []byte) string {
 
 // publishedHash finds the SHA-256 the release lists for file.
 func publishedHash(ctx context.Context, version, file string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, downloadBase+"v"+version+"/hashes.sha256", nil)
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -103,24 +112,25 @@ func publishedHash(ctx context.Context, version, file string) (string, error) {
 }
 
 // fetch downloads file of the latest release into a new temporary folder and
-// checks it; name builds the file name from the version.
-func fetch(ctx context.Context, name func(version string) string, progress InstallProgress) (path string, err error) {
+// checks it; name builds the file name from the version. It returns the
+// path and the published SHA-256 (to check again right before use).
+func fetch(ctx context.Context, name func(version string) string, progress InstallProgress) (path, sum string, err error) {
 	if progress == nil {
 		progress = func(string, int) {}
 	}
 	progress("download", -1)
 	version, err := latestVersion(ctx)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	file := name(version)
 	want, err := publishedHash(ctx, version, file)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	dir, err := os.MkdirTemp("", "skg-pwsh-")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	path = filepath.Join(dir, file)
 	defer func() {
@@ -131,30 +141,33 @@ func fetch(ctx context.Context, name func(version string) string, progress Insta
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, downloadBase+"v"+version+"/"+file, nil)
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("download: %w", err)
+		return "", "", fmt.Errorf("download: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download: %s", resp.Status)
+		return "", "", fmt.Errorf("download: %s", resp.Status)
 	}
 	out, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	h := sha256.New()
-	pr := &progressReader{r: io.LimitReader(resp.Body, maxPackage), total: resp.ContentLength, report: func(p int) { progress("download", p) }}
-	_, err = io.Copy(io.MultiWriter(out, h), pr)
+	pr := &progressReader{r: io.LimitReader(resp.Body, maxPackage+1), total: resp.ContentLength, report: func(p int) { progress("download", p) }}
+	n, err := io.Copy(io.MultiWriter(out, h), pr)
+	if err == nil && n > maxPackage {
+		err = fmt.Errorf("the package is larger than %d MB — not installing it", maxPackage>>20)
+	}
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
-		return "", fmt.Errorf("download: %w", err)
+		return "", "", fmt.Errorf("download: %w", err)
 	}
 	progress("verify", -1)
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
-		return "", fmt.Errorf("the downloaded %s does not match its published checksum — not installing it", file)
+		return "", "", fmt.Errorf("the downloaded %s does not match its published checksum — not installing it", file)
 	}
-	return path, nil
+	return path, want, nil
 }
 
 type progressReader struct {

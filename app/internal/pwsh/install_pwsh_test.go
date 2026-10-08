@@ -47,7 +47,7 @@ func TestFetchVerifiesThePublishedChecksum(t *testing.T) {
 
 	name := func(v string) string { return "PowerShell-" + v + "-win-x64.msi" }
 	var stages []string
-	path, err := fetch(context.Background(), name, func(s string, _ int) { stages = append(stages, s) })
+	path, _, err := fetch(context.Background(), name, func(s string, _ int) { stages = append(stages, s) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestFetchVerifiesThePublishedChecksum(t *testing.T) {
 	}
 
 	serve = []byte("tampered")
-	if _, err := fetch(context.Background(), name, nil); err == nil || !strings.Contains(err.Error(), "checksum") {
+	if _, _, err := fetch(context.Background(), name, nil); err == nil || !strings.Contains(err.Error(), "checksum") {
 		t.Fatalf("a package that does not match must be refused: %v", err)
 	}
 }
