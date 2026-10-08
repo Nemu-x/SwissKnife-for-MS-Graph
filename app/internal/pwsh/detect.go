@@ -160,9 +160,14 @@ func (d *Detector) Install(ctx context.Context, module string) error {
 	}
 	// The name is one of two constants, so composing the command is safe.
 	// PSGallery explicitly: another registered repository must not win with
-	// a higher version number. -Force answers the untrusted-repository prompt
-	// for this install only, without changing the user's trust settings.
-	script := "Install-Module -Name " + module + " -Repository PSGallery -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop"
+	// a higher version number. Install-PSResource (built into PowerShell
+	// 7.4+) takes seconds where the old Install-Module takes minutes; both
+	// trust the gallery for this install only, without changing the user's
+	// trust settings (-TrustRepository / -Force).
+	script := "if (Get-Command Install-PSResource -ErrorAction SilentlyContinue) { " +
+		"Install-PSResource -Name " + module + " -Repository PSGallery -Scope CurrentUser -TrustRepository -AcceptLicense -Quiet -ErrorAction Stop " +
+		"} else { " +
+		"Install-Module -Name " + module + " -Repository PSGallery -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop }"
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	_, err := d.run(cctx, env.Exe, "-Command", script)
