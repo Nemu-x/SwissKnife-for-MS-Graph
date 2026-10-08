@@ -16,3 +16,5 @@ export function Plan(arg1:string,arg2:Record<string, string>):Promise<engine.Pla
 export function PowerShellStatus():Promise<services.PowerShellStatus>;
 
 export function RefreshPowerShell():Promise<services.PowerShellStatus>;
+
+export function Run(arg1:string,arg2:Record<string, string>):Promise<engine.ReadResult>;

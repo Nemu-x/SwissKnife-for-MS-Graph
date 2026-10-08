@@ -17,7 +17,8 @@ import (
 // Builtin returns every built-in action, for Engine.Register.
 func Builtin() []engine.Action {
 	out := append(graphActions(), exchangeActions()...)
-	return append(out, exchangePSActions()...)
+	out = append(out, exchangePSActions()...)
+	return append(out, teamsActions()...)
 }
 
 func graphActions() []engine.Action {

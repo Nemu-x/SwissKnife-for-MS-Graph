@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, Eye, Check, ArrowRight, Minus } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, Eye, Check, ArrowRight, Minus } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
@@ -40,6 +40,10 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
   'mailbox.calendarProcessing': { label: 'actions.mailbox.calendarProcessing.label', hint: 'actions.mailbox.calendarProcessing.hint', notes: ['actions.mailbox.calendarProcessing.note'], icon: <CalendarCheck size={16} /> },
   'distributionList.membership': { label: 'actions.distributionList.membership.label', hint: 'actions.distributionList.membership.hint', notes: ['actions.distributionList.membership.note'], icon: <ListPlus size={16} /> },
   'transportRule.state': { label: 'actions.transportRule.state.label', hint: 'actions.transportRule.state.hint', warn: ['actions.transportRule.state.note'], icon: <ShieldOff size={16} /> },
+  'teams.userPolicy': { label: 'actions.teams.userPolicy.label', hint: 'actions.teams.userPolicy.hint', notes: ['actions.teams.userPolicy.note'], icon: <ScrollText size={16} /> },
+  'teams.groupPolicy': { label: 'actions.teams.groupPolicy.label', hint: 'actions.teams.groupPolicy.hint', notes: ['actions.teams.groupPolicy.note'], icon: <UsersRound size={16} /> },
+  'teams.policies': { label: 'actions.teams.policies.label', hint: 'actions.teams.policies.hint', icon: <ListChecks size={16} /> },
+  'teams.effectivePolicies': { label: 'actions.teams.effectivePolicies.label', hint: 'actions.teams.effectivePolicies.hint', icon: <BadgeCheck size={16} /> },
   'group.membership': { label: 'groups.tileAdd', hint: 'groups.hintAdd', notes: ['groups.noteAdd'], icon: <UserPlus size={16} /> },
   'license.assign': { label: 'licensing.tileAssign', hint: 'licensing.hintAssign', notes: ['licensing.noteAssign'], warn: ['licensing.noteRemove'], icon: <Plus size={16} /> },
 }
@@ -127,17 +131,35 @@ function CatalogPanel({ entry, mark, askConfirm }: {
   const [values, setValues] = useState<Record<string, string>>(initial)
   const [plan, setPlan] = useState<engine.Plan | null>(null)
   const [result, setResult] = useState<engine.Result | null>(null)
+  const [rows, setRows] = useState<engine.ReadResult | null>(null)
   const [busy, setBusy] = useState(false)
+  const isRead = entry.danger === 'read'
 
   // Any edit invalidates the preview: Apply must run what is on screen.
   const set = (name: string, v: string) => {
     setValues((s) => ({ ...s, [name]: v }))
     setPlan(null)
     setResult(null)
+    setRows(null)
   }
   const ready = entry.fields.every((f) => !f.required || values[f.name])
   const actionable = !!plan?.changes?.some((c) => c.op !== 'none')
   const destructive = entry.danger === 'destructive'
+
+  const run = async () => {
+    setBusy(true)
+    try {
+      const r = await api.actions.run(entry.id, values)
+      setRows(r)
+      mark(entry.id, true, t('actions.rows', { count: r.rows?.length ?? 0 }))
+    } catch (e) {
+      const m = errMessage(e)
+      mark(entry.id, false, m)
+      toast('err', m)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const preview = async () => {
     setBusy(true)
@@ -215,7 +237,14 @@ function CatalogPanel({ entry, mark, askConfirm }: {
         )
         : <Field key={f.name} label={t(`actions.fields.${f.name}`, { defaultValue: f.name })}>{field(f)}</Field>)}
 
-      {!plan && (
+      {isRead && (
+        <Button variant="primary" disabled={busy || !ready} onClick={run}>
+          {busy ? <Spinner /> : <Play size={15} />} {t('actions.run')}
+        </Button>
+      )}
+      {isRead && rows && <RowsView result={rows} />}
+
+      {!isRead && !plan && (
         <Button variant="primary" disabled={busy || !ready} onClick={preview}>
           {busy ? <Spinner /> : <Eye size={15} />} {t('actions.preview')}
         </Button>
@@ -241,6 +270,31 @@ function CatalogPanel({ entry, mark, askConfirm }: {
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+// A read action's answer as a compact table. Column names and plain-word
+// values (policy types, states) translate; names and addresses stay as is.
+function RowsView({ result }: { result: engine.ReadResult }) {
+  const { t, i18n } = useTranslation()
+  const cols = result.columns ?? []
+  const show = (v: string) => (/^[A-Za-z]+$/.test(v) && i18n.exists(`actions.values.${v}`) ? t(`actions.values.${v}`) : v)
+  if (!result.rows?.length) return <p className="text-sm text-[var(--text-dim)]">{t('actions.noRows')}</p>
+  return (
+    <div className="max-h-72 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--bg)]">
+      <table className="w-full text-left text-xs">
+        <thead className="sticky top-0 bg-[var(--bg-elev)] text-[var(--text-faint)]">
+          <tr>{cols.map((c) => <th key={c} className="px-2 py-1.5 font-medium">{t(`actions.columns.${c}`, { defaultValue: c })}</th>)}</tr>
+        </thead>
+        <tbody>
+          {result.rows.map((r, i) => (
+            <tr key={i} className="border-t border-[var(--border)]">
+              {cols.map((c) => <td key={c} className="px-2 py-1.5">{show(r[c] ?? '')}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

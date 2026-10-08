@@ -36,7 +36,8 @@ func NewEngine(s *session.Session) *engine.Engine {
 	// Closing waits for a sign-in that may be in progress; Disconnect is a UI
 	// call and must not hang on it.
 	s.OnDisconnect(func(prev *graphapi.Client) { go pool.CloseFor(prev) })
-	e := engine.New(s, engine.GraphProvider{}, exoapi.NewProvider(), pwsh.NewExchangeProvider(psDetector))
+	e := engine.New(s, engine.GraphProvider{}, exoapi.NewProvider(),
+		pwsh.NewExchangeProvider(psDetector), pwsh.NewTeamsProvider(psDetector))
 	e.PS = pool
 	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr
@@ -177,6 +178,12 @@ func (a *ActionsService) Plan(actionID string, inputs map[string]string) (*engin
 // actions and ignored otherwise.
 func (a *ActionsService) Apply(planID, confirm string) (*engine.Result, error) {
 	r, err := a.e.Apply(planID, confirm)
+	return r, engineErr(err)
+}
+
+// Run executes a read action and returns its rows.
+func (a *ActionsService) Run(actionID string, inputs map[string]string) (*engine.ReadResult, error) {
+	r, err := a.e.Run(context.Background(), actionID, inputs)
 	return r, engineErr(err)
 }
 

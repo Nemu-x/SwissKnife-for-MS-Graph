@@ -43,6 +43,18 @@ func setupAction(fs *flag.FlagSet) func(*env, *globals, []string) int {
 			return printCatalog(e, g, eng.Catalog())
 		}
 
+		if isRead(eng.Catalog(), pos[0]) {
+			res, err := eng.Run(e.ctx, pos[0], in)
+			if err != nil {
+				return report(e, err)
+			}
+			if g.json {
+				return writeJSON(e, g, res)
+			}
+			printRows(e, res)
+			return exitOK
+		}
+
 		plan, err := eng.Plan(pos[0], in)
 		if err != nil {
 			return report(e, err)
@@ -106,6 +118,28 @@ func printCatalog(e *env, g *globals, list []engine.CatalogEntry) int {
 	}
 	_ = tw.Flush()
 	return exitOK
+}
+
+func isRead(list []engine.CatalogEntry, id string) bool {
+	for _, a := range list {
+		if a.ID == id {
+			return a.Danger == engine.Read
+		}
+	}
+	return false
+}
+
+func printRows(e *env, r *engine.ReadResult) {
+	tw := tabwriter.NewWriter(e.stdout, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, strings.ToUpper(strings.Join(r.Columns, "	")))
+	for _, row := range r.Rows {
+		vals := make([]string, len(r.Columns))
+		for i, c := range r.Columns {
+			vals[i] = row[c]
+		}
+		_, _ = fmt.Fprintln(tw, strings.Join(vals, "	"))
+	}
+	_ = tw.Flush()
 }
 
 func printPlan(e *env, p *engine.Plan) {
