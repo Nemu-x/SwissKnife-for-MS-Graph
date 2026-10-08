@@ -1444,6 +1444,7 @@ const en = {
     getIt: 'Or download and install it yourself',
     install: 'Install',
     update: 'Update',
+    elapsed: '({{s}} s)',
     installing: 'Installing from the PowerShell Gallery — this can take a few minutes.',
     installed: '{{name}} is installed.',
     recheck: 'Check again',

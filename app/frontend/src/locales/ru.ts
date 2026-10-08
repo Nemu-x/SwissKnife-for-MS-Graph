@@ -1444,6 +1444,7 @@ const ru: Dict<typeof en> = {
     getIt: 'Или скачать и установить самостоятельно',
     install: 'Установить',
     update: 'Обновить',
+    elapsed: '({{s}} с)',
     installing: 'Ставлю из PowerShell Gallery — это может занять несколько минут.',
     installed: '{{name}} установлен.',
     recheck: 'Проверить снова',

@@ -41,6 +41,14 @@ export function PowerShellCard() {
   const installing = job?.running ? job.progress : null
   const checking = !!jobs.psCheck?.running
   const busy = installing || (checking ? 'refresh' : null)
+  // Installing can take a minute or two: show that time is passing.
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!job?.running) return
+    const id = setInterval(() => tick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [job?.running])
+  const elapsed = job?.running && job.startedAt ? Math.floor((Date.now() - job.startedAt) / 1000) : 0
 
   useEffect(() => {
     let alive = true
@@ -114,7 +122,7 @@ export function PowerShellCard() {
                 )}
             </div>
           ))}
-          {busy && busy !== 'refresh' && <p className="text-xs text-[var(--text-faint)]">{t('powershell.installing')}</p>}
+          {busy && busy !== 'refresh' && <p className="text-xs text-[var(--text-faint)]">{t('powershell.installing')} {t('powershell.elapsed', { s: elapsed })}</p>}
         </div>
       )}
       <Button variant="ghost" className="mt-3 !px-2 !py-1" disabled={!!busy} onClick={refresh}>
