@@ -32,6 +32,7 @@ type Session struct {
 	onDisconnect []func(prev *graphapi.Client)
 	profileName  string
 	readOnly     bool
+	policy       Policy
 	configDir    string
 
 	Audit   *auditlog.Log
@@ -143,6 +144,7 @@ func (s *Session) Disconnect() {
 	s.tokens = nil
 	s.tenantID, s.appOnly = "", false
 	s.profileName = ""
+	s.policy = Policy{}
 }
 
 func (s *Session) Client() (*graphapi.Client, error) {
@@ -183,6 +185,9 @@ func (s *Session) GuardWrite() error {
 	if s.ReadOnly() {
 		return ErrReadOnly
 	}
+	if s.Policy().MaxDanger == "read" {
+		return ErrPolicyRead
+	}
 	return nil
 }
 
@@ -191,6 +196,9 @@ func (s *Session) GuardWrite() error {
 func (s *Session) GuardDestructive(target, confirm string) error {
 	if err := s.GuardWrite(); err != nil {
 		return err
+	}
+	if s.Policy().MaxDanger == "write" {
+		return ErrPolicyDestructive
 	}
 	if confirm != target {
 		return errors.New("confirmation text does not match the target — operation cancelled")

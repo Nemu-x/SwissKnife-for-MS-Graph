@@ -211,6 +211,18 @@ func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
 	if err := p.s.GuardWrite(); err != nil {
 		return nil, err
 	}
+	// A new user is not a member of anything yet: under a group scope the
+	// playbook must put them into allowed groups only, and into one at least.
+	if len(p.s.Policy().AllowedGroups) > 0 {
+		if len(req.GroupIDs) == 0 {
+			return nil, &OpError{Code: "policyScope", Message: "this connection profile may only create users in its allowed groups — pick one"}
+		}
+		for _, g := range req.GroupIDs {
+			if err := targetInScope(p.s, engine.FieldGroup, g); err != nil {
+				return nil, err
+			}
+		}
+	}
 	c, err := p.s.Client()
 	if err != nil {
 		return nil, err
@@ -364,6 +376,9 @@ func alreadyExists(err error) bool {
 // on the UPN. Steps are best-effort and reported individually.
 func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error) {
 	if err := p.s.GuardDestructive(req.Upn, req.Confirm); err != nil {
+		return nil, err
+	}
+	if err := targetInScope(p.s, engine.FieldUser, req.Upn); err != nil {
 		return nil, err
 	}
 	c, err := p.s.Client()

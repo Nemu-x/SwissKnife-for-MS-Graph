@@ -15,6 +15,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/zalando/go-keyring"
+
+	"swissknife-app/internal/session"
 )
 
 const keyringService = "SwissKnifeGraph"
@@ -30,6 +32,8 @@ type Profile struct {
 	// lives in the keychain in place of the client secret.
 	CertPath string `json:"certPath,omitempty"`
 	HasSecret bool  `json:"hasSecret"` // whether a secret exists in the keychain
+	// Policy limits what this profile may do once connected.
+	Policy *session.Policy `json:"policy,omitempty"`
 }
 
 type Store struct {

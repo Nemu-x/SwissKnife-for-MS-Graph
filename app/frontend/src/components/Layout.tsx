@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   Plug, LayoutDashboard, PlayCircle, Users, KeyRound, ShieldCheck, Boxes, MessagesSquare, MessageCircle, Mail,
   FolderOpen, UserMinus, Smartphone, MonitorSmartphone, AppWindow, BarChart3, Sparkles, HeartPulse,
-  ScrollText, TerminalSquare, Settings, Lock, Layers, ShieldAlert, History, ChevronDown, Search,
+  ScrollText, TerminalSquare, Settings, Lock, Layers, ShieldAlert, History, ChevronDown, Search, ShieldHalf,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import logo from '../assets/images/logo.png'
@@ -176,6 +176,11 @@ export function Layout({
           {readOnly && (
             <div className="mt-1.5 flex items-center gap-1 text-[var(--warn)]">
               <Lock size={12} /> {t('safety.readOnly')}
+            </div>
+          )}
+          {connected && (status as any)?.policy && ((status as any).policy.maxDanger || (status as any).policy.allowedGroups?.length > 0) && (
+            <div className="mt-1.5 flex items-center gap-1 text-[var(--warn)]" title={t('connect.limits.active')}>
+              <ShieldHalf size={12} /> {t('connect.limits.badge')}
             </div>
           )}
         </div>

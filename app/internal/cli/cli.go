@@ -150,6 +150,7 @@ func connectProfile(ctx context.Context, p secrets.Profile, readOnly bool, stder
 	sess.SetClient(gc, cr.Name)
 	sess.SetTokens(provider)
 	sess.SetIdentity(cr.TenantID, cr.AuthMode != string(auth.ModeDeviceCode))
+	sess.SetPolicy(cr.Policy)
 	sess.Record("session.connect", cr.TenantID, "mode="+cr.AuthMode+" via=cli", nil)
 	return sess, nil
 }

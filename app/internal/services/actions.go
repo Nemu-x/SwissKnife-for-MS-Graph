@@ -204,3 +204,10 @@ func engineErr(err error) error {
 	}
 	return err
 }
+
+// targetInScope applies the connected profile's group scope to a target
+// named outside the catalog (playbooks).
+func targetInScope(s *session.Session, kind engine.FieldKind, v string) error {
+	e := EngineFor(s)
+	return engineErr(e.CheckTarget(e.Env(s.Ctx()), kind, v))
+}

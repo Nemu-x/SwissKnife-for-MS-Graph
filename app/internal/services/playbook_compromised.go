@@ -88,6 +88,9 @@ func (p *PlaybookService) Compromised(req CompromisedRequest) (*CompromisedResul
 	if err := p.s.GuardDestructive(req.Upn, req.Confirm); err != nil {
 		return nil, err
 	}
+	if err := targetInScope(p.s, engine.FieldUser, req.Upn); err != nil {
+		return nil, err
+	}
 	c, err := p.s.Client()
 	if err != nil {
 		return nil, err

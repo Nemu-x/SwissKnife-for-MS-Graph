@@ -445,6 +445,7 @@ export namespace secrets {
 	    authMode: string;
 	    certPath?: string;
 	    hasSecret: boolean;
+	    policy?: session.Policy;
 	
 	    static createFrom(source: any = {}) {
 	        return new Profile(source);
@@ -459,7 +460,26 @@ export namespace secrets {
 	        this.authMode = source["authMode"];
 	        this.certPath = source["certPath"];
 	        this.hasSecret = source["hasSecret"];
+	        this.policy = this.convertValues(source["policy"], session.Policy);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
@@ -1544,6 +1564,7 @@ export namespace services {
 	    connected: boolean;
 	    profileName: string;
 	    readOnly: boolean;
+	    policy: session.Policy;
 	    org?: number[];
 	
 	    static createFrom(source: any = {}) {
@@ -1555,8 +1576,27 @@ export namespace services {
 	        this.connected = source["connected"];
 	        this.profileName = source["profileName"];
 	        this.readOnly = source["readOnly"];
+	        this.policy = this.convertValues(source["policy"], session.Policy);
 	        this.org = source["org"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	
 	export class TraceQuery {
@@ -1639,6 +1679,27 @@ export namespace services {
 	        this.versions = source["versions"];
 	        this.currentSize = source["currentSize"];
 	        this.reclaimable = source["reclaimable"];
+	    }
+	}
+
+}
+
+export namespace session {
+	
+	export class Policy {
+	    maxDanger?: string;
+	    allowedGroups?: string[];
+	    groupLabels?: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new Policy(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.maxDanger = source["maxDanger"];
+	        this.allowedGroups = source["allowedGroups"];
+	        this.groupLabels = source["groupLabels"];
 	    }
 	}
 

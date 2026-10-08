@@ -52,6 +52,8 @@ export const api = {
     saveProfile: (p: Partial<Profile>, secret: string) =>
       Connect.SaveProfile(p as Profile, secret) as Promise<Profile>,
     deleteProfile: (id: string) => Connect.DeleteProfile(id),
+    setProfilePolicy: (id: string, p: { maxDanger: string; allowedGroups: string[]; groupLabels: Record<string, string> }) =>
+      Connect.SetProfilePolicy(id, p as any) as Promise<Profile>,
     connect: (req: Partial<ConnectRequest>) => Connect.Connect(req as ConnectRequest) as Promise<Status>,
     disconnect: () => Connect.Disconnect(),
     status: () => Connect.GetStatus() as Promise<Status>,
