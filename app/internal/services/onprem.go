@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,7 +148,9 @@ func (o *OnPremService) SaveConnection(c ldapx.Config, password string) (*OnPrem
 	if password != "" {
 		if err := secrets.SetNamedSecret(onpremKey(c.ID), password); err != nil {
 			// Settings and password change together or not at all.
-			_ = o.save(prev)
+			if rerr := o.save(prev); rerr != nil {
+				return nil, errors.Join(err, fmt.Errorf("restoring the previous settings: %w", rerr))
+			}
 			return nil, err
 		}
 	}
