@@ -15,8 +15,10 @@ import (
 	"time"
 	"unicode"
 
+	"swissknife-app/internal/engine"
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/ops"
+	"swissknife-app/internal/pwsh"
 	"swissknife-app/internal/session"
 )
 
@@ -111,29 +113,80 @@ const snapshotListCap = 5000
 type sectionCollector struct {
 	name    string
 	collect func(ctx context.Context, c *graphapi.Client) ([]map[string]any, error)
+	// ps marks a section read through PowerShell instead (Exchange, Teams);
+	// it is skipped, with the reason, when that backend is not available.
+	ps *psSection
+}
+
+// psSection is a PowerShell-backed snapshot section: one Get- cmdlet, the
+// properties worth versioning, and the one that identifies an object.
+type psSection struct {
+	backend engine.Backend
+	family  string
+	cmdlet  string
+	params  map[string]any
+	sel     []string
+	idProp  string
 }
 
 // snapshotSections is the fixed capture set, in the order they are collected
 // (also the order sections are reported in a diff).
 var snapshotSections = []sectionCollector{
-	{"conditionalAccessPolicies", listSection("/identity/conditionalAccess/policies", nil, 0)},
-	{"namedLocations", listSection("/identity/conditionalAccess/namedLocations", nil, 0)},
-	{"directoryRoles", collectDirectoryRoles},
-	{"authorizationPolicy", getSection("/policies/authorizationPolicy")},
-	{"authenticationMethodsPolicy", getSection("/policies/authenticationMethodsPolicy")},
+	{"conditionalAccessPolicies", listSection("/identity/conditionalAccess/policies", nil, 0), nil},
+	{"namedLocations", listSection("/identity/conditionalAccess/namedLocations", nil, 0), nil},
+	{"directoryRoles", collectDirectoryRoles, nil},
+	{"authorizationPolicy", getSection("/policies/authorizationPolicy"), nil},
+	{"authenticationMethodsPolicy", getSection("/policies/authenticationMethodsPolicy"), nil},
 	{"subscribedSkus", listSection("/subscribedSkus", url.Values{
 		"$select": {"id,skuId,skuPartNumber,capabilityStatus,consumedUnits,prepaidUnits"},
-	}, 0)},
-	{"domains", listSection("/domains", nil, 0)},
+	}, 0), nil},
+	{"domains", listSection("/domains", nil, 0), nil},
 	{"groups", listSection("/groups", url.Values{
 		"$select": {"id,displayName,groupTypes,securityEnabled,mailEnabled,membershipRule"},
 		"$top":    {"999"},
-	}, snapshotListCap)},
+	}, snapshotListCap), nil},
 	{"applications", listSection("/applications", url.Values{
 		"$select": {"id,appId,displayName,passwordCredentials,keyCredentials"},
 		"$top":    {"999"},
-	}, snapshotListCap)},
-	{"servicePrincipals", collectServicePrincipalCount},
+	}, snapshotListCap), nil},
+	{"servicePrincipals", collectServicePrincipalCount, nil},
+	{"intuneConfigurations", listSection("/deviceManagement/deviceConfigurations", url.Values{"$expand": {"assignments"}}, 0), nil},
+	{"intuneCompliancePolicies", listSection("/deviceManagement/deviceCompliancePolicies", url.Values{"$expand": {"assignments"}}, 0), nil},
+	{"exchangeOrganizationConfig", nil, &psSection{pwsh.BackendExchangePS, pwsh.FamilyExchange, "Get-OrganizationConfig", nil,
+		[]string{"Name", "AuditDisabled", "OAuth2ClientProfileEnabled", "CustomerLockBoxEnabled", "MailTipsExternalRecipientsTipsEnabled",
+			"DefaultAuthenticationPolicy", "FocusedInboxOn", "PublicFoldersEnabled"}, "Name"}},
+	{"transportRules", nil, &psSection{pwsh.BackendExchangePS, pwsh.FamilyExchange, "Get-TransportRule", nil,
+		[]string{"Guid", "Name", "State", "Mode", "Priority", "Description"}, "Guid"}},
+	{"teamsMeetingPolicies", nil, &psSection{pwsh.BackendTeamsPS, pwsh.FamilyTeams, "Get-CsTeamsMeetingPolicy", nil,
+		[]string{"Identity", "AllowCloudRecording", "AllowTranscription", "AllowAnonymousUsersToJoinMeeting", "AutoAdmittedUsers",
+			"AllowExternalParticipantGiveRequestControl", "AllowMeetNow"}, "Identity"}},
+}
+
+// collectPS reads a PowerShell section through the session's engine.
+func (x *SnapshotService) collectPS(ctx context.Context, sec *psSection) ([]map[string]any, error) {
+	eng := EngineFor(x.s)
+	if r := eng.BackendStatus(sec.backend); r != nil {
+		return nil, fmt.Errorf("PowerShell backend not available (%s)", r.Key)
+	}
+	env := eng.Env(ctx)
+	if env.PS == nil {
+		return nil, errors.New("PowerShell backend not available")
+	}
+	rows, err := env.PS.Invoke(env, sec.family, sec.cmdlet, sec.params, sec.sel...)
+	if err != nil {
+		return nil, err
+	}
+	objs, err := decodeObjects(rows)
+	if err != nil {
+		return nil, err
+	}
+	// Objects need an "id" for diffs and restore keys.
+	for _, o := range objs {
+		if v, ok := o[sec.idProp]; ok && v != nil {
+			o["id"] = fmt.Sprint(v)
+		}
+	}
+	return objs, nil
 }
 
 func listSection(path string, params url.Values, maxItems int) func(context.Context, *graphapi.Client) ([]map[string]any, error) {
@@ -243,7 +296,13 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 	for i, sec := range snapshotSections {
 		emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": sec.name, "done": i, "total": total})
 		info := SnapshotSection{Name: sec.name}
-		objs, err := sec.collect(ctx, c)
+		var objs []map[string]any
+		var err error
+		if sec.ps != nil {
+			objs, err = x.collectPS(ctx, sec.ps)
+		} else {
+			objs, err = sec.collect(ctx, c)
+		}
 		switch {
 		case err != nil && ctx.Err() != nil:
 			return nil, ctx.Err() // shutdown / cancel: nothing to save
