@@ -471,6 +471,37 @@ export namespace journal {
 
 }
 
+export namespace ldapx {
+	
+	export class Config {
+	    id: string;
+	    name: string;
+	    host: string;
+	    port: number;
+	    tls: string;
+	    baseDn: string;
+	    bindDn: string;
+	    caFile?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Config(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.host = source["host"];
+	        this.port = source["port"];
+	        this.tls = source["tls"];
+	        this.baseDn = source["baseDn"];
+	        this.bindDn = source["bindDn"];
+	        this.caFile = source["caFile"];
+	    }
+	}
+
+}
+
 export namespace secrets {
 	
 	export class Profile {
@@ -1300,6 +1331,54 @@ export namespace services {
 	        this.transferOwnershipTo = source["transferOwnershipTo"];
 	        this.cancelFutureEvents = source["cancelFutureEvents"];
 	        this.delete = source["delete"];
+	    }
+	}
+	export class OnPremConnection {
+	    id: string;
+	    name: string;
+	    host: string;
+	    port: number;
+	    tls: string;
+	    baseDn: string;
+	    bindDn: string;
+	    caFile?: string;
+	    hasPassword: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new OnPremConnection(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.host = source["host"];
+	        this.port = source["port"];
+	        this.tls = source["tls"];
+	        this.baseDn = source["baseDn"];
+	        this.bindDn = source["bindDn"];
+	        this.caFile = source["caFile"];
+	        this.hasPassword = source["hasPassword"];
+	    }
+	}
+	export class OnPremStatus {
+	    connected: boolean;
+	    id?: string;
+	    name?: string;
+	    host?: string;
+	    secure: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new OnPremStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connected = source["connected"];
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.host = source["host"];
+	        this.secure = source["secure"];
 	    }
 	}
 	export class OnboardRequest {

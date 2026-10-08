@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   Plug, LayoutDashboard, PlayCircle, Users, KeyRound, ShieldCheck, Boxes, MessagesSquare, MessageCircle, Mail,
   FolderOpen, UserMinus, Smartphone, MonitorSmartphone, AppWindow, BarChart3, Sparkles, HeartPulse,
-  ScrollText, TerminalSquare, Settings, Lock, Layers, ShieldAlert, History, ChevronDown, Search, ShieldHalf, Compass,
+  ScrollText, TerminalSquare, Settings, Lock, Layers, ShieldAlert, History, ChevronDown, Search, ShieldHalf, Compass, Server,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import logo from '../assets/images/logo.png'
@@ -13,7 +13,7 @@ type NavItem = { id: PageId; icon: ReactNode; key: string }
 
 // Pages usable without a tenant connection — the single source of truth for
 // both the nav enablement here and the redirect guard in App.tsx.
-export const LOCAL_PAGES: PageId[] = ['connect', 'settings', 'history']
+export const LOCAL_PAGES: PageId[] = ['connect', 'settings', 'history', 'onprem']
 
 // Pinned entries above the groups.
 const pinned: NavItem[] = [
@@ -33,6 +33,7 @@ const groups: { key: string; items: NavItem[] }[] = [
       { id: 'roles', icon: <ShieldCheck size={17} />, key: 'nav.roles' },
       { id: 'groups', icon: <Boxes size={17} />, key: 'nav.groups' },
       { id: 'apps', icon: <AppWindow size={17} />, key: 'nav.apps' },
+      { id: 'onprem', icon: <Server size={17} />, key: 'nav.onprem' },
     ],
   },
   {

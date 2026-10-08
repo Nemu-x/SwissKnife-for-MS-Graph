@@ -217,3 +217,24 @@ func (s *Store) Delete(profileID string) error {
 	}
 	return s.save(out)
 }
+
+// Named keychain entries hold secrets that belong to no connection profile
+// (an on-prem directory's bind password). An empty value deletes the entry.
+
+// SetNamedSecret stores a secret under name.
+func SetNamedSecret(name, value string) error {
+	if value == "" {
+		err := keyring.Delete(keyringService, name)
+		if errors.Is(err, keyring.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	return keyring.Set(keyringService, name, value)
+}
+
+// NamedSecret returns a stored secret ("" and false when there is none).
+func NamedSecret(name string) (string, bool) {
+	v, err := keyring.Get(keyringService, name)
+	return v, err == nil
+}
