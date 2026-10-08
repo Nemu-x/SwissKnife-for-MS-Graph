@@ -14,6 +14,10 @@ export function Catalog() {
   return window['go']['services']['ActionsService']['Catalog']();
 }
 
+export function FanOutProfiles() {
+  return window['go']['services']['ActionsService']['FanOutProfiles']();
+}
+
 export function InstallModule(arg1) {
   return window['go']['services']['ActionsService']['InstallModule'](arg1);
 }
@@ -32,4 +36,8 @@ export function RefreshPowerShell() {
 
 export function Run(arg1, arg2) {
   return window['go']['services']['ActionsService']['Run'](arg1, arg2);
+}
+
+export function RunAcross(arg1, arg2, arg3) {
+  return window['go']['services']['ActionsService']['RunAcross'](arg1, arg2, arg3);
 }

@@ -281,6 +281,9 @@ export const api = {
     plan: (id: string, inputs: Record<string, string>) => Actions.Plan(id, inputs) as Promise<engine.Plan>,
     apply: (planId: string, confirm: string) => Actions.Apply(planId, confirm) as Promise<engine.Result>,
     run: (id: string, inputs: Record<string, string>) => Actions.Run(id, inputs) as Promise<engine.ReadResult>,
+    runAcross: (id: string, inputs: Record<string, string>, profileIds: string[]) =>
+      Actions.RunAcross(id, inputs, profileIds) as Promise<engine.ReadResult>,
+    fanOutProfiles: () => Actions.FanOutProfiles() as Promise<Profile[]>,
     powerShellStatus: () => Actions.PowerShellStatus() as Promise<services.PowerShellStatus>,
     refreshPowerShell: () => Actions.RefreshPowerShell() as Promise<services.PowerShellStatus>,
     installModule: (name: string) => Actions.InstallModule(name) as Promise<services.PowerShellStatus>,

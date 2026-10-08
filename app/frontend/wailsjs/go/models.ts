@@ -93,6 +93,7 @@ export namespace engine {
 	    backend?: string;
 	    reason?: Reason;
 	    missingPermissions?: string[];
+	    fanOut?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new CatalogEntry(source);
@@ -110,6 +111,7 @@ export namespace engine {
 	        this.backend = source["backend"];
 	        this.reason = this.convertValues(source["reason"], Reason);
 	        this.missingPermissions = source["missingPermissions"];
+	        this.fanOut = source["fanOut"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -445,6 +447,7 @@ export namespace secrets {
 	    authMode: string;
 	    certPath?: string;
 	    hasSecret: boolean;
+	    delegatedOrg?: string;
 	    policy?: session.Policy;
 	
 	    static createFrom(source: any = {}) {
@@ -460,6 +463,7 @@ export namespace secrets {
 	        this.authMode = source["authMode"];
 	        this.certPath = source["certPath"];
 	        this.hasSecret = source["hasSecret"];
+	        this.delegatedOrg = source["delegatedOrg"];
 	        this.policy = this.convertValues(source["policy"], session.Policy);
 	    }
 	

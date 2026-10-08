@@ -249,6 +249,9 @@ func connectParams(env engine.Env, family string) (map[string]any, error) {
 				return nil, err
 			}
 			params["upn"] = me.UPN
+			if env.DelegatedOrg != "" {
+				params["delegatedOrg"] = env.DelegatedOrg // GDAP partner access
+			}
 		}
 		return params, nil
 	}

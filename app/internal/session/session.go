@@ -34,6 +34,7 @@ type Session struct {
 	readOnly     bool
 	policy       Policy
 	profileID    string
+	delegatedOrg string
 	scope        ScopeFunc
 	configDir    string
 
@@ -146,7 +147,7 @@ func (s *Session) Disconnect() {
 	s.tokens = nil
 	s.tenantID, s.appOnly = "", false
 	s.profileName = ""
-	s.policy, s.profileID = Policy{}, ""
+	s.policy, s.profileID, s.delegatedOrg = Policy{}, "", ""
 }
 
 func (s *Session) Client() (*graphapi.Client, error) {
@@ -223,4 +224,18 @@ func (s *Session) Record(action, target, detail string, err error) {
 		e.Error = err.Error()
 	}
 	s.Audit.Write(e)
+}
+
+// SetDelegatedOrg records the customer tenant of a partner (GDAP) profile.
+func (s *Session) SetDelegatedOrg(org string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.delegatedOrg = org
+}
+
+// DelegatedOrg is the customer tenant a partner profile manages ("" if none).
+func (s *Session) DelegatedOrg() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.delegatedOrg
 }

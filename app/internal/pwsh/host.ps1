@@ -64,12 +64,14 @@ while ($true) {
                         Import-Module ExchangeOnlineManagement
                         $p = @{ AccessToken = $req.token; ShowBanner = $false; SkipLoadingFormatData = $true }
                         if ($req.upn) { $p.UserPrincipalName = $req.upn } else { $p.Organization = $req.organization }
+                        if ($req.delegatedOrg) { $p.DelegatedOrganization = $req.delegatedOrg }
                         Connect-ExchangeOnline @p | Out-Null
                     }
                     'ipps' {
                         Import-Module ExchangeOnlineManagement
                         $p = @{ AccessToken = $req.token; ShowBanner = $false }
                         if ($req.upn) { $p.UserPrincipalName = $req.upn } else { $p.Organization = $req.organization }
+                        if ($req.delegatedOrg) { $p.DelegatedOrganization = $req.delegatedOrg }
                         Connect-IPPSSession @p | Out-Null
                     }
                     'teams' {

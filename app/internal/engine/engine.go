@@ -104,6 +104,8 @@ type Env struct {
 	// TenantID and AppOnly describe the connection (Exchange needs both:
 	// the tenant in its URLs, the sign-in kind for its routing hint).
 	TenantID string
+	// DelegatedOrg is the customer tenant a partner (GDAP) profile manages.
+	DelegatedOrg string
 	AppOnly  bool
 	// PS runs PowerShell cmdlets for the PowerShell backends; nil when the
 	// engine has none.
@@ -208,6 +210,8 @@ type CatalogEntry struct {
 	// action stays available (a policy may still allow it) but is likely to
 	// fail with 403.
 	MissingPermissions []string `json:"missingPermissions,omitempty"`
+	// FanOut: a read that can run across several tenants (Graph only).
+	FanOut bool `json:"fanOut,omitempty"`
 }
 
 // Catalog lists every action, sorted by id for a stable UI.
@@ -218,7 +222,7 @@ func (e *Engine) Catalog() []CatalogEntry {
 		have = e.Grants()
 	}
 	for _, a := range e.actions {
-		entry := CatalogEntry{Manifest: a.Manifest}
+		entry := CatalogEntry{Manifest: a.Manifest, FanOut: graphReader(a) != nil}
 		impl, reason := e.resolve(a)
 		switch {
 		case !dangerAllowed(a.Danger, e.s.Policy().MaxDanger):
@@ -269,7 +273,7 @@ func (e *Engine) BackendStatus(b Backend) *Reason {
 
 func (e *Engine) env(ctx context.Context) Env {
 	c, _ := e.s.Client()
-	return Env{Ctx: ctx, Graph: c, Tokens: e.s.Tokens(), TenantID: e.s.TenantID(), AppOnly: e.s.AppOnly(), PS: e.PS, ReadOnly: e.s.ReadOnly()}
+	return Env{Ctx: ctx, Graph: c, Tokens: e.s.Tokens(), TenantID: e.s.TenantID(), DelegatedOrg: e.s.DelegatedOrg(), AppOnly: e.s.AppOnly(), PS: e.PS, ReadOnly: e.s.ReadOnly()}
 }
 
 func (e *Engine) lookup(id string) (Action, error) {

@@ -182,6 +182,8 @@ type Credentials struct {
 	// ProfileID and Policy come from a saved profile (empty when ad hoc).
 	ProfileID string
 	Policy    session.Policy
+	// DelegatedOrg: a partner profile signs in to this customer tenant.
+	DelegatedOrg string
 }
 
 // ResolveCredentials turns a ConnectRequest into concrete credentials. A
@@ -218,6 +220,10 @@ func ResolveCredentials(store *secrets.Store, req ConnectRequest) (Credentials, 
 	}
 	cr.TenantID, cr.ClientID, cr.AuthMode, cr.Name = found.TenantID, found.ClientID, found.AuthMode, found.Name
 	cr.CertPath, cr.ProfileID = found.CertPath, found.ID
+	// GDAP: the partner's user signs in to the customer tenant directly.
+	if found.DelegatedOrg != "" && cr.AuthMode == string(auth.ModeDeviceCode) {
+		cr.TenantID, cr.DelegatedOrg = found.DelegatedOrg, found.DelegatedOrg
+	}
 	if found.Policy != nil {
 		cr.Policy = *found.Policy
 	}
@@ -314,6 +320,7 @@ func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
 	c.s.SetClient(gc, name)
 	c.s.SetTokens(provider)
 	c.s.SetIdentity(tenant, mode != string(auth.ModeDeviceCode))
+	c.s.SetDelegatedOrg(cr.DelegatedOrg)
 	c.s.Record("session.connect", tenant, "mode="+mode, nil)
 
 	st := c.GetStatus()
