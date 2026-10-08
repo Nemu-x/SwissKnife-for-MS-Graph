@@ -189,21 +189,27 @@ func (graphPrivileged) Backend() engine.Backend { return engine.BackendGraph }
 
 func (graphPrivileged) Read(env engine.Env, in engine.Inputs) (*engine.ReadResult, error) {
 	type role struct {
-		Name    string `json:"displayName"`
-		Members []struct {
-			Type string `json:"@odata.type"`
-			UPN  string `json:"userPrincipalName"`
-			Name string `json:"displayName"`
-		} `json:"members"`
+		ID   string `json:"id"`
+		Name string `json:"displayName"`
 	}
-	roles, err := graphapi.ListAllInto[role](env.Ctx, env.Graph, "/directoryRoles", url.Values{"$expand": {"members"}}, 0)
+	type member struct {
+		Type string `json:"@odata.type"`
+		UPN  string `json:"userPrincipalName"`
+		Name string `json:"displayName"`
+	}
+	roles, err := graphapi.ListAllInto[role](env.Ctx, env.Graph, "/directoryRoles", url.Values{"$select": {"id,displayName"}}, 0)
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(roles, func(i, j int) bool { return roles[i].Name < roles[j].Name })
 	res := &engine.ReadResult{Columns: []string{"role", "member", "kind"}}
 	for _, r := range roles {
-		for _, m := range r.Members {
+		// Members per role, paged: an expanded collection can be cut short.
+		members, err := graphapi.ListAllInto[member](env.Ctx, env.Graph, "/directoryRoles/"+url.PathEscape(r.ID)+"/members", nil, 0)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range members {
 			kind := "user"
 			if strings.Contains(m.Type, "servicePrincipal") {
 				kind = "app"

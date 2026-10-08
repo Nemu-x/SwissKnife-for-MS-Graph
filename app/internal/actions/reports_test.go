@@ -28,7 +28,10 @@ func TestInactiveAndLicenseWaste(t *testing.T) {
 	if !strings.HasPrefix(filter, "signInActivity/lastSignInDateTime le ") || len(res.Rows) != 2 || res.Rows[0]["user"] != "free@contoso.com" {
 		t.Fatalf("filter %q rows %+v", filter, res.Rows)
 	}
-	res, _ = e.Run(t.Context(), "report.licenseWaste", engine.Inputs{})
+	res, err = e.Run(t.Context(), "report.licenseWaste", engine.Inputs{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(res.Rows) != 1 || res.Rows[0]["licenses"] != "ENTERPRISEPACK" {
 		t.Fatalf("license waste rows %+v", res.Rows)
 	}
@@ -52,11 +55,18 @@ func TestMfaStatusPutsAdminsFirstAndSkipsGuests(t *testing.T) {
 
 func TestPrivilegedRolesKinds(t *testing.T) {
 	e := securityHarness(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"value":[{"displayName":"Global Administrator","members":[
+		if r.URL.Path == "/directoryRoles" {
+			w.Write([]byte(`{"value":[{"id":"r1","displayName":"Global Administrator"}]}`))
+			return
+		}
+		w.Write([]byte(`{"value":[
 			{"@odata.type":"#microsoft.graph.user","userPrincipalName":"root@contoso.com"},
-			{"@odata.type":"#microsoft.graph.servicePrincipal","displayName":"Backup app"}]}]}`))
+			{"@odata.type":"#microsoft.graph.servicePrincipal","displayName":"Backup app"}]}`))
 	}, nil)
-	res, _ := e.Run(t.Context(), "report.privilegedRoles", engine.Inputs{})
+	res, err := e.Run(t.Context(), "report.privilegedRoles", engine.Inputs{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(res.Rows) != 2 || res.Rows[1]["kind"] != "app" || res.Rows[1]["member"] != "Backup app" {
 		t.Fatalf("rows %+v", res.Rows)
 	}
