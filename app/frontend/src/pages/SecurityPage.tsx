@@ -206,7 +206,17 @@ export function SecurityPage() {
     { baselineId: '', everyHours: 0, notifyTeams: false })
   const checkingDrift = !!jobs.driftCheck?.running
   // Re-read on mount and whenever a check ends (it may end on another page).
-  useEffect(() => { if (!checkingDrift) api.snapshot.getDriftWatch().then((w) => w && setWatch(w as any)).catch(() => {}) }, [checkingDrift])
+  // Settings come from disk once; later reloads take only the result, so
+  // edits made while a check ran are kept.
+  const watchLoaded = useRef(false)
+  useEffect(() => {
+    if (checkingDrift) return
+    api.snapshot.getDriftWatch().then((w: any) => {
+      if (!w) return
+      if (!watchLoaded.current) { watchLoaded.current = true; setWatch(w); return }
+      setWatch((cur) => ({ ...cur, lastCheck: w.lastCheck, lastSummary: w.lastSummary, lastError: w.lastError }))
+    }).catch(() => {})
+  }, [checkingDrift])
   const saveWatch = () =>
     api.snapshot.setDriftWatch(watch).then((w) => { setWatch(w as any); toast('ok', t('common.save')) }).catch((e) => toast('err', errMessage(e)))
   const checkDrift = async () => {
