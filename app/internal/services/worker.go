@@ -171,7 +171,7 @@ type exoSignIn struct{ org, upn string }
 // exchangeSignIn fills what Exchange PowerShell signs in with: the
 // tenant's initial domain (app-only), the customer org (GDAP) or the
 // admin's UPN (delegated). Looked up once per connection.
-func exchangeSignIn(env engine.Env, req *worker.InvokeRequest) error {
+func exchangeSignIn(env engine.Env, req *worker.InvokeRequest) (err error) {
 	if env.Graph == nil {
 		return session.ErrNotConnected
 	}
@@ -181,7 +181,7 @@ func exchangeSignIn(env engine.Env, req *worker.InvokeRequest) error {
 		return nil
 	}
 	defer func() {
-		if req.ExchangeOrg != "" || req.ExchangeUPN != "" {
+		if err == nil && (req.ExchangeOrg != "" || req.ExchangeUPN != "") {
 			signIns.Store(env.Graph, exoSignIn{req.ExchangeOrg, req.ExchangeUPN})
 		}
 	}()

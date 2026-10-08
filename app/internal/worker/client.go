@@ -142,6 +142,8 @@ func Pair(ctx context.Context, addr, code, name string, id *Identity) (fp, worke
 	}
 	hc := &http.Client{Transport: &http.Transport{TLSClientConfig: cfg, DisableKeepAlives: true}, Timeout: 30 * time.Second}
 	// The proof needs the fingerprint seen in the handshake: handshake first.
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second) // handshake included
+	defer cancel()
 	dialer := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 15 * time.Second}, Config: cfg}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {

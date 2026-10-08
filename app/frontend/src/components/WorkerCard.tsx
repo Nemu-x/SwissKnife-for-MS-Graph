@@ -63,7 +63,7 @@ export function WorkerCard() {
             <li>{t('worker.step2')}</li>
           </ol>
           <Field label={t('worker.address')}><Input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="srv-ps01:8743" /></Field>
-          <Field label={t('worker.code')}><Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="XXXX-XXXX-XX" className="font-mono" /></Field>
+          <Field label={t('worker.code')}><Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="XXXX-XXXX-XXXX-XXXX" className="font-mono" /></Field>
           <Button variant="primary" disabled={busy || !addr.trim() || !code.trim()}
             onClick={() => run(() => api.worker.pair(addr, code), t('worker.paired')).then((ok) => { if (ok) setCode('') })}>
             <Link2 size={14} /> {t('worker.pair')}
