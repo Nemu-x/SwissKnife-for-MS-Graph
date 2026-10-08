@@ -20,7 +20,7 @@ import (
 // exchangeCmdlets is the host allow-list for the Exchange family: nothing
 // else can run there.
 var exchangeCmdlets = []string{
-	"Get-Mailbox", "Set-Mailbox",
+	"Get-Mailbox", "Set-Mailbox", "Get-OrganizationConfig",
 	"Get-MailboxFolderPermission", "Add-MailboxFolderPermission", "Set-MailboxFolderPermission", "Remove-MailboxFolderPermission",
 	"Get-MailboxPermission", "Add-MailboxPermission", "Remove-MailboxPermission",
 	"Get-RecipientPermission", "Add-RecipientPermission", "Remove-RecipientPermission",

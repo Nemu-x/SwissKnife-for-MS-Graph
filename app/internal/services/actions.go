@@ -43,6 +43,7 @@ func NewEngine(s *session.Session) *engine.Engine {
 	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr
 	e.Register(actions.Builtin()...)
+	e.Register(snapshotRestoreAction(s))
 	return e
 }
 

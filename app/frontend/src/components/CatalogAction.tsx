@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Target, FileWarning, Swords, Link2, Eye, Check, ArrowRight, Minus } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Target, FileWarning, Swords, Link2, History, Eye, Check, ArrowRight, Minus } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
 import { useStore } from '../lib/store'
 import { useConfirm } from '../lib/useConfirm'
 import { useTaskStatus } from '../lib/useTaskStatus'
-import { loadGroups, loadSkus, loadUsers } from '../lib/pickers'
+import { loadGroups, loadSkus, loadUsers, loadSnapshots } from '../lib/pickers'
 import { skuFriendly } from '../lib/skuNames'
 import { toCSV, downloadText } from '../lib/format'
 import { api, errMessage, errParsed } from '../lib/api'
@@ -63,6 +63,7 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
   'intune.unassigned': { label: 'actions.intune.unassigned.label', hint: 'actions.intune.unassigned.hint', icon: <FileWarning size={16} /> },
   'intune.conflicts': { label: 'actions.intune.conflicts.label', hint: 'actions.intune.conflicts.hint', icon: <Swords size={16} /> },
   'intune.assign': { label: 'actions.intune.assign.label', hint: 'actions.intune.assign.hint', notes: ['actions.intune.assign.note'], icon: <Link2 size={16} /> },
+  'config.restore': { label: 'actions.config.restore.label', hint: 'actions.config.restore.hint', warn: ['actions.config.restore.note'], icon: <History size={16} /> },
   'group.membership': { label: 'groups.tileAdd', hint: 'groups.hintAdd', notes: ['groups.noteAdd'], icon: <UserPlus size={16} /> },
   'license.assign': { label: 'licensing.tileAssign', hint: 'licensing.hintAssign', notes: ['licensing.noteAssign'], warn: ['licensing.noteRemove'], icon: <Plus size={16} /> },
 }
@@ -236,6 +237,8 @@ function CatalogPanel({ entry, mark, askConfirm }: {
         return <EntityPicker value={v} onChange={(x) => set(f.name, x)} load={loadUsers} placeholder={t('users.pickUser')} />
       case 'group':
         return <EntityPicker value={v} onChange={(x) => set(f.name, x)} load={loadGroups} placeholder={t('groups.pickGroup')} />
+      case 'snapshot':
+        return <EntityPicker value={v} onChange={(x) => set(f.name, x)} load={loadSnapshots} placeholder={t('actions.pick.snapshot')} />
       case 'sku':
         return <EntityPicker value={v} onChange={(x) => set(f.name, x)} load={loadSkus} placeholder={t('licensing.pickSku')} />
       case 'choice':

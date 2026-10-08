@@ -243,6 +243,10 @@ export const api = {
     diff: (a: string, b: string) => Snapshot.Diff(a, b) as Promise<services.SnapshotDiff>,
     diffLatest: () => Snapshot.DiffLatest() as Promise<services.SnapshotDiff>,
     cancel: () => Snapshot.Cancel(),
+    exportFolder: (id: string) => Snapshot.Export(id) as Promise<string>,
+    getDriftWatch: () => Snapshot.GetDriftWatch() as Promise<services.DriftWatch>,
+    setDriftWatch: (w: Partial<services.DriftWatch>) => Snapshot.SetDriftWatch(w as services.DriftWatch) as Promise<services.DriftWatch>,
+    checkDriftNow: () => Snapshot.CheckDriftNow() as Promise<services.DriftSummary>,
   },
   reports: {
     names: () => Reports.Names() as Promise<string[]>,
