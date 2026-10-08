@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, Eye, Check, ArrowRight, Minus } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
@@ -134,6 +134,9 @@ function CatalogPanel({ entry, mark, askConfirm }: {
   const [rows, setRows] = useState<engine.ReadResult | null>(null)
   const [busy, setBusy] = useState(false)
   const isRead = entry.danger === 'read'
+  // Only the newest read may show its rows: an edit or a second click makes
+  // an answer still in flight stale.
+  const runSeq = useRef(0)
 
   // Any edit invalidates the preview: Apply must run what is on screen.
   const set = (name: string, v: string) => {
@@ -141,15 +144,18 @@ function CatalogPanel({ entry, mark, askConfirm }: {
     setPlan(null)
     setResult(null)
     setRows(null)
+    runSeq.current++
   }
   const ready = entry.fields.every((f) => !f.required || values[f.name])
   const actionable = !!plan?.changes?.some((c) => c.op !== 'none')
   const destructive = entry.danger === 'destructive'
 
   const run = async () => {
+    const seq = ++runSeq.current
     setBusy(true)
     try {
       const r = await api.actions.run(entry.id, values)
+      if (seq !== runSeq.current) return
       setRows(r)
       mark(entry.id, true, t('actions.rows', { count: r.rows?.length ?? 0 }))
     } catch (e) {

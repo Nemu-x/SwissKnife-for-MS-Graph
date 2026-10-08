@@ -22,6 +22,7 @@ import (
 // preview a change, apply the preview.
 type ActionsService struct {
 	e *engine.Engine
+	s *session.Session
 }
 
 // psDetector is shared by every engine in the process: detecting PowerShell
@@ -59,7 +60,7 @@ func EngineFor(s *session.Session) *engine.Engine {
 }
 
 func NewActionsService(s *session.Session) *ActionsService {
-	return &ActionsService{e: EngineFor(s)}
+	return &ActionsService{e: EngineFor(s), s: s}
 }
 
 // cachedGrants reads the token's grants once per connection (and again after
@@ -129,7 +130,7 @@ func graphGrants(s *session.Session) map[string]bool {
 
 // PowerShellStatus reports PowerShell 7 and the modules the app can use.
 func (a *ActionsService) PowerShellStatus() PowerShellStatus {
-	env := psDetector.Get(context.Background())
+	env := psDetector.Get(a.s.Ctx())
 	return PowerShellStatus{
 		Installed: env.PwshOK(), Exe: env.Exe, Version: env.Version,
 		Modules: []ModuleStatus{
@@ -141,7 +142,7 @@ func (a *ActionsService) PowerShellStatus() PowerShellStatus {
 
 // InstallModule installs a supported module for the current user (minutes).
 func (a *ActionsService) InstallModule(name string) (PowerShellStatus, error) {
-	err := psDetector.Install(context.Background(), name)
+	err := psDetector.Install(a.s.Ctx(), name)
 	return a.PowerShellStatus(), err
 }
 
@@ -183,7 +184,10 @@ func (a *ActionsService) Apply(planID, confirm string) (*engine.Result, error) {
 
 // Run executes a read action and returns its rows.
 func (a *ActionsService) Run(actionID string, inputs map[string]string) (*engine.ReadResult, error) {
-	r, err := a.e.Run(context.Background(), actionID, inputs)
+	// Bound by the app's lifetime and a timeout: a read must not hang the UI.
+	ctx, cancel := context.WithTimeout(a.s.Ctx(), 5*time.Minute)
+	defer cancel()
+	r, err := a.e.Run(ctx, actionID, inputs)
 	return r, engineErr(err)
 }
 
