@@ -192,7 +192,7 @@ func (c *Client) Search(ctx context.Context, filter string, attrs []string, limi
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	req := ldap.NewSearchRequest(c.cfg.BaseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, limit, 30, false, filter, attrs, nil)
 	res, err := conn.Search(req)
 	if err != nil && !ldap.IsErrorWithCode(err, ldap.LDAPResultSizeLimitExceeded) {
@@ -266,7 +266,7 @@ func (c *Client) Modify(ctx context.Context, dn string, mods ...Mod) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	req := ldap.NewModifyRequest(dn, nil)
 	for _, m := range mods {
 		switch m.Op {
