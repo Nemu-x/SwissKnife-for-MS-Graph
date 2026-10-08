@@ -138,13 +138,18 @@ func (o *OnPremService) SaveConnection(c ldapx.Config, password string) (*OnPrem
 	if !replaced {
 		list = append(list, c)
 	}
-	if password != "" {
-		if err := secrets.SetNamedSecret(onpremKey(c.ID), password); err != nil {
-			return nil, err
-		}
-	}
+	// The settings are saved first, so a failed save leaves no password in
+	// the keychain that no connection refers to.
 	if err := o.save(list); err != nil {
 		return nil, err
+	}
+	if password != "" {
+		if err := secrets.SetNamedSecret(onpremKey(c.ID), password); err != nil {
+			if !replaced { // a new connection without its password is useless
+				_ = o.save(list[:len(list)-1])
+			}
+			return nil, err
+		}
 	}
 	// Edited while active: the next operation uses the new settings.
 	if cur := directoryFor(o.s); cur != nil && cur.Config().ID == c.ID {

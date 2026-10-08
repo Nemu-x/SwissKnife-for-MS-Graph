@@ -38,9 +38,11 @@ export function OnPremPage() {
     } catch (e) { toast('err', errMessage(e)) } finally { setBusy(false) }
   }
   const disconnect = async () => {
-    await api.onprem.disconnect()
-    setStatus({ connected: false })
-    refreshCatalog()
+    try {
+      await api.onprem.disconnect()
+      setStatus({ connected: false })
+      refreshCatalog()
+    } catch (e) { toast('err', errMessage(e)) }
   }
   const save = async () => {
     try {
