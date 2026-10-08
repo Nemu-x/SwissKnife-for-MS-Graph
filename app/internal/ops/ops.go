@@ -28,6 +28,7 @@ const (
 	KindBulk     Kind = "bulk"
 	KindUpdate   Kind = "update"
 	KindSnapshot Kind = "snapshot" // tenant configuration snapshot
+	KindDrift    Kind = "drift"    // background drift check against a baseline
 	KindAction   Kind = "action"   // catalog action apply (internal/engine)
 )
 

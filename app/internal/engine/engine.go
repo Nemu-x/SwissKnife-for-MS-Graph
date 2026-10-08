@@ -46,6 +46,8 @@ const (
 	FieldSku    FieldKind = "sku"
 	FieldText   FieldKind = "text"
 	FieldChoice FieldKind = "choice"
+	// FieldSnapshot picks one of the saved configuration snapshots.
+	FieldSnapshot FieldKind = "snapshot"
 )
 
 // Field is one input of an action. Labels are i18n keys on the frontend

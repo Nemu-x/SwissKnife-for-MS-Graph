@@ -5,14 +5,22 @@ import {json} from '../models';
 
 export function Cancel():Promise<void>;
 
+export function CheckDriftNow():Promise<services.DriftSummary>;
+
 export function Delete(arg1:string):Promise<void>;
 
 export function Diff(arg1:string,arg2:string):Promise<services.SnapshotDiff>;
 
 export function DiffLatest():Promise<services.SnapshotDiff>;
 
+export function Export(arg1:string):Promise<string>;
+
 export function Get(arg1:string):Promise<json.RawMessage>;
 
+export function GetDriftWatch():Promise<services.DriftWatch>;
+
 export function List():Promise<Array<services.SnapshotMeta>>;
+
+export function SetDriftWatch(arg1:services.DriftWatch):Promise<services.DriftWatch>;
 
 export function Take(arg1:string):Promise<services.SnapshotMeta>;

@@ -58,7 +58,8 @@ type SnapshotMeta struct {
 	ID       string            `json:"id"`
 	Name     string            `json:"name"`
 	TakenAt  time.Time         `json:"takenAt"`
-	Tenant   string            `json:"tenant,omitempty"` // connection profile name
+	Tenant   string            `json:"tenant,omitempty"`   // connection profile name
+	TenantID string            `json:"tenantId,omitempty"` // directory id, to refuse cross-tenant restores
 	Sections []SnapshotSection `json:"sections"`
 }
 
@@ -289,12 +290,47 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 		name = "snapshot"
 	}
 
-	doc := snapshotFile{Sections: map[string][]map[string]any{}}
+	total := len(snapshotSections)
+	doc, skipped, err := x.collect(ctx, c, func(i int, section string) {
+		emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": section, "done": i, "total": total})
+	})
+	if err != nil {
+		return nil, err
+	}
+	emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": "", "done": total, "total": total})
+
+	now := x.nextStamp()
+	doc.Meta.Name = name
+	doc.Meta.TakenAt = now
+	doc.Meta.Tenant = x.s.ProfileName()
+	doc.Meta.TenantID = x.s.TenantID()
+	// The id is claimed by creating the file exclusively: two snapshots in the
+	// same second (or two app instances) can never overwrite each other.
+	// A cancel that arrived with the last progress event must not leave a file.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	id, err := writeSnapshotExclusive(ctx, dir, doc, now, name)
+	doc.Meta.ID = id
+	x.s.Record("snapshot.take", doc.Meta.ID, fmt.Sprintf("%d sections, %d skipped", total, skipped), err)
+	if err != nil {
+		return nil, err
+	}
+	return &doc.Meta, nil
+}
+
+// collect reads every section (best-effort: a section the app cannot read is
+// recorded as skipped). progress hears which section starts. It fails only
+// on cancel, or when nothing at all could be read.
+func (x *SnapshotService) collect(ctx context.Context, c *graphapi.Client, progress func(i int, section string)) (*snapshotFile, int, error) {
+	doc := &snapshotFile{Sections: map[string][]map[string]any{}}
 	total := len(snapshotSections)
 	skipped := 0
 	var firstErr error
 	for i, sec := range snapshotSections {
-		emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": sec.name, "done": i, "total": total})
+		if progress != nil {
+			progress(i, sec.name)
+		}
 		info := SnapshotSection{Name: sec.name}
 		var objs []map[string]any
 		var err error
@@ -305,7 +341,7 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 		}
 		switch {
 		case err != nil && ctx.Err() != nil:
-			return nil, ctx.Err() // shutdown / cancel: nothing to save
+			return nil, 0, ctx.Err() // shutdown / cancel: nothing to save
 		case err != nil:
 			info.Skipped = true
 			info.Error = wrapOpErr(err).Error()
@@ -323,30 +359,12 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 		}
 		doc.Meta.Sections = append(doc.Meta.Sections, info)
 	}
-	emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": "", "done": total, "total": total})
 	if skipped == total {
 		// Nothing readable at all (expired token, no permissions): a snapshot
 		// of nothing would only produce a misleading "everything removed" diff.
-		return nil, fmt.Errorf("every section failed — first error: %w", firstErr)
+		return nil, 0, fmt.Errorf("every section failed — first error: %w", firstErr)
 	}
-
-	now := x.nextStamp()
-	doc.Meta.Name = name
-	doc.Meta.TakenAt = now
-	doc.Meta.Tenant = x.s.ProfileName()
-	// The id is claimed by creating the file exclusively: two snapshots in the
-	// same second (or two app instances) can never overwrite each other.
-	// A cancel that arrived with the last progress event must not leave a file.
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	id, err := writeSnapshotExclusive(ctx, dir, &doc, now, name)
-	doc.Meta.ID = id
-	x.s.Record("snapshot.take", doc.Meta.ID, fmt.Sprintf("%d sections, %d skipped", total, skipped), err)
-	if err != nil {
-		return nil, err
-	}
-	return &doc.Meta, nil
+	return doc, skipped, nil
 }
 
 // List returns the saved snapshots, newest first.

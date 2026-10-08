@@ -268,6 +268,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
     })
     // Live playbook steps: "running" appends a pending row, "done" resolves it.
+    // Scheduled drift checks run in the background; their alert can come
+    // while the operator is on any page.
+    const offDrift = EventsOn('drift:detected', (d: any) => {
+      toast('info', i18n.t('snapshot.driftAlert', { added: d.added ?? 0, removed: d.removed ?? 0, changed: d.changed ?? 0 }))
+    })
     const offPB = EventsOn('playbook:step', (d: any) => {
       const key = keyOf(d, 'playbook')
       setJobs((all) => {
@@ -296,7 +301,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const offSN = EventsOn('snapshot:progress', (d: any) => {
       patchJob('snapshot', { progress: `${d?.section ?? ''}|${d?.done ?? 0}|${d?.total ?? 0}` })
     })
-    return () => { offOS(); offP(); offF(); offM(); offC(); offCL(); offO(); offPB(); offSN() }
+    return () => { offOS(); offP(); offF(); offM(); offC(); offCL(); offO(); offPB(); offSN(); offDrift() }
   }, [patchJob, jobLog])
 
   const startTransfer = useCallback(async (p: TransferParams) => {

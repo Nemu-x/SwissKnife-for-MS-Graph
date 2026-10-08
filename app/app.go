@@ -36,6 +36,8 @@ func NewApp(s *session.Session, update *services.UpdateService) *App {
 func (a *App) startup(ctx context.Context) {
 	a.session.SetAppContext(ctx)
 	a.update.SetAppContext(ctx)
+	// Scheduled configuration-drift checks run while the app is open.
+	services.StartDriftWatcher(ctx, a.session)
 }
 
 func (a *App) Version() string {
