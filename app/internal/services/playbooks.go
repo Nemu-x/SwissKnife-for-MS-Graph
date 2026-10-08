@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"swissknife-app/internal/engine"
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/journal"
 	"swissknife-app/internal/ops"
@@ -66,6 +67,8 @@ var stepKeys = map[string]string{
 	"Remove from group":         "steps.removeFromGroup",
 	"Remove MFA method":         "steps.removeMfaMethod",
 	"Check mailbox type":        "steps.checkMailboxType",
+	"Convert to shared mailbox": "steps.convertToShared",
+	"Grant mailbox access":      "steps.grantMailboxAccess",
 	"Remove licenses":           "steps.removeLicenses",
 	"Intune devices":            "steps.intuneDevices",
 	"Retire device":             "steps.retireDevice",
@@ -323,6 +326,11 @@ type OffboardRequest struct {
 	MailboxFolder          string `json:"mailboxFolder"`
 	MailboxIncludeContacts bool   `json:"mailboxIncludeContacts"`
 	MailboxIncludeCalendar bool   `json:"mailboxIncludeCalendar"`
+	// ConvertToShared turns the mailbox into a shared one (Exchange) before
+	// licenses go, so the mail outlives them; FullAccessTo opens it to a
+	// successor (usually the manager). Both run as catalog actions.
+	ConvertToShared bool   `json:"convertToShared"`
+	FullAccessTo    string `json:"fullAccessTo"`
 	// IntuneAction: "" (skip) | "retire" (remove company data, keep personal)
 	// | "wipe" (factory reset).
 	IntuneAction            string `json:"intuneAction"`
@@ -733,7 +741,31 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			}
 		}
 	}
-	if req.RemoveAllLicenses && !r.stop() {
+	converted := false
+	if req.ConvertToShared && !r.stop() {
+		err := r.doD("Convert to shared mailbox", req.Upn, func() (string, error) {
+			res, err := EngineFor(p.s).Execute(op.Ctx, "mailbox.type", engine.Inputs{"mailbox": req.Upn, "type": "shared"})
+			if err != nil {
+				return "", err
+			}
+			if res.Skipped > 0 {
+				return "already shared", nil
+			}
+			return "", nil
+		})
+		converted = err == nil
+	}
+	if req.FullAccessTo != "" && !r.stop() {
+		r.do("Grant mailbox access", req.Upn+" → "+req.FullAccessTo, func() error {
+			_, err := EngineFor(p.s).Execute(op.Ctx, "mailbox.fullAccess", engine.Inputs{"mailbox": req.Upn, "user": req.FullAccessTo})
+			return err
+		})
+	}
+	if req.RemoveAllLicenses && !r.stop() && converted {
+		// Graph reports the new mailbox type with a delay; the conversion
+		// above is the authoritative answer.
+		r.do("Check mailbox type", req.Upn, func() error { return nil })
+	} else if req.RemoveAllLicenses && !r.stop() {
 		// Pre-flight: without a license a USER mailbox is deleted ~30 days
 		// later. A shared mailbox survives — verify before pulling licenses.
 		r.doD("Check mailbox type", req.Upn, func() (string, error) {

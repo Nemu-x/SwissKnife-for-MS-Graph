@@ -92,6 +92,7 @@ export namespace engine {
 	    available: boolean;
 	    backend?: string;
 	    reason?: Reason;
+	    missingPermissions?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new CatalogEntry(source);
@@ -108,6 +109,7 @@ export namespace engine {
 	        this.available = source["available"];
 	        this.backend = source["backend"];
 	        this.reason = this.convertValues(source["reason"], Reason);
+	        this.missingPermissions = source["missingPermissions"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -992,6 +994,8 @@ export namespace services {
 	    mailboxFolder: string;
 	    mailboxIncludeContacts: boolean;
 	    mailboxIncludeCalendar: boolean;
+	    convertToShared: boolean;
+	    fullAccessTo: string;
 	    intuneAction: string;
 	    removeMfaMethods: boolean;
 	    deleteRegisteredDevices: boolean;
@@ -1023,6 +1027,8 @@ export namespace services {
 	        this.mailboxFolder = source["mailboxFolder"];
 	        this.mailboxIncludeContacts = source["mailboxIncludeContacts"];
 	        this.mailboxIncludeCalendar = source["mailboxIncludeCalendar"];
+	        this.convertToShared = source["convertToShared"];
+	        this.fullAccessTo = source["fullAccessTo"];
 	        this.intuneAction = source["intuneAction"];
 	        this.removeMfaMethods = source["removeMfaMethods"];
 	        this.deleteRegisteredDevices = source["deleteRegisteredDevices"];

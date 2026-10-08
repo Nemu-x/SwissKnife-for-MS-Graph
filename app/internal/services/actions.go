@@ -2,9 +2,15 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"strings"
+	"sync"
+	"time"
 
 	"swissknife-app/internal/actions"
+	"swissknife-app/internal/auth"
 	"swissknife-app/internal/engine"
 	"swissknife-app/internal/exoapi"
 	"swissknife-app/internal/graphapi"
@@ -32,13 +38,92 @@ func NewEngine(s *session.Session) *engine.Engine {
 	s.OnDisconnect(func(prev *graphapi.Client) { go pool.CloseFor(prev) })
 	e := engine.New(s, engine.GraphProvider{}, exoapi.NewProvider(), pwsh.NewExchangeProvider(psDetector))
 	e.PS = pool
+	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr
 	e.Register(actions.Builtin()...)
 	return e
 }
 
+// engines holds one engine per session, shared by the Actions binding and
+// the playbooks, so PowerShell hosts and probes are not duplicated.
+var engines sync.Map // *session.Session → *engine.Engine
+
+// EngineFor returns the session's shared engine.
+func EngineFor(s *session.Session) *engine.Engine {
+	if e, ok := engines.Load(s); ok {
+		return e.(*engine.Engine)
+	}
+	e, _ := engines.LoadOrStore(s, NewEngine(s))
+	return e.(*engine.Engine)
+}
+
 func NewActionsService(s *session.Session) *ActionsService {
-	return &ActionsService{e: NewEngine(s)}
+	return &ActionsService{e: EngineFor(s)}
+}
+
+// cachedGrants reads the token's grants once per connection (and again after
+// five minutes, when a consent may have changed), so listing the catalog does
+// not wait on the token broker every time.
+func cachedGrants(s *session.Session) func() map[string]bool {
+	var (
+		mu   sync.Mutex
+		conn *graphapi.Client
+		at   time.Time
+		have map[string]bool
+	)
+	return func() map[string]bool {
+		c, err := s.Client()
+		if err != nil {
+			return nil
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		// A failed read (nil) is not cached: the next listing tries again.
+		if c != conn || have == nil || time.Since(at) > 5*time.Minute {
+			conn, at, have = c, time.Now(), graphGrants(s)
+		}
+		return have
+	}
+}
+
+// graphGrants reads the permissions from the connection's Graph token:
+// "roles" for app-only, "scp" for delegated. The token is already cached by
+// the broker; its signature is not checked here — it is our own token, and
+// only its claims are read for a hint.
+func graphGrants(s *session.Session) map[string]bool {
+	b := s.Tokens()
+	if b == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(s.Ctx(), 10*time.Second)
+	defer cancel()
+	tok, err := b.TokenFor(ctx, auth.ResourceGraph)
+	if err != nil {
+		return nil
+	}
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 {
+		return nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil
+	}
+	var claims struct {
+		Roles []string `json:"roles"`
+		Scp   string   `json:"scp"`
+	}
+	if json.Unmarshal(raw, &claims) != nil {
+		return nil
+	}
+	have := map[string]bool{}
+	for _, r := range claims.Roles {
+		have[r] = true
+	}
+	for _, sc := range strings.Fields(claims.Scp) {
+		have[sc] = true
+	}
+	return have
 }
 
 // PowerShellStatus reports PowerShell 7 and the modules the app can use.
