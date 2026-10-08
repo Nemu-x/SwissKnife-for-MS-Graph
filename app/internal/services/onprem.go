@@ -129,6 +129,7 @@ func (o *OnPremService) SaveConnection(c ldapx.Config, password string) (*OnPrem
 	if c.ID == "" {
 		c.ID = uuid.NewString()
 	}
+	prev := append([]ldapx.Config(nil), list...) // restored if the password cannot be stored
 	replaced := false
 	for i := range list {
 		if list[i].ID == c.ID {
@@ -145,9 +146,8 @@ func (o *OnPremService) SaveConnection(c ldapx.Config, password string) (*OnPrem
 	}
 	if password != "" {
 		if err := secrets.SetNamedSecret(onpremKey(c.ID), password); err != nil {
-			if !replaced { // a new connection without its password is useless
-				_ = o.save(list[:len(list)-1])
-			}
+			// Settings and password change together or not at all.
+			_ = o.save(prev)
 			return nil, err
 		}
 	}
