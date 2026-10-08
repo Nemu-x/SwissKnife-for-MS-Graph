@@ -4,6 +4,8 @@ import {services} from '../models';
 
 export function Cancel():Promise<void>;
 
+export function Compromised(arg1:services.CompromisedRequest):Promise<services.CompromisedResult>;
+
 export function Offboard(arg1:services.OffboardRequest):Promise<services.PlaybookResult>;
 
 export function Onboard(arg1:services.OnboardRequest):Promise<services.PlaybookResult>;

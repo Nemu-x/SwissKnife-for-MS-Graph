@@ -90,6 +90,10 @@ type Change struct {
 	Ref map[string]string `json:"-"`
 }
 
+// ConfirmRef is the Change.Ref key an implementation sets to replace the
+// typed confirmation of a destructive action.
+const ConfirmRef = "confirm"
+
 // Env is what an implementation may use while planning or applying.
 type Env struct {
 	Ctx    context.Context
@@ -102,6 +106,9 @@ type Env struct {
 	// PS runs PowerShell cmdlets for the PowerShell backends; nil when the
 	// engine has none.
 	PS PSRunner
+	// ReadOnly is the session's read-only switch, for the rare preview that
+	// must write something itself (an eDiscovery search) to compute a plan.
+	ReadOnly bool
 }
 
 // PSRunner runs one cmdlet in the PowerShell host of a module family
@@ -244,7 +251,7 @@ func (e *Engine) resolve(a Action) (Impl, *Reason) {
 
 func (e *Engine) env(ctx context.Context) Env {
 	c, _ := e.s.Client()
-	return Env{Ctx: ctx, Graph: c, Tokens: e.s.Tokens(), TenantID: e.s.TenantID(), AppOnly: e.s.AppOnly(), PS: e.PS}
+	return Env{Ctx: ctx, Graph: c, Tokens: e.s.Tokens(), TenantID: e.s.TenantID(), AppOnly: e.s.AppOnly(), PS: e.PS, ReadOnly: e.s.ReadOnly()}
 }
 
 func (e *Engine) lookup(id string) (Action, error) {
@@ -311,6 +318,13 @@ func (e *Engine) Plan(actionID string, in Inputs) (*Plan, error) {
 	}
 	if a.ConfirmField != "" {
 		p.ConfirmTarget = in[a.ConfirmField]
+	}
+	// An implementation may ask for a stronger confirmation than the input
+	// (e.g. the sender plus the number of messages a purge will delete).
+	for _, ch := range changes {
+		if c := ch.Ref[ConfirmRef]; c != "" {
+			p.ConfirmTarget = c
+		}
 	}
 	e.plans.put(p)
 	// The caller gets a copy: Apply must run the stored preview, not one a

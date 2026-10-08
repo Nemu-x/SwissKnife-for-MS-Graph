@@ -42,6 +42,7 @@ export const TASKS: Task[] = [
   { id: 'inviteGuest', group: 'people', page: 'users', action: 'invite', write: true, keywords: 'guest b2b invite external гость внешний пригласить' },
   { id: 'restoreUser', group: 'people', page: 'users', action: 'restore', write: true, keywords: 'restore deleted recycle восстановить удалённого корзина' },
   { id: 'onboard', group: 'people', page: 'playbooks', write: true, keywords: 'playbook hire new employee онбординг приём нового сотрудника плейбук' },
+  { id: 'compromisedAccount', group: 'people', page: 'playbooks', action: 'compromised', write: true, keywords: 'compromised hacked breach phished account takeover взломан взлом скомпрометирован угнали учётку фишинг' },
   { id: 'offboard', group: 'people', page: 'playbooks', write: true, keywords: 'playbook leaver fired quit оффбординг увольнение плейбук' },
   { id: 'bulkCsv', group: 'people', page: 'bulk', write: true, keywords: 'bulk csv mass import массово пачкой список импорт' },
 

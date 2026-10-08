@@ -97,7 +97,12 @@ func (c *Client) DoWithHeaders(ctx context.Context, method, path string, params 
 // PostForLocation performs a POST and returns the Location header — Graph
 // replies 202 + a monitor URL for long-running operations (driveItem copy).
 func (c *Client) PostForLocation(ctx context.Context, path string, params url.Values, body any) (string, error) {
-	_, loc, err := c.doRaw(ctx, http.MethodPost, path, params, nil, body)
+	return c.PostForLocationWithHeaders(ctx, path, params, nil, body)
+}
+
+// PostForLocationWithHeaders is PostForLocation with extra request headers.
+func (c *Client) PostForLocationWithHeaders(ctx context.Context, path string, params url.Values, hdr http.Header, body any) (string, error) {
+	_, loc, err := c.doRaw(ctx, http.MethodPost, path, params, hdr, body)
 	return loc, err
 }
 

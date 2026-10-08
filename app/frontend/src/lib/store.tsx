@@ -85,7 +85,7 @@ interface Store {
   cancelCleanupScan: () => void
   startBulkRun: (items: BulkItem[]) => Promise<void>
   cancelBulkRun: () => void
-  startPlaybook: (kind: 'onboard' | 'offboard', target: string, call: () => Promise<any>) => Promise<any>
+  startPlaybook: (kind: 'onboard' | 'offboard' | 'compromised', target: string, call: () => Promise<any>) => Promise<any>
   cancelPlaybook: () => void
   clearJob: (key: string) => void
 
@@ -398,7 +398,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Playbook runs live here so their step report survives navigation, and the
   // completion toast fires even if the operator has left the page.
-  const startPlaybook = useCallback(async (kind: 'onboard' | 'offboard', target: string, call: () => Promise<any>) => {
+  const startPlaybook = useCallback(async (kind: 'onboard' | 'offboard' | 'compromised', target: string, call: () => Promise<any>) => {
     patchJob('playbook', { ...emptyJob(), running: true, startedAt: Date.now(), progress: 'Starting…', steps: [] })
     jobLog('playbook', `▶ ${i18n.t(`playbooks.${kind}`)} — ${target}`)
     try {

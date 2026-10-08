@@ -6,6 +6,10 @@ export function Cancel() {
   return window['go']['services']['PlaybookService']['Cancel']();
 }
 
+export function Compromised(arg1) {
+  return window['go']['services']['PlaybookService']['Compromised'](arg1);
+}
+
 export function Offboard(arg1) {
   return window['go']['services']['PlaybookService']['Offboard'](arg1);
 }

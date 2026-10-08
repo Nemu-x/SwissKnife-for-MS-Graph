@@ -21,7 +21,7 @@ func (r *recordingPS) Invoke(_ engine.Env, _, cmdlet string, params map[string]a
 	r.calls = append(r.calls, cmdlet+" "+string(b))
 	switch cmdlet {
 	case "Get-Mailbox":
-		return []json.RawMessage{json.RawMessage(`{"RecipientTypeDetails":"UserMailbox"}`)}, nil
+		return []json.RawMessage{json.RawMessage(`{"RecipientTypeDetails":"UserMailbox","ForwardingSmtpAddress":"smtp:x@evil.example"}`)}, nil
 	}
 	return nil, nil
 }

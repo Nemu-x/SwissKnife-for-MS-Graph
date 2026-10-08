@@ -176,6 +176,7 @@ func init() {
 		{name: "user", args: "<upn>", summary: "user snapshot: profile, group membership, licenses", setup: setupUser},
 		{name: "signins", args: "<upn> [--days 7] [--failed] [--top 50]", summary: "sign-in log for one user", setup: setupSignins},
 		{name: "action", args: "list | <id> field=value... [--apply] [--confirm <target>]", summary: "catalog actions: list them, preview a change, apply it with --apply", setup: setupAction},
+		{name: "compromised", args: "<upn> --confirm <upn> [--reset-password] [--reset-mfa] [--clear-forwarding] [--disable-rules]", summary: "compromised-account response: block, revoke, then optional clean-up", setup: setupCompromised},
 		{name: "offboard", args: "<upn> --confirm <upn> [actions...]", summary: "run the offboarding playbook (destructive; --confirm must repeat the UPN)", setup: setupOffboard},
 	}
 }
