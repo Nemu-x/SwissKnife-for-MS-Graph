@@ -137,7 +137,7 @@ func (p *PlaybookService) Compromised(req CompromisedRequest) (*CompromisedResul
 	}
 	if req.ResetMfa && !r.stop() {
 		r.doD("Reset MFA", req.Upn, func() (string, error) {
-			out, err := NewAuthMethodsService(p.s).ResetMFA(req.Upn, req.Confirm)
+			out, err := NewAuthMethodsService(p.s).resetMFA(op.Ctx, req.Upn)
 			if err != nil {
 				return "", err
 			}
@@ -155,19 +155,33 @@ func (p *PlaybookService) Compromised(req CompromisedRequest) (*CompromisedResul
 			if err != nil {
 				return "", err
 			}
-			disabled := 0
+			// One failing rule must not leave the others on: try each, stop
+			// only on cancel, and record what was done either way.
+			disabled, failed := 0, 0
+			var firstErr error
 			for _, row := range found.Rows {
+				if op.Canceled() {
+					break
+				}
 				if row["ruleId"] == "" || row["enabled"] != "yes" {
 					continue
 				}
 				path := "/users/" + url.PathEscape(req.Upn) + "/mailFolders/inbox/messageRules/" + url.PathEscape(row["ruleId"])
 				if err := c.Patch(op.Ctx, path, map[string]any{"isEnabled": false}, nil); err != nil {
-					return "", err
+					failed++
+					if firstErr == nil {
+						firstErr = err
+					}
+					continue
 				}
 				disabled++
 			}
-			p.s.Record("mail.disableRules", req.Upn, fmt.Sprintf("disabled=%d", disabled), nil)
-			return fmt.Sprintf("%d rule(s) disabled", disabled), nil
+			p.s.Record("mail.disableRules", req.Upn, fmt.Sprintf("disabled=%d failed=%d", disabled, failed), firstErr)
+			detail := fmt.Sprintf("%d rule(s) disabled", disabled)
+			if firstErr != nil {
+				return detail, fmt.Errorf("%d rule(s) could not be disabled: %w", failed, firstErr)
+			}
+			return detail, nil
 		})
 	}
 	if !r.stop() {

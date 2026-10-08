@@ -334,14 +334,16 @@ func (graphPurge) Apply(env engine.Env, in engine.Inputs, ch engine.Change) erro
 		if rounds == 1 {
 			return nil
 		}
+		// From here on the purge run is known to have completed; only the
+		// remaining count is in question.
 		select {
 		case <-env.Ctx.Done():
-			return errOutcomeUnknown
+			return fmt.Errorf("purge run %d completed; stopped before re-checking what remains", round+1)
 		case <-time.After(settle):
 		}
 		est, err := runEstimate(env, path)
 		if err != nil {
-			return err
+			return fmt.Errorf("purge run %d completed, but the remaining count could not be checked: %w", round+1, err)
 		}
 		if est.IndexedItemCount == 0 {
 			return nil
