@@ -44,7 +44,7 @@ func (a *AuthMethodsService) list(ctx context.Context, user string) ([]json.RawM
 // CreateTAP issues a Temporary Access Pass so the user can sign in and register
 // MFA. The pass text is returned once and never stored anywhere.
 func (a *AuthMethodsService) CreateTAP(user string, lifetimeMinutes int, oneTime bool) (map[string]any, error) {
-	if err := a.s.GuardWrite(); err != nil {
+	if err := a.s.GuardWriteOn(session.User(user)); err != nil {
 		return nil, err
 	}
 	c, err := a.s.Client()
@@ -71,7 +71,7 @@ func (a *AuthMethodsService) CreateTAP(user string, lifetimeMinutes int, oneTime
 // ResetMFA removes all non-password authentication methods so the user must
 // re-register MFA. Destructive: requires typed confirm on the UPN.
 func (a *AuthMethodsService) ResetMFA(user, confirm string) (map[string]any, error) {
-	if err := a.s.GuardDestructive(user, confirm); err != nil {
+	if err := a.s.GuardDestructiveOn(user, confirm, session.User(user)); err != nil {
 		return nil, err
 	}
 	return a.resetMFA(a.s.Ctx(), user)

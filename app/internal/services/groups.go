@@ -44,7 +44,7 @@ func (g *GroupsService) Members(groupID string) ([]json.RawMessage, error) {
 }
 
 func (g *GroupsService) addRef(groupID, upn, kind string) error {
-	if err := g.s.GuardWrite(); err != nil {
+	if err := g.s.GuardWriteOn(session.Group(groupID), session.User(upn)); err != nil {
 		return err
 	}
 	c, err := g.s.Client()

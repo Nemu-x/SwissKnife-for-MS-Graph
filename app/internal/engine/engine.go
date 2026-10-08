@@ -396,13 +396,17 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 			return nil, &Error{Code: "unavailable", Msg: "action unavailable: " + reason.Key}
 		}
 	}
+	// The profile's limits may have changed since the preview.
+	if err := e.checkPolicy(e.env(e.s.Ctx()), a, p.Inputs); err != nil {
+		return nil, err
+	}
 	switch a.Danger {
 	case Destructive:
-		if err := e.s.GuardDestructive(p.ConfirmTarget, confirm); err != nil {
+		if err := e.s.GuardDestructiveChecked(p.ConfirmTarget, confirm); err != nil {
 			return nil, err
 		}
 	case Write:
-		if err := e.s.GuardWrite(); err != nil {
+		if err := e.s.GuardWriteChecked(); err != nil {
 			return nil, err
 		}
 	}
@@ -487,7 +491,7 @@ func (e *Engine) Execute(ctx context.Context, actionID string, in Inputs) (*Resu
 		return nil, err
 	}
 	if a.Danger != Read {
-		if err := e.s.GuardWrite(); err != nil {
+		if err := e.s.GuardWriteChecked(); err != nil {
 			return nil, err
 		}
 	}

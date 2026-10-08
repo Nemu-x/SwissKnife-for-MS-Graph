@@ -193,7 +193,7 @@ const en = {
   connect: {
     limits: {
       title: 'Limits',
-      hint: 'Guard rails for this profile: what it may do once connected. They narrow the app, not the app registration.',
+      hint: 'Guard rails for this profile: what it may do once connected. They narrow the app, not the app registration: an ad-hoc connection with the same app has no limits. Limits of the profile you are connected with can be changed after disconnecting.',
       maxDanger: 'Allowed actions',
       noLimit: 'No limit',
       read: 'Read only',
@@ -202,7 +202,7 @@ const en = {
       groups: 'May change only members of these groups',
       anyTarget: 'Any user or group',
       addGroup: 'Add a group…',
-      connectToPick: 'Connect to pick groups.',
+      connectToPick: 'Connect with this profile to pick its groups.',
       badge: 'Limited profile',
       active: 'This profile has limits: some actions or targets are refused.',
     },
@@ -1349,6 +1349,10 @@ const en = {
       missingInput: 'Fill in all required fields.',
       badInput: 'One of the fields has an invalid value.',
       unavailable: 'This action is not available right now.',
+      policyRead: 'This connection profile only allows reading.',
+      policyUnscoped: 'This connection profile may only change members of its groups, and this operation cannot be checked against them.',
+      policyNeedsGroup: 'This connection profile may only create users in its allowed groups — pick one.',
+      policyLive: 'Disconnect before changing the limits of the profile you are connected with.',
       policyDanger: 'This connection profile does not allow this kind of action.',
       policyScope: 'The target is outside the groups this connection profile may change.',
       unknownAction: 'Unknown action.',

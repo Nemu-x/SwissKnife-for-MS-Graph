@@ -1,7 +1,10 @@
 package services
 
 import (
+	"strings"
 	"testing"
+
+	"swissknife-app/internal/graphapi"
 
 	"swissknife-app/internal/auditlog"
 	"swissknife-app/internal/secrets"
@@ -36,6 +39,13 @@ func TestProfilePolicySurvivesProfileEditsAndValidates(t *testing.T) {
 	if len(list) != 1 || list[0].Policy == nil || list[0].Policy.MaxDanger != "write" {
 		t.Fatalf("policy lost on edit: %+v", list)
 	}
+	// Limits cannot be lifted from inside the session they limit.
+	c.s.SetPolicy(p.ID, *list[0].Policy)
+	c.s.SetClient(graphapi.New(graphapi.StaticToken("t")), "helpdesk 2")
+	if _, err := c.SetProfilePolicy(p.ID, session.Policy{}); err == nil || !strings.Contains(err.Error(), "policyLive") {
+		t.Fatalf("live profile limits must not be loosened: %v", err)
+	}
+	c.s.Disconnect()
 	// Clearing everything removes the policy.
 	got, _ = c.SetProfilePolicy(p.ID, session.Policy{})
 	if got.Policy != nil {

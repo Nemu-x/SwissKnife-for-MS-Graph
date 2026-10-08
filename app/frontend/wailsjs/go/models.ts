@@ -1565,6 +1565,7 @@ export namespace services {
 	    profileName: string;
 	    readOnly: boolean;
 	    policy: session.Policy;
+	    profileId?: string;
 	    org?: number[];
 	
 	    static createFrom(source: any = {}) {
@@ -1577,6 +1578,7 @@ export namespace services {
 	        this.profileName = source["profileName"];
 	        this.readOnly = source["readOnly"];
 	        this.policy = this.convertValues(source["policy"], session.Policy);
+	        this.profileId = source["profileId"];
 	        this.org = source["org"];
 	    }
 	

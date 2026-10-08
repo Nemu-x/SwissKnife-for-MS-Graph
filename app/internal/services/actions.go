@@ -42,6 +42,11 @@ func NewEngine(s *session.Session) *engine.Engine {
 	e.PS = pool
 	e.Grants = cachedGrants(s)
 	e.WrapErr = wrapOpErr
+	// Service writes outside the catalog check their targets through the
+	// session guards; the engine does the lookup.
+	s.SetScopeCheck(func(t session.Target) error {
+		return engineErr(e.CheckTarget(e.Env(s.Ctx()), engine.FieldKind(t.Kind), t.ID))
+	})
 	e.Register(actions.Builtin()...)
 	e.Register(snapshotRestoreAction(s))
 	return e

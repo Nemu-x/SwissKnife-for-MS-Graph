@@ -14,7 +14,9 @@ type Policy = { maxDanger?: string; allowedGroups?: string[]; groupLabels?: Reco
 // members the profile may change. Enforced by the backend once connected.
 export function ProfileLimits({ profile, onSaved }: { profile: Profile; onSaved: () => void }) {
   const { t } = useTranslation()
-  const { connected, toast, refreshStatus } = useStore()
+  const { connected, status, toast, refreshStatus } = useStore()
+  // Group ids belong to a tenant: pick them only while connected with this profile.
+  const live = connected && (status as any)?.profileId === profile.id
   const init = ((profile as any).policy || {}) as Policy
   const [maxDanger, setMaxDanger] = useState(init.maxDanger || '')
   const [groups, setGroups] = useState<string[]>(init.allowedGroups || [])
@@ -61,7 +63,7 @@ export function ProfileLimits({ profile, onSaved }: { profile: Profile; onSaved:
           ))}
           {groups.length === 0 && <span className="text-xs text-[var(--text-faint)]">{t('connect.limits.anyTarget')}</span>}
         </div>
-        {connected
+        {live
           ? <EntityPicker value="" onChange={add} placeholder={t('connect.limits.addGroup')}
               load={async () => { const o = await loadGroups(); opts.current = o; return o }} />
           : <p className="text-xs text-[var(--text-faint)]">{t('connect.limits.connectToPick')}</p>}

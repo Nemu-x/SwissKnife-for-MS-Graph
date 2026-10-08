@@ -31,14 +31,21 @@ func (e *Engine) checkPolicy(env Env, a Action, in Inputs) error {
 	if a.Danger == Read || len(pol.AllowedGroups) == 0 {
 		return nil
 	}
+	named := 0
 	for _, f := range a.Fields {
 		v := strings.TrimSpace(in[f.Name])
 		if v == "" || (f.Kind != FieldUser && f.Kind != FieldGroup) {
 			continue
 		}
+		named++
 		if err := e.inScope(env, f.Kind, v, pol.AllowedGroups); err != nil {
 			return err
 		}
+	}
+	// Tenant-wide changes (a purge, a policy restore) name no user or group:
+	// a group-scoped profile cannot run them.
+	if named == 0 {
+		return &Error{Code: "policyUnscoped", Msg: "this connection profile may only change members of its groups, and this action is tenant-wide"}
 	}
 	return nil
 }
@@ -66,7 +73,25 @@ func (e *Engine) inScope(env Env, kind FieldKind, v string, allowed []string) er
 		}
 	}
 	if env.Graph == nil {
-		return &Error{Code: "policyScope", Msg: "not connected"}
+		return &Error{Code: "policyCheckFailed", Msg: "not connected"}
+	}
+	// checkMemberGroups is called on the object id: some UPNs (quotes, a
+	// leading $) do not work as a path segment.
+	id := v
+	if kind == FieldUser && !looksLikeID(v) {
+		var res struct {
+			Value []struct {
+				ID string `json:"id"`
+			} `json:"value"`
+		}
+		q := url.Values{"$filter": {"userPrincipalName eq '" + strings.ReplaceAll(v, "'", "''") + "'"}, "$select": {"id"}}
+		if err := env.Graph.Get(env.Ctx, "/users", q, &res); err != nil {
+			return &Error{Code: "policyCheckFailed", Msg: fmt.Sprintf("cannot check whether %s is in the groups this profile may change: %v", v, err)}
+		}
+		if len(res.Value) != 1 {
+			return &Error{Code: "policyCheckFailed", Msg: fmt.Sprintf("user %s not found", v)}
+		}
+		id = res.Value[0].ID
 	}
 	for start := 0; start < len(allowed); start += 20 { // checkMemberGroups takes 20 ids
 		end := min(start+20, len(allowed))
@@ -74,12 +99,31 @@ func (e *Engine) inScope(env Env, kind FieldKind, v string, allowed []string) er
 			Value []string `json:"value"`
 		}
 		body := map[string]any{"groupIds": allowed[start:end]}
-		if err := env.Graph.Post(env.Ctx, coll+url.PathEscape(v)+"/checkMemberGroups", body, &out); err != nil {
-			return &Error{Code: "policyScope", Msg: fmt.Sprintf("cannot check whether %s is in the groups this profile may change: %v", v, err)}
+		if err := env.Graph.Post(env.Ctx, coll+url.PathEscape(id)+"/checkMemberGroups", body, &out); err != nil {
+			return &Error{Code: "policyCheckFailed", Msg: fmt.Sprintf("cannot check whether %s is in the groups this profile may change: %v", v, err)}
 		}
 		if len(out.Value) > 0 {
 			return nil
 		}
 	}
 	return &Error{Code: "policyScope", Msg: fmt.Sprintf("%s is outside the groups this connection profile may change", v)}
+}
+
+// looksLikeID reports a GUID-shaped object id.
+func looksLikeID(v string) bool {
+	if len(v) != 36 {
+		return false
+	}
+	for i, r := range v {
+		switch {
+		case i == 8 || i == 13 || i == 18 || i == 23:
+			if r != '-' {
+				return false
+			}
+		case (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F'):
+		default:
+			return false
+		}
+	}
+	return true
 }

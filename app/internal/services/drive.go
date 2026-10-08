@@ -44,6 +44,24 @@ func drivePath(ownerType, ownerID string) (string, error) {
 	return "", errors.New("ownerType must be 'user' or 'site'")
 }
 
+// driveTarget names a drive's owner for the group scope (a site has no
+// scope target, so it is refused under a scoped profile).
+func driveTarget(ownerType, ownerID string) []session.Target {
+	if ownerType == "user" {
+		return []session.Target{session.User(ownerID)}
+	}
+	return nil
+}
+
+// userTargets turns UPNs into scope targets.
+func userTargets(upns []string) []session.Target {
+	out := make([]session.Target, 0, len(upns))
+	for _, u := range upns {
+		out = append(out, session.User(u))
+	}
+	return out
+}
+
 // Sites searches SharePoint sites.
 func (d *DriveService) Sites(search string) ([]json.RawMessage, error) {
 	c, err := d.s.Client()
@@ -215,7 +233,7 @@ func (d *DriveService) Download(ownerType, ownerID, itemID, suggestedName string
 // Upload shows a file picker and uploads (small files via PUT, large via chunked session).
 // remoteFolder is the drive folder path ("" = root); the name comes from the file.
 func (d *DriveService) Upload(ownerType, ownerID, remoteFolder string) (json.RawMessage, error) {
-	if err := d.s.GuardWrite(); err != nil {
+	if err := d.s.GuardWriteOn(driveTarget(ownerType, ownerID)...); err != nil {
 		return nil, err
 	}
 	base, err := drivePath(ownerType, ownerID)
@@ -243,7 +261,7 @@ func (d *DriveService) Upload(ownerType, ownerID, remoteFolder string) (json.Raw
 }
 
 func (d *DriveService) Delete(ownerType, ownerID, itemID, confirm string) error {
-	if err := d.s.GuardDestructive(itemID, confirm); err != nil {
+	if err := d.s.GuardDestructiveOn(itemID, confirm, driveTarget(ownerType, ownerID)...); err != nil {
 		return err
 	}
 	base, err := drivePath(ownerType, ownerID)
@@ -260,7 +278,7 @@ func (d *DriveService) Delete(ownerType, ownerID, itemID, confirm string) error 
 }
 
 func (d *DriveService) CreateLink(ownerType, ownerID, itemID, linkType, scope string) (json.RawMessage, error) {
-	if err := d.s.GuardWrite(); err != nil {
+	if err := d.s.GuardWriteOn(driveTarget(ownerType, ownerID)...); err != nil {
 		return nil, err
 	}
 	base, err := drivePath(ownerType, ownerID)
@@ -396,7 +414,7 @@ func (d *DriveService) CopyBetweenUsers(sourceUser, targetUser, destFolder strin
 // cannot even start, it falls back to the legacy download/upload path through
 // the local temp directory.
 func (d *DriveService) copyBetweenUsersCtx(parent context.Context, sourceUser, targetUser, destFolder string, overwrite bool, prev *CopyPreview) (res *CopyResult, err error) {
-	if err := d.s.GuardWrite(); err != nil {
+	if err := d.s.GuardWriteOn(session.User(sourceUser), session.User(targetUser)); err != nil {
 		return nil, err
 	}
 	c, err := d.s.Client()

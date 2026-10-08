@@ -87,7 +87,7 @@ func (u *UsersService) Snapshot(user string) (map[string]any, error) {
 
 // ResetPassword is destructive: requires typed confirm (entering the target UPN).
 func (u *UsersService) ResetPassword(user, newPassword string, forceChange bool, confirm string) error {
-	if err := u.s.GuardDestructive(user, confirm); err != nil {
+	if err := u.s.GuardDestructiveOn(user, confirm, session.User(user)); err != nil {
 		return err
 	}
 	c, err := u.s.Client()

@@ -78,7 +78,8 @@ let cached: { key: string; list: Promise<CatalogEntry[]> } | null = null
 // null until the first fetch for the current connection has landed.
 export function useCatalog(): CatalogEntry[] | null {
   const { connected, status } = useStore()
-  const key = connected ? `on:${status?.profileName ?? ''}` : 'off'
+  // The profile's limits change what is available: they are part of the key.
+  const key = connected ? `on:${status?.profileName ?? ''}:${JSON.stringify((status as any)?.policy ?? null)}` : 'off'
   const [list, setList] = useState<CatalogEntry[] | null>(null)
   useEffect(() => {
     if (cached?.key !== key) {

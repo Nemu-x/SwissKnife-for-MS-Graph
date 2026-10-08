@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+	"swissknife-app/internal/session"
 )
 
 // Identity operations on UsersService: lifecycle (create/update/delete),
@@ -42,7 +43,7 @@ func (u *UsersService) CreateUser(displayName, upn, mailNickname, password strin
 // Update patches arbitrary user fields from a JSON object (e.g. jobTitle,
 // department, officeLocation). Not destructive, but write-guarded.
 func (u *UsersService) Update(user, patchJSON string) error {
-	if err := u.s.GuardWrite(); err != nil {
+	if err := u.s.GuardWriteOn(session.User(user)); err != nil {
 		return err
 	}
 	var body map[string]any
@@ -60,7 +61,7 @@ func (u *UsersService) Update(user, patchJSON string) error {
 
 // Delete removes a user (soft-delete — recoverable for 30 days). Destructive.
 func (u *UsersService) Delete(user, confirm string) error {
-	if err := u.s.GuardDestructive(user, confirm); err != nil {
+	if err := u.s.GuardDestructiveOn(user, confirm, session.User(user)); err != nil {
 		return err
 	}
 	c, err := u.s.Client()

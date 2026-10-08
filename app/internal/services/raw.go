@@ -28,7 +28,13 @@ func (r *RawService) Send(method, path, body string) (json.RawMessage, error) {
 	if !allowedMethods[method] {
 		return nil, errors.New("method must be GET/POST/PATCH/PUT/DELETE")
 	}
-	if method != http.MethodGet {
+	switch method {
+	case http.MethodGet:
+	case http.MethodDelete:
+		if err := r.s.GuardDangerous(); err != nil {
+			return nil, err
+		}
+	default:
 		if err := r.s.GuardWrite(); err != nil {
 			return nil, err
 		}

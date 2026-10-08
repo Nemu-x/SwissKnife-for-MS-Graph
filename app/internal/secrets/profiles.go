@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/zalando/go-keyring"
@@ -39,6 +40,7 @@ type Profile struct {
 type Store struct {
 	dir  string
 	path string
+	mu   sync.Mutex // serializes read-modify-write of profiles.json
 }
 
 func NewStore() (*Store, error) {
@@ -82,15 +84,23 @@ func (s *Store) save(list []Profile) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o600)
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
 }
 
 func (s *Store) List() ([]Profile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.load()
 }
 
 // Save creates/updates a profile. An empty secret means keep the stored one.
 func (s *Store) Save(p Profile, secret string) (Profile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	list, err := s.load()
 	if err != nil {
 		return Profile{}, err
@@ -159,6 +169,8 @@ func (s *Store) DropPendingCertPassword(certPath string) {
 // ClearSecret forgets a profile's stored secret (an auth-mode switch makes
 // the old one meaningless: a client secret is not a PFX password).
 func (s *Store) ClearSecret(profileID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	list, err := s.load()
 	if err != nil {
 		return err
@@ -184,6 +196,8 @@ func (s *Store) Secret(profileID string) (string, error) {
 }
 
 func (s *Store) Delete(profileID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	list, err := s.load()
 	if err != nil {
 		return err
