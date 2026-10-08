@@ -1187,10 +1187,10 @@ const en = {
     run: 'Show',
     rows: '{{count}} row(s)',
     why: { externalForward: 'forwards outside the company to {{value}}', deletes: 'deletes messages', hides: 'moves messages away and marks them read' },
-    readNotes: { neverSignedInExcluded: 'Accounts that never signed in are not listed (Microsoft records no date for them).', rulesScanned: '{{scanned}} mailbox(es) scanned, {{unreadable}} could not be read' },
+    readNotes: { intuneDeniedUserGroupsOnly: 'Incomplete: no permission to read {{kinds}}. Assignments through the user’s groups only; device groups are not followed.', intuneDenied: 'Incomplete: no permission to read {{kinds}}.', intuneUserGroupsOnly: 'Assignments through the user’s groups; device groups of their devices are not followed.', neverSignedInExcluded: 'Accounts that never signed in are not listed (Microsoft records no date for them).', rulesScanned: '{{scanned}} mailbox(es) scanned, {{unreadable}} could not be read' },
     exportCsv: 'Export CSV',
     noRows: 'Nothing found.',
-    columns: { lastSignIn: 'Last sign-in', licenses: 'Licenses', guest: 'Guest', name: 'Name', invited: 'Invited', state: 'State', admin: 'Admin', methods: 'Methods', role: 'Role', member: 'Member', kind: 'Kind', mailbox: 'Mailbox', used: 'Used', full: 'Full', items: 'Items', lastActivity: 'Last activity', forwardsTo: 'Forwards to', keepsCopy: 'Keeps a copy', metric: 'Metric', value: 'Value', user: 'User', rule: 'Rule', enabled: 'On', why: 'Why it looks suspicious', received: 'Received', sender: 'Sender', recipient: 'Recipient', subject: 'Subject', type: 'Type', status: 'Status', identity: 'Identity', policy: 'Policy', description: 'Description', policyType: 'Type' },
+    columns: { via: 'Through', effect: 'Effect', lastModified: 'Last changed', device: 'Device', lastSignIn: 'Last sign-in', licenses: 'Licenses', guest: 'Guest', name: 'Name', invited: 'Invited', state: 'State', admin: 'Admin', methods: 'Methods', role: 'Role', member: 'Member', kind: 'Kind', mailbox: 'Mailbox', used: 'Used', full: 'Full', items: 'Items', lastActivity: 'Last activity', forwardsTo: 'Forwards to', keepsCopy: 'Keeps a copy', metric: 'Metric', value: 'Value', user: 'User', rule: 'Rule', enabled: 'On', why: 'Why it looks suspicious', received: 'Received', sender: 'Sender', recipient: 'Recipient', subject: 'Subject', type: 'Type', status: 'Status', identity: 'Identity', policy: 'Policy', description: 'Description', policyType: 'Type' },
     preview: 'Preview changes',
     apply: 'Apply',
     planTitle: 'What will change',
@@ -1211,6 +1211,12 @@ const en = {
       forwarding: { label: 'Forward a mailbox', hint: 'Pass everything that arrives on to another person, or stop it.', note: 'Forwarding outside the tenant may be blocked by the outbound spam policy.' },
       address: { label: 'Add or remove an email address', hint: 'Extra addresses (aliases) the mailbox receives mail at.' },
       calendarProcessing: { label: 'Room booking behaviour', hint: 'Whether a room or equipment mailbox accepts meeting requests on its own.', note: 'Auto-accept books the room by itself; None leaves requests for a delegate.' },
+    },
+    intune: {
+      assignedTo: { label: 'What lands on a person or group', hint: 'Configuration, compliance, settings-catalog policies and apps — and through which group, or excluded where.' },
+      unassigned: { label: 'Policies assigned to nobody', hint: 'Configuration, compliance and settings-catalog policies with no assignment — clutter or forgotten work.' },
+      conflicts: { label: 'Policy conflicts on devices', hint: 'Devices where Intune itself reports a conflict between configuration or compliance policies (settings catalog and endpoint security have no such report).' },
+      assign: { label: 'Assign a policy to a group', hint: 'Add or remove a group on a configuration or compliance policy, by the policy’s exact name.', note: 'The other assignments of the policy stay as they are — the preview shows the change.' },
     },
     report: {
       inactiveUsers: { label: 'Who has not signed in', hint: 'Accounts without a sign-in for 30, 90 or 180 days — candidates to block or remove.' },
@@ -1241,13 +1247,14 @@ const en = {
     transportRule: {
       state: { label: 'Turn a mail flow rule on or off', hint: 'Enable or disable a transport rule by its name.', note: 'Mail flow rules act on every message in the tenant — check the rule name twice.' },
     },
-    fields: { days: 'Inactive for (days)', category: 'Report as', recipient: 'Recipient', identity: 'Message identity', sender: 'Sender (address or domain)', subject: 'Subject contains', since: 'Received since (YYYY-MM-DD)', purgeType: 'How to delete', policyType: 'Policy type', policy: 'Policy name', type: 'Convert to', forwardTo: 'Forward to', keepCopy: 'Keep a copy in the mailbox', address: 'Email address', automate: 'Meeting requests', rule: 'Rule name', mailbox: 'Mailbox', delegate: 'Delegate', folder: 'Folder', access: 'Access', user: 'User', group: 'Group', role: 'As', op: 'Action', sku: 'License', state: 'Sign-in', manager: 'Manager', country: 'Country code (e.g. US, DE)' },
+    fields: { policyKind: 'Policy type', days: 'Inactive for (days)', category: 'Report as', recipient: 'Recipient', identity: 'Message identity', sender: 'Sender (address or domain)', subject: 'Subject contains', since: 'Received since (YYYY-MM-DD)', purgeType: 'How to delete', policyType: 'Policy type', policy: 'Policy name', type: 'Convert to', forwardTo: 'Forward to', keepCopy: 'Keep a copy in the mailbox', address: 'Email address', automate: 'Meeting requests', rule: 'Rule name', mailbox: 'Mailbox', delegate: 'Delegate', folder: 'Folder', access: 'Access', user: 'User', group: 'Group', role: 'As', op: 'Action', sku: 'License', state: 'Sign-in', manager: 'Manager', country: 'Country code (e.g. US, DE)' },
     user: {
       manager: { label: 'Set a manager', hint: 'Who they report to — the preview shows the current one.' },
       usageLocation: { label: 'Set usage location', hint: 'The country that decides which licenses can be assigned.', note: 'Two-letter ISO code. License assignment fails while it is empty.' },
     },
-    options: { '30': '30', '90': '90', '180': '180', phishing: 'Phishing', spam: 'Spam', malware: 'Malware', notJunk: 'Not junk', recoverable: 'Recoverable', permanent: 'Permanently', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
+    options: { configuration: 'Configuration', compliance: 'Compliance', '30': '30', '90': '90', '180': '180', phishing: 'Phishing', spam: 'Spam', malware: 'Malware', notJunk: 'Not junk', recoverable: 'Recoverable', permanent: 'Permanently', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
     changeFields: {
+      intuneAssignment: 'assigned to',
       threatReport: 'report to Microsoft',
       blockedSender: 'blocked sender',
       quarantine: 'quarantine',
@@ -1271,7 +1278,7 @@ const en = {
       group: { member: 'member of', owner: 'owner of' },
     },
     notes: { purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone', recoverableOverLimit: 'likely more than 100 in some mailboxes: one run removes at most 100 per mailbox — check the case in Purview afterwards' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
-    values: { app: 'app', TotalItemSize: 'Total size', ItemCount: 'Items', DeletedItemCount: 'Deleted items', TotalDeletedItemSize: 'Deleted items size', LastUserActionTime: 'Last activity', yes: 'yes', no: 'no', released: 'released', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', Global: 'Global (org default)', shared: 'shared', regular: 'user mailbox', enabled: 'on', disabled: 'off', allowed: 'allowed', blocked: 'blocked', active: 'active', revoked: 'revoked' },
+    values: { included: 'included', excluded: 'excluded', required: 'required', available: 'available', uninstall: 'uninstall', allUsers: 'all users', allDevices: 'all devices', configuration: 'configuration', compliance: 'compliance', settingsCatalog: 'settings catalog', conflict: 'conflict', app: 'app', TotalItemSize: 'Total size', ItemCount: 'Items', DeletedItemCount: 'Deleted items', TotalDeletedItemSize: 'Deleted items size', LastUserActionTime: 'Last activity', yes: 'yes', no: 'no', released: 'released', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', Global: 'Global (org default)', shared: 'shared', regular: 'user mailbox', enabled: 'on', disabled: 'off', allowed: 'allowed', blocked: 'blocked', active: 'active', revoked: 'revoked' },
     reasons: {
       pwshMissing: 'Needs PowerShell 7 — install it, then recheck in Settings → PowerShell.',
       moduleMissing: 'Needs the {{module}} PowerShell module — install it in Settings → PowerShell.',

@@ -22,7 +22,8 @@ func Builtin() []engine.Action {
 	out = append(out, complianceActions()...)
 	out = append(out, securityActions()...)
 	out = append(out, securityPSActions()...)
-	return append(out, reportActions()...)
+	out = append(out, reportActions()...)
+	return append(out, intuneActions()...)
 }
 
 func graphActions() []engine.Action {

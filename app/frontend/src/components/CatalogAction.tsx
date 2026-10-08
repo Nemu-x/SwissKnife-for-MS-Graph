@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Eye, Check, ArrowRight, Minus } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Target, FileWarning, Swords, Link2, Eye, Check, ArrowRight, Minus } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
@@ -59,6 +59,10 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
   'report.mailboxSizes': { label: 'actions.report.mailboxSizes.label', hint: 'actions.report.mailboxSizes.hint', notes: ['actions.report.mailboxSizes.note'], icon: <HardDrive size={16} /> },
   'report.mailboxForwarding': { label: 'actions.report.mailboxForwarding.label', hint: 'actions.report.mailboxForwarding.hint', icon: <ForwardIcon size={16} /> },
   'mailbox.statistics': { label: 'actions.mailbox.statistics.label', hint: 'actions.mailbox.statistics.hint', icon: <BarChart3 size={16} /> },
+  'intune.assignedTo': { label: 'actions.intune.assignedTo.label', hint: 'actions.intune.assignedTo.hint', icon: <Target size={16} /> },
+  'intune.unassigned': { label: 'actions.intune.unassigned.label', hint: 'actions.intune.unassigned.hint', icon: <FileWarning size={16} /> },
+  'intune.conflicts': { label: 'actions.intune.conflicts.label', hint: 'actions.intune.conflicts.hint', icon: <Swords size={16} /> },
+  'intune.assign': { label: 'actions.intune.assign.label', hint: 'actions.intune.assign.hint', notes: ['actions.intune.assign.note'], icon: <Link2 size={16} /> },
   'group.membership': { label: 'groups.tileAdd', hint: 'groups.hintAdd', notes: ['groups.noteAdd'], icon: <UserPlus size={16} /> },
   'license.assign': { label: 'licensing.tileAssign', hint: 'licensing.hintAssign', notes: ['licensing.noteAssign'], warn: ['licensing.noteRemove'], icon: <Plus size={16} /> },
 }
