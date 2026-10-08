@@ -79,36 +79,42 @@ func (r restorable) subset(o map[string]any) map[string]any {
 	return out
 }
 
-// sameTenant reports whether a snapshot was taken in the connected tenant:
-// by directory id when the snapshot has one, else by profile name.
-func sameTenant(m SnapshotMeta, tenantID, profile string) bool {
-	if m.TenantID != "" && tenantID != "" {
-		return strings.EqualFold(m.TenantID, tenantID)
+// sameTenant reports whether a snapshot was taken in the connected tenant.
+// Snapshots from before tenant ids were recorded never match: profile names
+// are local labels and prove nothing about the directory.
+func sameTenant(m SnapshotMeta, tenantID string) error {
+	if m.TenantID == "" {
+		return errors.New("this snapshot does not record its tenant (taken by an older version); take a new snapshot")
 	}
-	return m.Tenant == profile
+	if tenantID == "" || !strings.EqualFold(m.TenantID, tenantID) {
+		return fmt.Errorf("the snapshot was taken in another tenant (%s)", m.Tenant)
+	}
+	return nil
 }
 
-// liveByName indexes a collection's current objects by display name.
-func liveByName(env engine.Env, path string) (map[string]string, error) {
-	var page struct {
-		Value []map[string]any `json:"value"`
-	}
-	if err := env.Graph.Get(env.Ctx, path, url.Values{"$select": {"id,displayName"}}, &page); err != nil {
+// liveByName indexes a collection's current objects by lower-cased display
+// name; a name can belong to several objects.
+func liveByName(env engine.Env, path string) (map[string][]string, error) {
+	objs, err := graphapi.ListAllInto[map[string]any](env.Ctx, env.Graph, path, url.Values{"$select": {"id,displayName"}}, 0)
+	if err != nil {
 		return nil, err
 	}
-	out := map[string]string{}
-	for _, o := range page.Value {
+	out := map[string][]string{}
+	for _, o := range objs {
 		name, _ := o["displayName"].(string)
 		id, _ := o["id"].(string)
-		out[strings.ToLower(name)] = id
+		if name != "" && id != "" {
+			out[strings.ToLower(name)] = append(out[strings.ToLower(name)], id)
+		}
 	}
 	return out, nil
 }
 
 // remapLocations points a policy's location conditions at today's named
 // locations: a location recreated after deletion has a new id, so the
-// snapshot's id is matched through its name. Unresolvable ids are returned.
-func remapLocations(policy map[string]any, snapNames map[string]string, live map[string]string, liveIDs map[string]bool) []string {
+// snapshot's id is matched through its name (only when exactly one location
+// has that name). Unresolvable ids are returned.
+func remapLocations(policy map[string]any, snapNames map[string]string, live map[string][]string, liveIDs map[string]bool) []string {
 	cond, _ := policy["conditions"].(map[string]any)
 	locs, _ := cond["locations"].(map[string]any)
 	if locs == nil {
@@ -122,8 +128,8 @@ func remapLocations(policy map[string]any, snapNames map[string]string, live map
 			if id == "" || id == "All" || id == "AllTrusted" || liveIDs[id] {
 				continue
 			}
-			if newID, ok := live[strings.ToLower(snapNames[id])]; ok && snapNames[id] != "" {
-				list[i] = newID
+			if ids := live[strings.ToLower(snapNames[id])]; len(ids) == 1 && snapNames[id] != "" {
+				list[i] = ids[0]
 				continue
 			}
 			missing = append(missing, id)
@@ -137,8 +143,8 @@ func (x snapshotRestore) Plan(env engine.Env, in engine.Inputs) ([]engine.Change
 	if err != nil {
 		return nil, err
 	}
-	if !sameTenant(doc.Meta, env.TenantID, x.svc.s.ProfileName()) {
-		return nil, fmt.Errorf("the snapshot was taken in another tenant (%s); restore only into the tenant it came from", doc.Meta.Tenant)
+	if err := sameTenant(doc.Meta, env.TenantID); err != nil {
+		return nil, fmt.Errorf("%w; restore only into the tenant it came from", err)
 	}
 	sec := in["section"]
 	rs, ok := restorableSections[sec]
@@ -155,7 +161,8 @@ func (x snapshotRestore) Plan(env engine.Env, in engine.Inputs) ([]engine.Change
 		return nil, err
 	}
 	// Policies refer to named locations by id; resolve them against today.
-	var snapLoc, liveLoc map[string]string
+	var snapLoc map[string]string
+	var liveLoc map[string][]string
 	liveLocIDs := map[string]bool{}
 	if sec == "conditionalAccessPolicies" {
 		snapLoc = map[string]string{}
@@ -167,8 +174,10 @@ func (x snapshotRestore) Plan(env engine.Env, in engine.Inputs) ([]engine.Change
 		if liveLoc, err = liveByName(env, "/identity/conditionalAccess/namedLocations"); err != nil {
 			return nil, err
 		}
-		for _, id := range liveLoc {
-			liveLocIDs[id] = true
+		for _, ids := range liveLoc {
+			for _, id := range ids {
+				liveLocIDs[id] = true
+			}
 		}
 	}
 	var changes []engine.Change
@@ -195,7 +204,12 @@ func (x snapshotRestore) Plan(env engine.Env, in engine.Inputs) ([]engine.Change
 			// Recreated by hand under the same name: rewrite that one rather
 			// than adding a duplicate.
 			name, _ := o["displayName"].(string)
-			if other, ok := byName[strings.ToLower(name)]; ok && name != "" {
+			others := byName[strings.ToLower(name)]
+			if len(others) > 1 {
+				return nil, fmt.Errorf("%q was deleted and several objects now have that name; restore it by hand", name)
+			}
+			if len(others) == 1 {
+				other := others[0]
 				ref["id"] = other
 				if err := env.Graph.Get(env.Ctx, rs.path+"/"+url.PathEscape(other), nil, &live); err != nil {
 					return nil, err

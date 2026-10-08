@@ -22,6 +22,7 @@ func TestDriftAlertsOncePerNewDifference(t *testing.T) {
 	})
 	dir := t.TempDir()
 	sess.SetConfigDir(dir)
+	sess.SetIdentity("tenant-a", true)
 	id := savedSnapshot(t, dir, map[string][]map[string]any{
 		"conditionalAccessPolicies": {{"id": "p1", "displayName": "Require MFA", "state": "enabled"}},
 	})

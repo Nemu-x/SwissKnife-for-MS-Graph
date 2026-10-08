@@ -14,7 +14,7 @@ import (
 
 func savedSnapshot(t *testing.T, dir string, sections map[string][]map[string]any) string {
 	t.Helper()
-	doc := &snapshotFile{Sections: sections, Meta: SnapshotMeta{Tenant: "test"}}
+	doc := &snapshotFile{Sections: sections, Meta: SnapshotMeta{Tenant: "test", TenantID: "tenant-a"}}
 	for name, objs := range sections {
 		doc.Meta.Sections = append(doc.Meta.Sections, SnapshotSection{Name: name, Count: len(objs)})
 	}
@@ -51,6 +51,7 @@ func TestRestorePlansFieldDiffsAndRecreatesDeleted(t *testing.T) {
 	})
 	dir := t.TempDir()
 	sess.SetConfigDir(dir)
+	sess.SetIdentity("tenant-a", true)
 	id := savedSnapshot(t, dir, map[string][]map[string]any{
 		"conditionalAccessPolicies": {
 			{"id": "p1", "displayName": "Require MFA", "state": "enabled", "conditions": map[string]any{"users": map[string]any{"includeUsers": []any{"All"}}}},
@@ -122,6 +123,13 @@ func TestExportWritesOneStableFilePerObjectWithoutSecrets(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "snapshot.json")); err != nil {
 		t.Fatal(err)
 	}
+	// Exporting again replaces the folder and leaves no temporary ones.
+	if _, err := writeExport(doc, root); err != nil {
+		t.Fatal(err)
+	}
+	if left, _ := os.ReadDir(root); len(left) != 1 {
+		t.Fatalf("export root %v", left)
+	}
 	if _, err := writeExport(&snapshotFile{Meta: SnapshotMeta{ID: "../evil"}}, root); err == nil {
 		t.Fatal("a path-like id must be refused")
 	}
@@ -147,6 +155,7 @@ func TestRestoreRefusesAnotherTenantAndRemapsLocations(t *testing.T) {
 	})
 	dir := t.TempDir()
 	sess.SetConfigDir(dir)
+	sess.SetIdentity("tenant-a", true)
 	sections := map[string][]map[string]any{
 		"namedLocations": {{"id": "loc-old", "displayName": "Office"}},
 		"conditionalAccessPolicies": {{"id": "p1", "displayName": "Office only", "state": "enabled",
@@ -180,6 +189,16 @@ func TestRestoreRefusesAnotherTenantAndRemapsLocations(t *testing.T) {
 	// Another tenant's snapshot is never restored.
 	sess.SetIdentity("tenant-b", false)
 	other := &snapshotFile{Meta: SnapshotMeta{Tenant: "test", TenantID: "tenant-a"}, Sections: sections}
+	legacy := &snapshotFile{Meta: SnapshotMeta{Tenant: "test"}, Sections: sections}
+	lid, err := writeSnapshotExclusive(context.Background(), filepath.Join(dir, "snapshots"), legacy, time.Now().Add(2*time.Minute), "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess.SetIdentity("tenant-a", true)
+	if _, err := e.Plan("config.restore", map[string]string{"snapshot": lid}); err == nil || !strings.Contains(err.Error(), "older version") {
+		t.Fatalf("a snapshot without a tenant id must be refused: %v", err)
+	}
+	sess.SetIdentity("tenant-b", false)
 	oid, err := writeSnapshotExclusive(context.Background(), filepath.Join(dir, "snapshots"), other, time.Now().Add(time.Minute), "a")
 	if err != nil {
 		t.Fatal(err)

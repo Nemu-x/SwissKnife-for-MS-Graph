@@ -178,8 +178,8 @@ func (x *SnapshotService) checkDrift(manual bool) (*DriftSummary, error) {
 	if err != nil {
 		return fail(fmt.Errorf("baseline snapshot: %w", err))
 	}
-	if !sameTenant(baseline.Meta, x.s.TenantID(), x.s.ProfileName()) {
-		return fail(fmt.Errorf("the baseline was taken in another tenant (%s); connect to it or pick another baseline", baseline.Meta.Tenant))
+	if err := sameTenant(baseline.Meta, x.s.TenantID()); err != nil {
+		return fail(fmt.Errorf("baseline: %w", err))
 	}
 	op, err := x.s.Ops.Start(x.s.Ctx(), ops.KindDrift)
 	if err != nil {

@@ -57,15 +57,42 @@ func stripSecrets(v any) any {
 }
 
 // writeExport lays the snapshot out under root/<snapshot id>/ and returns
-// that folder. An existing export of the same snapshot is replaced.
+// that folder. An existing export of the same snapshot is replaced only once
+// the new one is fully written.
 func writeExport(doc *snapshotFile, root string) (string, error) {
 	if !validSnapshotID(doc.Meta.ID) {
 		return "", errors.New("invalid snapshot id")
 	}
 	dir := filepath.Join(root, doc.Meta.ID)
-	if err := os.RemoveAll(dir); err != nil {
+	tmp, err := os.MkdirTemp(root, "."+doc.Meta.ID+"-")
+	if err != nil {
 		return "", err
 	}
+	defer os.RemoveAll(tmp) // no-op after a successful swap
+	if err := writeExportTo(doc, tmp); err != nil {
+		return "", err
+	}
+	old := ""
+	if _, err := os.Stat(dir); err == nil {
+		old = dir + ".old"
+		_ = os.RemoveAll(old)
+		if err := os.Rename(dir, old); err != nil {
+			return "", err
+		}
+	}
+	if err := os.Rename(tmp, dir); err != nil {
+		if old != "" {
+			_ = os.Rename(old, dir)
+		}
+		return "", err
+	}
+	if old != "" {
+		_ = os.RemoveAll(old)
+	}
+	return dir, nil
+}
+
+func writeExportTo(doc *snapshotFile, dir string) error {
 	write := func(path string, v any) error {
 		b, err := json.MarshalIndent(v, "", "  ") // Go sorts map keys: stable
 		if err != nil {
@@ -77,7 +104,7 @@ func writeExport(doc *snapshotFile, root string) (string, error) {
 		return os.WriteFile(path, append(b, '\n'), 0o644)
 	}
 	if err := write(filepath.Join(dir, "snapshot.json"), doc.Meta); err != nil {
-		return "", err
+		return err
 	}
 	sections := make([]string, 0, len(doc.Sections))
 	for name := range doc.Sections {
@@ -104,11 +131,11 @@ func writeExport(doc *snapshotFile, root string) (string, error) {
 				base = fmt.Sprintf("%s-%d", base, used[base])
 			}
 			if err := write(filepath.Join(dir, name, base+".json"), stripSecrets(obj)); err != nil {
-				return "", err
+				return err
 			}
 		}
 	}
-	return dir, nil
+	return nil
 }
 
 // Export writes a snapshot into a folder the operator picks and returns the

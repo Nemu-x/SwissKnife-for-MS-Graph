@@ -204,19 +204,21 @@ export function SecurityPage() {
   const [exportId, setExportId] = useState('')
   const [watch, setWatch] = useState<{ baselineId: string; everyHours: number; notifyTeams: boolean; lastCheck?: any; lastSummary?: any; lastError?: string }>(
     { baselineId: '', everyHours: 0, notifyTeams: false })
-  const [checkingDrift, setCheckingDrift] = useState(false)
-  useEffect(() => { api.snapshot.getDriftWatch().then((w) => w && setWatch(w as any)).catch(() => {}) }, [])
+  const checkingDrift = !!jobs.driftCheck?.running
+  // Re-read on mount and whenever a check ends (it may end on another page).
+  useEffect(() => { if (!checkingDrift) api.snapshot.getDriftWatch().then((w) => w && setWatch(w as any)).catch(() => {}) }, [checkingDrift])
   const saveWatch = () =>
     api.snapshot.setDriftWatch(watch).then((w) => { setWatch(w as any); toast('ok', t('common.save')) }).catch((e) => toast('err', errMessage(e)))
   const checkDrift = async () => {
-    setCheckingDrift(true)
+    if (jobs.driftCheck?.running) return
+    patchJob('driftCheck', { running: true, startedAt: Date.now() })
     try {
       setWatch(await api.snapshot.setDriftWatch(watch) as any)
       const sum = await api.snapshot.checkDriftNow()
       const total = (sum.added || 0) + (sum.removed || 0) + (sum.changed || 0)
       if (total === 0) toast('ok', t('snapshot.noDrift'))
       setWatch((w) => ({ ...w, lastSummary: sum, lastCheck: new Date().toISOString(), lastError: '' }))
-    } catch (e) { toast('err', errMessage(e)) } finally { setCheckingDrift(false) }
+    } catch (e) { toast('err', errMessage(e)) } finally { patchJob('driftCheck', { running: false }) }
   }
 
   // --- snapshots ---
