@@ -1311,6 +1311,11 @@ const ru: Dict<typeof en> = {
       groups: 'Группы',
       applications: 'Регистрации приложений и их секреты',
       servicePrincipals: 'Enterprise-приложения (количество)',
+      intuneConfigurations: 'Профили конфигурации Intune',
+      intuneCompliancePolicies: 'Политики соответствия Intune',
+      exchangeOrganizationConfig: 'Настройки организации Exchange',
+      transportRules: 'Правила транспорта Exchange',
+      teamsMeetingPolicies: 'Политики собраний Teams',
     },
   },
   cleanup: {
@@ -1381,7 +1386,7 @@ const ru: Dict<typeof en> = {
       calendarProcessing: { label: 'Бронирование переговорки', hint: 'Принимает ли ящик комнаты или оборудования приглашения сам.', note: '«Принимать автоматически» бронирует сразу; «Оставить делегату» — решает человек.' },
     },
     config: {
-      restore: { label: 'Восстановить из снапшота', hint: 'Вернуть политики условного доступа или именованные расположения к состоянию из снапшота.', note: 'Восстановление политики условного доступа меняет, кто и как может войти. Удалённая политика создаётся заново с новым id. Предпросмотр покажет расходящиеся поля.' },
+      restore: { label: 'Восстановить из снапшота', hint: 'Вернуть условный доступ, политики Intune, настройки и правила транспорта Exchange или политики собраний Teams к состоянию из снапшота — один раздел или всё сразу.', note: 'Восстановление меняет, кто и как может войти, что должны выполнять устройства и как идёт почта. Удалённые объекты создаются заново с новым id (кроме правил транспорта: в снапшоте о них слишком мало данных). Предпросмотр покажет расходящиеся поля; для разделов Exchange и Teams нужен PowerShell. Пустые в снапшоте значения не очищаются; приоритеты правил транспорта не меняются.' },
     },
     ad: {
       findUser: { label: 'Найти пользователя AD', hint: 'Поиск по имени, учётке, UPN или почте; видно, включена ли запись и заблокирована ли.' },
@@ -1435,7 +1440,7 @@ const ru: Dict<typeof en> = {
       manager: { label: 'Назначить руководителя', hint: 'Кому подчиняется — текущий виден в предпросмотре.' },
       usageLocation: { label: 'Страна использования', hint: 'От неё зависит, какие лицензии можно выдать.', note: 'Двухбуквенный ISO-код. Пока поле пустое, выдача лицензии падает.' },
     },
-    options: { disable: 'Отключить', enable: 'Включить', conditionalAccessPolicies: 'Политики условного доступа', namedLocations: 'Именованные расположения', configuration: 'Конфигурация', compliance: 'Соответствие', '30': '30', '90': '90', '180': '180', phishing: 'Фишинг', spam: 'Спам', malware: 'Вредонос', notJunk: 'Не спам', recoverable: 'С восстановлением', permanent: 'Безвозвратно', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', shared: 'Общий', regular: 'Ящик пользователя', set: 'Пересылать', clear: 'Отключить пересылку', yes: 'Да', no: 'Нет', AutoAccept: 'Принимать автоматически', AutoUpdate: 'Только под вопросом', None: 'Оставить делегату', enabled: 'Вкл.', disabled: 'Выкл.', calendar: 'Календарь', inbox: 'Входящие', AvailabilityOnly: 'Только занятость', LimitedDetails: 'Ограниченные сведения', Reviewer: 'Читатель', Author: 'Автор', Editor: 'Редактор', Owner: 'Владелец', none: 'Убрать доступ', blocked: 'Заблокировать', allowed: 'Разрешить', member: 'Участник', owner: 'Владелец', add: 'Добавить', remove: 'Убрать' },
+    options: { intuneConfigurations: 'Профили конфигурации Intune', intuneCompliancePolicies: 'Политики соответствия Intune', exchangeOrganizationConfig: 'Настройки организации Exchange', transportRules: 'Правила транспорта', teamsMeetingPolicies: 'Политики собраний Teams', all: 'Всё, что изменилось после снапшота', disable: 'Отключить', enable: 'Включить', conditionalAccessPolicies: 'Политики условного доступа', namedLocations: 'Именованные расположения', configuration: 'Конфигурация', compliance: 'Соответствие', '30': '30', '90': '90', '180': '180', phishing: 'Фишинг', spam: 'Спам', malware: 'Вредонос', notJunk: 'Не спам', recoverable: 'С восстановлением', permanent: 'Безвозвратно', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', shared: 'Общий', regular: 'Ящик пользователя', set: 'Пересылать', clear: 'Отключить пересылку', yes: 'Да', no: 'Нет', AutoAccept: 'Принимать автоматически', AutoUpdate: 'Только под вопросом', None: 'Оставить делегату', enabled: 'Вкл.', disabled: 'Выкл.', calendar: 'Календарь', inbox: 'Входящие', AvailabilityOnly: 'Только занятость', LimitedDetails: 'Ограниченные сведения', Reviewer: 'Читатель', Author: 'Автор', Editor: 'Редактор', Owner: 'Владелец', none: 'Убрать доступ', blocked: 'Заблокировать', allowed: 'Разрешить', member: 'Участник', owner: 'Владелец', add: 'Добавить', remove: 'Убрать' },
     changeFields: {
       step: 'шаг',
       authMethod: 'способ входа',
@@ -1445,6 +1450,7 @@ const ru: Dict<typeof en> = {
       adLockout: 'блокировка',
       adPassword: 'пароль',
       restoredObject: 'восстановление',
+      restoredSection: 'раздел',
       intuneAssignment: 'назначена',
       threatReport: 'отправка в Microsoft',
       blockedSender: 'заблокированный отправитель',
@@ -1468,7 +1474,7 @@ const ru: Dict<typeof en> = {
       usageLocation: 'страна использования',
       group: { member: 'участник', owner: 'владелец' },
     },
-    notes: { defaultPhone: 'Если этот телефон — способ входа по умолчанию, Microsoft не даёт удалить его здесь: назначьте другой способ по умолчанию (или удалите его) в центре администрирования Entra.', stepFailed: 'Этот шаг не удалось спланировать, он пропущен: {{error}}', noSuspiciousRules: 'Подозрительных правил не найдено.', purge: { recoverable: 'перенесены в Recoverable Items — можно вернуть', permanent: 'удалены безвозвратно — не вернуть', recoverableOverLimit: 'вероятно, больше 100 в некоторых ящиках: за проход удаляется не больше 100 на ящик — проверьте дело в Purview после' }, forwardKeepCopy: 'копия остаётся в ящике', forwardNoCopy: 'копия в ящике не остаётся', inheritedLicense: 'Выдана через группу — уберите пользователя из группы (или лицензию у группы).' },
+    notes: { encryptedSettings: 'Содержит зашифрованные параметры OMA-URI, которые Graph не возвращает: восстановите профиль вручную.', assignmentGroupGone: 'Часть групп, которым он был назначен, удалена после снапшота: эти назначения пропущены.', defaultComplianceAction: 'В снапшоте нет действий при несоответствии: политика создаётся с действием Intune по умолчанию (несоответствие сразу) — проверьте отсрочку.', sectionSkipped: 'Этот раздел пропущен: {{error}}', cannotRecreate: 'Удалено после снапшота, а данных в нём недостаточно, чтобы создать заново, — создайте вручную.', defaultPhone: 'Если этот телефон — способ входа по умолчанию, Microsoft не даёт удалить его здесь: назначьте другой способ по умолчанию (или удалите его) в центре администрирования Entra.', stepFailed: 'Этот шаг не удалось спланировать, он пропущен: {{error}}', noSuspiciousRules: 'Подозрительных правил не найдено.', purge: { recoverable: 'перенесены в Recoverable Items — можно вернуть', permanent: 'удалены безвозвратно — не вернуть', recoverableOverLimit: 'вероятно, больше 100 в некоторых ящиках: за проход удаляется не больше 100 на ящик — проверьте дело в Purview после' }, forwardKeepCopy: 'копия остаётся в ящике', forwardNoCopy: 'копия в ящике не остаётся', inheritedLicense: 'Выдана через группу — уберите пользователя из группы (или лицензию у группы).' },
     values: { randomPassword: 'новый случайный пароль', locked: 'заблокирована', unlocked: 'разблокирована', newPassword: 'новый пароль задан', newPasswordMustChange: 'новый пароль, смена при входе', snapshot: 'как в снапшоте', included: 'включено', excluded: 'исключено', required: 'обязательно', available: 'доступно', uninstall: 'удалить', allUsers: 'все пользователи', allDevices: 'все устройства', configuration: 'конфигурация', compliance: 'соответствие', settingsCatalog: 'каталог параметров', conflict: 'конфликт', app: 'приложение', TotalItemSize: 'Общий размер', ItemCount: 'Писем', DeletedItemCount: 'Удалённых', TotalDeletedItemSize: 'Размер удалённых', LastUserActionTime: 'Последняя активность', yes: 'да', no: 'нет', released: 'выпущено', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', Global: 'Global (стандартная)', shared: 'общий', regular: 'ящик пользователя', enabled: 'вкл.', disabled: 'выкл.', allowed: 'разрешён', blocked: 'заблокирован', active: 'активны', revoked: 'отозваны' },
     reasons: {
       policyUnscoped: 'Этот профиль подключения может менять только участников своих групп: изменения на весь тенант и скрипты пакетов с ним не выполняются.',

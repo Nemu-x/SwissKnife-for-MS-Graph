@@ -1,12 +1,9 @@
 package services
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
-	"reflect"
-	"sort"
 	"strings"
 
 	"swissknife-app/internal/engine"
@@ -18,19 +15,69 @@ import (
 // between the snapshot and the tenant now, per object, and applying it puts
 // the snapshot's values back (or recreates what was deleted).
 
-// restorable describes a snapshot section that can be written back.
+// restorable describes a Graph snapshot section that can be written back.
 type restorable struct {
-	path     string   // collection path
-	writable []string // properties sent on PATCH/POST
-	typed    bool     // @odata.type must accompany writes (named locations)
+	path string // collection path
+	// writable lists the properties sent on PATCH/POST; nil sends every
+	// property except restoreSkip (Intune's many policy types).
+	writable []string
+	typed    bool // @odata.type must accompany writes
+	// assign: assignments are restored too, through {path}/{id}/assign.
+	assign bool
+	// create holds properties a POST needs that the snapshot does not keep.
+	create map[string]any
 }
 
+// restoreSkip are read-only or separately restored properties of objects
+// restored with every property.
+var restoreSkip = map[string]bool{"id": true, "createdDateTime": true, "lastModifiedDateTime": true, "version": true,
+	"assignments": true, "supportsScopeTags": true, "scheduledActionsForRule": true, "@odata.type": true,
+	// Windows Update rings: set by Intune as pauses expire and rollbacks run.
+	"qualityUpdatesPauseExpiryDateTime": true, "featureUpdatesPauseExpiryDateTime": true,
+	"qualityUpdatesWillBeRolledBack": true, "featureUpdatesWillBeRolledBack": true,
+	"qualityUpdatesRollbackStartDateTime": true, "featureUpdatesRollbackStartDateTime": true,
+	// Read back masked: writing it would replace the real key with the mask.
+	"productKey": true}
+
 var restorableSections = map[string]restorable{
-	"conditionalAccessPolicies": {"/identity/conditionalAccess/policies",
-		[]string{"displayName", "state", "conditions", "grantControls", "sessionControls"}, false},
-	"namedLocations": {"/identity/conditionalAccess/namedLocations",
-		[]string{"displayName", "ipRanges", "isTrusted", "countriesAndRegions", "includeUnknownCountriesAndRegions", "countryLookupMethod"}, true},
+	"conditionalAccessPolicies": {path: "/identity/conditionalAccess/policies",
+		writable: []string{"displayName", "state", "conditions", "grantControls", "sessionControls"}},
+	"namedLocations": {path: "/identity/conditionalAccess/namedLocations",
+		writable: []string{"displayName", "ipRanges", "isTrusted", "countriesAndRegions", "includeUnknownCountriesAndRegions", "countryLookupMethod"}, typed: true},
+	"intuneConfigurations":     {path: "/deviceManagement/deviceConfigurations", typed: true, assign: true},
+	"intuneCompliancePolicies": {path: "/deviceManagement/deviceCompliancePolicies", typed: true, assign: true,
+		// A compliance policy cannot be created without the action taken on
+		// non-compliance: the snapshot's (taken since this version), else
+		// Intune's default — non-compliant at once.
+		create: map[string]any{"scheduledActionsForRule": []any{map[string]any{"ruleName": "PasswordRequired",
+			"scheduledActionConfigurations": []any{map[string]any{"actionType": "block", "gracePeriodHours": 0}}}}}},
 }
+
+// psRestore describes a PowerShell snapshot section that can be written back
+// with its Set- cmdlet (and New- for a deleted object, when it can be made
+// from what the snapshot keeps).
+type psRestore struct {
+	set    string
+	create string   // "" = a deleted object cannot be recreated
+	props  []string // properties passed back to set/create
+	global bool     // one object, no -Identity (organization config)
+	state  bool     // State goes through Enable-/Disable-TransportRule
+}
+
+var psRestorable = map[string]psRestore{
+	"exchangeOrganizationConfig": {set: "Set-OrganizationConfig", global: true, props: []string{"AuditDisabled", "OAuth2ClientProfileEnabled",
+		"CustomerLockBoxEnabled", "MailTipsExternalRecipientsTipsEnabled", "DefaultAuthenticationPolicy", "FocusedInboxOn", "PublicFoldersEnabled"}},
+	// Priority is not written back: each change shifts the other rules, and
+	// rules deleted since make old priorities invalid.
+	"transportRules": {set: "Set-TransportRule", props: []string{"Name", "Mode"}, state: true},
+	"teamsMeetingPolicies": {set: "Set-CsTeamsMeetingPolicy", create: "New-CsTeamsMeetingPolicy", props: []string{"AllowCloudRecording",
+		"AllowTranscription", "AllowAnonymousUsersToJoinMeeting", "AutoAdmittedUsers", "AllowExternalParticipantGiveRequestControl", "AllowMeetNow"}},
+}
+
+// restoreOrder is the order "all" restores in: named locations before the
+// policies that point at them.
+var restoreOrder = []string{"namedLocations", "conditionalAccessPolicies", "intuneConfigurations", "intuneCompliancePolicies",
+	"exchangeOrganizationConfig", "transportRules", "teamsMeetingPolicies"}
 
 func snapshotRestoreAction(s *session.Session) engine.Action {
 	return engine.Action{
@@ -38,11 +85,12 @@ func snapshotRestoreAction(s *session.Session) engine.Action {
 			ID: "config.restore", Capability: "config.snapshot.restore", Page: "security", Danger: engine.Destructive,
 			Fields: []engine.Field{
 				{Name: "snapshot", Kind: engine.FieldSnapshot, Required: true},
-				{Name: "section", Kind: engine.FieldChoice, Required: true, Options: []string{"conditionalAccessPolicies", "namedLocations"}, Default: "conditionalAccessPolicies"},
+				{Name: "section", Kind: engine.FieldChoice, Required: true, Options: append(append([]string{}, restoreOrder...), "all"), Default: "conditionalAccessPolicies"},
 				{Name: "object", Kind: engine.FieldText},
 			},
 			ConfirmField: "snapshot",
-			Permissions:  []string{"Policy.ReadWrite.ConditionalAccess", "Policy.Read.All"},
+			Permissions: []string{"Policy.ReadWrite.ConditionalAccess", "Policy.Read.All", "DeviceManagementConfiguration.ReadWrite.All",
+				"Exchange.ManageAsApp + Organization Management", "Teams Administrator"},
 		},
 		Impls: []engine.Impl{snapshotRestore{svc: NewSnapshotService(s)}},
 	}
@@ -55,6 +103,14 @@ func (snapshotRestore) Backend() engine.Backend { return engine.BackendGraph }
 // subset keeps the writable properties of an object.
 func (r restorable) subset(o map[string]any) map[string]any {
 	out := map[string]any{}
+	if r.writable == nil {
+		for k, v := range o {
+			// Secrets read back as null: never write the null over them.
+			if !restoreSkip[k] && v != nil {
+				out[k] = v
+			}
+		}
+	}
 	for _, k := range r.writable {
 		if v, ok := o[k]; ok {
 			out[k] = v
@@ -138,130 +194,3 @@ func remapLocations(policy map[string]any, snapNames map[string]string, live map
 	return missing
 }
 
-func (x snapshotRestore) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, error) {
-	doc, err := x.svc.load(in["snapshot"])
-	if err != nil {
-		return nil, err
-	}
-	if err := sameTenant(doc.Meta, env.TenantID); err != nil {
-		return nil, fmt.Errorf("%w; restore only into the tenant it came from", err)
-	}
-	sec := in["section"]
-	rs, ok := restorableSections[sec]
-	if !ok {
-		return nil, fmt.Errorf("section %s cannot be restored", sec)
-	}
-	objs, ok := doc.Sections[sec]
-	if !ok {
-		return nil, fmt.Errorf("the snapshot has no %s section (it was skipped when taken)", sec)
-	}
-	filter := strings.TrimSpace(in["object"])
-	byName, err := liveByName(env, rs.path)
-	if err != nil {
-		return nil, err
-	}
-	// Policies refer to named locations by id; resolve them against today.
-	var snapLoc map[string]string
-	var liveLoc map[string][]string
-	liveLocIDs := map[string]bool{}
-	if sec == "conditionalAccessPolicies" {
-		snapLoc = map[string]string{}
-		for _, l := range doc.Sections["namedLocations"] {
-			id, _ := l["id"].(string)
-			name, _ := l["displayName"].(string)
-			snapLoc[id] = name
-		}
-		if liveLoc, err = liveByName(env, "/identity/conditionalAccess/namedLocations"); err != nil {
-			return nil, err
-		}
-		for _, ids := range liveLoc {
-			for _, id := range ids {
-				liveLocIDs[id] = true
-			}
-		}
-	}
-	var changes []engine.Change
-	for _, o := range objs {
-		id, _ := o["id"].(string)
-		label := labelOf(o)
-		if filter != "" && !strings.EqualFold(label, filter) && id != filter {
-			continue
-		}
-		want := rs.subset(normalizeValue(o).(map[string]any))
-		if snapLoc != nil {
-			if missing := remapLocations(want, snapLoc, liveLoc, liveLocIDs); len(missing) > 0 {
-				return nil, fmt.Errorf("policy %q uses named locations that no longer exist (%s); restore the named locations first", label, strings.Join(missing, ", "))
-			}
-		}
-		body, _ := json.Marshal(want)
-		ref := map[string]string{"id": id, "body": string(body), "path": rs.path}
-
-		var live map[string]any
-		err := env.Graph.Get(env.Ctx, rs.path+"/"+url.PathEscape(id), nil, &live)
-		var ge *graphapi.GraphError
-		switch {
-		case errors.As(err, &ge) && ge.StatusCode == 404:
-			// Recreated by hand under the same name: rewrite that one rather
-			// than adding a duplicate.
-			name, _ := o["displayName"].(string)
-			others := byName[strings.ToLower(name)]
-			if len(others) > 1 {
-				return nil, fmt.Errorf("%q was deleted and several objects now have that name; restore it by hand", name)
-			}
-			if len(others) == 1 {
-				other := others[0]
-				ref["id"] = other
-				if err := env.Graph.Get(env.Ctx, rs.path+"/"+url.PathEscape(other), nil, &live); err != nil {
-					return nil, err
-				}
-				break
-			}
-			changes = append(changes, engine.Change{Target: label, Field: "restoredObject", Op: "add", After: "snapshot", Ref: ref})
-			continue
-		case err != nil:
-			return nil, err
-		}
-		have := rs.subset(normalizeValue(live).(map[string]any))
-		var differ []string
-		for _, k := range rs.writable {
-			if !reflect.DeepEqual(normalizeValue(want[k]), have[k]) {
-				differ = append(differ, k)
-			}
-		}
-		if len(differ) == 0 {
-			if filter != "" {
-				changes = append(changes, engine.Change{Target: label, Field: "restoredObject", Op: "none", Ref: ref})
-			}
-			continue
-		}
-		sort.Strings(differ)
-		changes = append(changes, engine.Change{Target: label, Field: "restoredObject", Op: "set",
-			Before: strings.Join(differ, ", "), After: "snapshot", Ref: ref})
-	}
-	if len(changes) == 0 && filter != "" {
-		return nil, fmt.Errorf("no object named %q in the snapshot's %s", filter, sec)
-	}
-	// The typed confirmation names how many objects will be rewritten.
-	n := 0
-	for _, c := range changes {
-		if c.Op != "none" {
-			n++
-		}
-	}
-	if len(changes) > 0 {
-		changes[0].Ref[engine.ConfirmRef] = fmt.Sprintf("restore %d", n)
-	}
-	return changes, nil
-}
-
-func (snapshotRestore) Apply(env engine.Env, in engine.Inputs, ch engine.Change) error {
-	var body map[string]any
-	if err := json.Unmarshal([]byte(ch.Ref["body"]), &body); err != nil {
-		return err
-	}
-	if ch.Op == "add" {
-		// Recreated objects get a new id; the old one is gone for good.
-		return env.Graph.Post(env.Ctx, ch.Ref["path"], body, nil)
-	}
-	return env.Graph.Patch(env.Ctx, ch.Ref["path"]+"/"+url.PathEscape(ch.Ref["id"]), body, nil)
-}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
 import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Target, FileWarning, Swords, Link2, History, Eye, Check, ArrowRight, Minus, Search, LockOpen, KeyRound, ListOrdered } from 'lucide-react'
-import { Button, Field, Input, Spinner } from './ui'
+import { Button, Field, Input, Select, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
 import { useStore } from '../lib/store'
@@ -297,6 +297,14 @@ function CatalogPanel({ entry, mark, askConfirm }: {
       case 'sku':
         return <EntityPicker value={v} onChange={(x) => set(f.name, x)} load={loadSkus} placeholder={t('licensing.pickSku')} />
       case 'choice':
+        // Many options do not fit a segmented control: a list instead.
+        if ((f.options ?? []).length > 4) {
+          return (
+            <Select aria-label={label} value={v} onChange={(e) => set(f.name, e.target.value)} className="w-full">
+              {(f.options ?? []).map((o) => <option key={o} value={o}>{t(`actions.options.${o}`, { defaultValue: o })}</option>)}
+            </Select>
+          )
+        }
         return (
           <div role="radiogroup" aria-label={label} className="flex rounded-lg border border-[var(--border)] bg-[var(--bg)] p-0.5">
             {(f.options ?? []).map((o) => (
@@ -462,9 +470,9 @@ function PlanView({ changes }: { changes: engine.Change[] }) {
             <span className={`flex items-center ${c.op === 'remove' ? 'text-[var(--danger)]' : c.op === 'none' ? 'text-[var(--text-faint)]' : 'text-[var(--ok)]'}`}>
               {c.op === 'remove' ? <Minus size={13} /> : c.op === 'add' ? <Plus size={13} /> : <ArrowRight size={13} />}
             </span>
-            <span className="font-medium">{c.target}</span>
+            <span className="font-medium">{c.note === 'sectionSkipped' ? t(`snapshot.section.${c.target}`, { defaultValue: c.target }) : c.target}</span>
             <span className="text-[var(--text-faint)]">{t(`actions.changeFields.${c.field}`, { defaultValue: c.field })}</span>
-            {c.note !== 'stepFailed' && <span className="text-[var(--text-dim)]">
+            {c.note !== 'stepFailed' && c.note !== 'sectionSkipped' && <span className="text-[var(--text-dim)]">
               {c.op === 'add' ? shown(c.field, c.after)
                 : c.op === 'remove' ? <s>{shown(c.field, c.before)}</s>
                 : c.op === 'none' ? `${shown(c.field, c.after || c.before)} · ${t('actions.op.none')}`
