@@ -471,3 +471,12 @@ test('the worker card says whether the worker answers and what it can run', asyn
   await expect(page.getByText(/Last answered .* · paired /)).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('Settings links to the author on GitHub and Telegram', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.goto('/')
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  const header = page.locator('header').filter({ hasText: 'Settings' })
+  await expect(header.getByRole('button', { name: 'GitHub — Nemu-x' })).toBeVisible()
+  await expect(header.getByRole('button', { name: 'Telegram channel — @nemux_dev' })).toBeVisible()
+})

@@ -8,6 +8,7 @@ import { CapabilitiesCard } from '../components/CapabilitiesCard'
 import { WorkerCard } from '../components/WorkerCard'
 import { MenuCard } from '../components/MenuCard'
 import { SupportCard } from '../components/SupportCard'
+import { SocialLinks } from '../components/SocialLinks'
 import { Card, Select, Button, Badge, Spinner } from '../components/ui'
 import { useStore } from '../lib/store'
 import { ACCENT_PRESETS, isHex } from '../lib/color'
@@ -93,7 +94,7 @@ export function SettingsPage() {
   }
 
   return (
-    <Page title={t('settings.title')}>
+    <Page title={t('settings.title')} actions={<SocialLinks />}>
       <div className="grid max-w-2xl grid-cols-1 gap-4">
         <Card title={t('settings.language')}>
           <Select value={i18n.language.startsWith('ru') ? 'ru' : 'en'}
