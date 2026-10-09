@@ -31,7 +31,13 @@ type restorable struct {
 // restoreSkip are read-only or separately restored properties of objects
 // restored with every property.
 var restoreSkip = map[string]bool{"id": true, "createdDateTime": true, "lastModifiedDateTime": true, "version": true,
-	"assignments": true, "supportsScopeTags": true, "scheduledActionsForRule": true, "@odata.type": true}
+	"assignments": true, "supportsScopeTags": true, "scheduledActionsForRule": true, "@odata.type": true,
+	// Windows Update rings: set by Intune as pauses expire and rollbacks run.
+	"qualityUpdatesPauseExpiryDateTime": true, "featureUpdatesPauseExpiryDateTime": true,
+	"qualityUpdatesWillBeRolledBack": true, "featureUpdatesWillBeRolledBack": true,
+	"qualityUpdatesRollbackStartDateTime": true, "featureUpdatesRollbackStartDateTime": true,
+	// Read back masked: writing it would replace the real key with the mask.
+	"productKey": true}
 
 var restorableSections = map[string]restorable{
 	"conditionalAccessPolicies": {path: "/identity/conditionalAccess/policies",
@@ -41,7 +47,8 @@ var restorableSections = map[string]restorable{
 	"intuneConfigurations":     {path: "/deviceManagement/deviceConfigurations", typed: true, assign: true},
 	"intuneCompliancePolicies": {path: "/deviceManagement/deviceCompliancePolicies", typed: true, assign: true,
 		// A compliance policy cannot be created without the action taken on
-		// non-compliance: mark the device non-compliant at once (Intune's default).
+		// non-compliance: the snapshot's (taken since this version), else
+		// Intune's default — non-compliant at once.
 		create: map[string]any{"scheduledActionsForRule": []any{map[string]any{"ruleName": "PasswordRequired",
 			"scheduledActionConfigurations": []any{map[string]any{"actionType": "block", "gracePeriodHours": 0}}}}}},
 }
@@ -60,7 +67,9 @@ type psRestore struct {
 var psRestorable = map[string]psRestore{
 	"exchangeOrganizationConfig": {set: "Set-OrganizationConfig", global: true, props: []string{"AuditDisabled", "OAuth2ClientProfileEnabled",
 		"CustomerLockBoxEnabled", "MailTipsExternalRecipientsTipsEnabled", "DefaultAuthenticationPolicy", "FocusedInboxOn", "PublicFoldersEnabled"}},
-	"transportRules": {set: "Set-TransportRule", props: []string{"Name", "Mode", "Priority"}, state: true},
+	// Priority is not written back: each change shifts the other rules, and
+	// rules deleted since make old priorities invalid.
+	"transportRules": {set: "Set-TransportRule", props: []string{"Name", "Mode"}, state: true},
 	"teamsMeetingPolicies": {set: "Set-CsTeamsMeetingPolicy", create: "New-CsTeamsMeetingPolicy", props: []string{"AllowCloudRecording",
 		"AllowTranscription", "AllowAnonymousUsersToJoinMeeting", "AutoAdmittedUsers", "AllowExternalParticipantGiveRequestControl", "AllowMeetNow"}},
 }

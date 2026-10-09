@@ -152,7 +152,7 @@ var snapshotSections = []sectionCollector{
 	}, snapshotListCap), nil},
 	{"servicePrincipals", collectServicePrincipalCount, nil},
 	{"intuneConfigurations", listSection("/deviceManagement/deviceConfigurations", url.Values{"$expand": {"assignments"}}, 0), nil},
-	{"intuneCompliancePolicies", listSection("/deviceManagement/deviceCompliancePolicies", url.Values{"$expand": {"assignments"}}, 0), nil},
+	{"intuneCompliancePolicies", collectCompliancePolicies, nil},
 	{"exchangeOrganizationConfig", nil, &psSection{pwsh.BackendExchangePS, pwsh.FamilyExchange, "Get-OrganizationConfig", nil,
 		[]string{"Name", "AuditDisabled", "OAuth2ClientProfileEnabled", "CustomerLockBoxEnabled", "MailTipsExternalRecipientsTipsEnabled",
 			"DefaultAuthenticationPolicy", "FocusedInboxOn", "PublicFoldersEnabled"}, "Name"}},
@@ -242,6 +242,32 @@ func collectDirectoryRoles(ctx context.Context, c *graphapi.Client) ([]map[strin
 		role["members"] = list
 	}
 	return roles, nil
+}
+
+// collectCompliancePolicies lists compliance policies with their assignments
+// and the actions taken on non-compliance (grace period, notifications): a
+// restore recreates a deleted policy with them. A policy whose actions cannot
+// be read is kept without them.
+func collectCompliancePolicies(ctx context.Context, c *graphapi.Client) ([]map[string]any, error) {
+	objs, err := listSection("/deviceManagement/deviceCompliancePolicies", url.Values{"$expand": {"assignments"}}, 0)(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range objs {
+		id, _ := o["id"].(string)
+		var res struct {
+			Value []map[string]any `json:"value"`
+		}
+		if id != "" && c.Get(ctx, "/deviceManagement/deviceCompliancePolicies/"+url.PathEscape(id)+"/scheduledActionsForRule",
+			url.Values{"$expand": {"scheduledActionConfigurations"}}, &res) == nil {
+			list := make([]any, 0, len(res.Value))
+			for _, r := range res.Value {
+				list = append(list, r)
+			}
+			o["scheduledActionsForRule"] = list
+		}
+	}
+	return objs, nil
 }
 
 // collectServicePrincipalCount records only how many enterprise apps exist —

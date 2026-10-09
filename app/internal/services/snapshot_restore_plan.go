@@ -67,13 +67,61 @@ func (x snapshotRestore) Plan(env engine.Env, in engine.Inputs) ([]engine.Change
 			n++
 		}
 	}
-	if len(changes) > 0 {
-		if changes[0].Ref == nil {
-			changes[0].Ref = map[string]string{}
+	// On a real change: the engine ignores it on rows that change nothing.
+	for i := range changes {
+		if changes[i].Op != "none" {
+			changes[i].Ref[engine.ConfirmRef] = fmt.Sprintf("restore %d", n)
+			break
 		}
-		changes[0].Ref[engine.ConfirmRef] = fmt.Sprintf("restore %d", n)
 	}
 	return changes, nil
+}
+
+// encryptedSettings reports a custom profile holding encrypted OMA-URI
+// values: Graph reads them back without the value, so writing the profile
+// would overwrite the secret.
+func encryptedSettings(o map[string]any) bool {
+	list, _ := o["omaSettings"].([]any)
+	for _, s := range list {
+		if m, ok := s.(map[string]any); ok {
+			if enc, _ := m["isEncrypted"].(bool); enc {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// liveGroups drops assignments to groups deleted since the snapshot: Graph
+// refuses the whole assign call for one missing group. It reports whether
+// any was dropped.
+func liveGroups(env engine.Env, targets []any, seen map[string]bool) ([]any, bool, error) {
+	out := targets[:0:0]
+	dropped := false
+	for _, t := range targets {
+		g, _ := t.(map[string]any)["target"].(map[string]any)["groupId"].(string)
+		if g != "" {
+			ok, known := seen[g]
+			if !known {
+				err := env.Graph.Get(env.Ctx, "/groups/"+url.PathEscape(g), url.Values{"$select": {"id"}}, nil)
+				var ge *graphapi.GraphError
+				switch {
+				case err == nil:
+					ok = true
+				case errors.As(err, &ge) && ge.StatusCode == 404:
+				default:
+					return nil, false, err
+				}
+				seen[g] = ok
+			}
+			if !ok {
+				dropped = true
+				continue
+			}
+		}
+		out = append(out, t)
+	}
+	return out, dropped, nil
 }
 
 // planSection plans one section. recreated, in an "all" restore, names the
@@ -120,10 +168,16 @@ func (x snapshotRestore) planSection(env engine.Env, doc *snapshotFile, sec, fil
 		params = url.Values{"$expand": {"assignments"}}
 	}
 	var changes []engine.Change
+	groups := map[string]bool{}
 	for _, o := range objs {
 		id, _ := o["id"].(string)
 		label := labelOf(o)
 		if filter != "" && !strings.EqualFold(label, filter) && id != filter {
+			continue
+		}
+		if encryptedSettings(o) {
+			changes = append(changes, engine.Change{Target: label, Field: "restoredObject", Op: "none", Note: "encryptedSettings",
+				Ref: map[string]string{"section": sec, "id": id}})
 			continue
 		}
 		norm := normalizeValue(o).(map[string]any)
@@ -142,6 +196,16 @@ func (x snapshotRestore) planSection(env engine.Env, doc *snapshotFile, sec, fil
 			}
 		}
 		wantAssign := assignmentTargets(norm["assignments"])
+		note := ""
+		if rs.assign {
+			var dropped bool
+			if wantAssign, dropped, err = liveGroups(env, wantAssign, groups); err != nil {
+				return nil, err
+			}
+			if dropped {
+				note = "assignmentGroupGone"
+			}
+		}
 		if rs.assign && len(wantAssign) > 0 {
 			a, _ := json.Marshal(wantAssign)
 			ref["assign"] = string(a)
@@ -170,9 +234,14 @@ func (x snapshotRestore) planSection(env engine.Env, doc *snapshotFile, sec, fil
 			for k, v := range rs.create {
 				want[k] = v
 			}
+			if acts := scheduledActions(o["scheduledActionsForRule"]); acts != nil && rs.create != nil {
+				want["scheduledActionsForRule"] = acts
+			} else if rs.create != nil && note == "" {
+				note = "defaultComplianceAction"
+			}
 			body, _ := json.Marshal(want)
 			ref["body"] = string(body)
-			changes = append(changes, engine.Change{Target: label, Field: "restoredObject", Op: "add", After: "snapshot", Ref: ref})
+			changes = append(changes, engine.Change{Target: label, Field: "restoredObject", Op: "add", After: "snapshot", Note: note, Ref: ref})
 			continue
 		case err != nil:
 			return nil, err
@@ -216,9 +285,40 @@ func (x snapshotRestore) planSection(env engine.Env, doc *snapshotFile, sec, fil
 		}
 		sort.Strings(differ)
 		changes = append(changes, engine.Change{Target: label, Field: "restoredObject", Op: "set",
-			Before: strings.Join(differ, ", "), After: "snapshot", Ref: ref})
+			Before: strings.Join(differ, ", "), After: "snapshot", Note: note, Ref: ref})
 	}
 	return changes, nil
+}
+
+// scheduledActions turns a snapshot's non-compliance actions into what a
+// create takes (ids dropped); nil when the snapshot has none.
+func scheduledActions(v any) []any {
+	list, _ := v.([]any)
+	if len(list) == 0 {
+		return nil
+	}
+	var out []any
+	for _, r := range list {
+		rule, _ := r.(map[string]any)
+		if rule == nil {
+			continue
+		}
+		var confs []any
+		cl, _ := rule["scheduledActionConfigurations"].([]any)
+		for _, c := range cl {
+			if m, ok := c.(map[string]any); ok {
+				cp := map[string]any{}
+				for k, x := range m {
+					if k != "id" && !strings.HasPrefix(k, "@") {
+						cp[k] = x
+					}
+				}
+				confs = append(confs, cp)
+			}
+		}
+		out = append(out, map[string]any{"ruleName": rule["ruleName"], "scheduledActionConfigurations": confs})
+	}
+	return out
 }
 
 // assignmentTargets reduces Intune assignments to their targets, in a stable

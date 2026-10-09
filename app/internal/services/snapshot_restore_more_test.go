@@ -30,6 +30,8 @@ func TestRestoreIntunePoliciesWithAssignments(t *testing.T) {
 		case r.Method == "GET" && r.URL.Path == "/deviceManagement/deviceConfigurations/c1":
 			_, _ = w.Write([]byte(`{"@odata.type":"#microsoft.graph.windows10GeneralConfiguration","id":"c1","displayName":"Win baseline",
 				"passwordRequired":false,"wifiKey":"set","version":5,"assignments":[]}`))
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/groups/") && r.URL.Path != "/groups/gone":
+			_, _ = w.Write([]byte(`{"id":"x"}`))
 		case r.Method == "GET" && r.URL.Path == "/deviceManagement/deviceCompliancePolicies":
 			_, _ = w.Write([]byte(`{"value":[]}`))
 		case r.Method == "GET":
@@ -51,11 +53,13 @@ func TestRestoreIntunePoliciesWithAssignments(t *testing.T) {
 	id := savedSnapshot(t, dir, map[string][]map[string]any{
 		"intuneConfigurations": {
 			{"@odata.type": "#microsoft.graph.windows10GeneralConfiguration", "id": "c1", "displayName": "Win baseline",
-				"passwordRequired": true, "wifiKey": nil, "version": 3, "assignments": group("g1")},
+				"passwordRequired": true, "wifiKey": nil, "version": 3, "assignments": append(group("g1"), group("gone")...)},
 			{"@odata.type": "#microsoft.graph.iosGeneralDeviceConfiguration", "id": "c2", "displayName": "iOS", "assignments": group("g2")},
 		},
 		"intuneCompliancePolicies": {
-			{"@odata.type": "#microsoft.graph.windows10CompliancePolicy", "id": "p1", "displayName": "Win compliance", "assignments": group("g3")},
+			{"@odata.type": "#microsoft.graph.windows10CompliancePolicy", "id": "p1", "displayName": "Win compliance", "assignments": group("g3"),
+				"scheduledActionsForRule": []any{map[string]any{"id": "r1", "ruleName": "PasswordRequired", "scheduledActionConfigurations": []any{
+					map[string]any{"id": "s1", "actionType": "block", "gracePeriodHours": 72}}}}},
 		},
 	})
 	e := NewEngine(sess)
@@ -66,6 +70,9 @@ func TestRestoreIntunePoliciesWithAssignments(t *testing.T) {
 	got := map[string]string{}
 	for _, c := range p.Changes {
 		got[c.Target] = c.Op + ":" + c.Before + ":" + c.Step
+		if c.Target == "Win baseline" && c.Note != "assignmentGroupGone" {
+			t.Errorf("a deleted assignment group is reported: %+v", c)
+		}
 	}
 	want := map[string]string{
 		"Win baseline":   "set:assignments, passwordRequired:snapshot.section.intuneConfigurations",
@@ -103,8 +110,11 @@ func TestRestoreIntunePoliciesWithAssignments(t *testing.T) {
 			t.Errorf("%s: %q", path, bodies[path])
 		}
 	}
-	if !strings.Contains(bodies["POST /deviceManagement/deviceCompliancePolicies"], "scheduledActionsForRule") {
-		t.Fatal("a compliance policy is created with its non-compliance action")
+	if b := bodies["POST /deviceManagement/deviceCompliancePolicies"]; !strings.Contains(b, `"gracePeriodHours":72`) || strings.Contains(b, `"s1"`) {
+		t.Fatalf("a compliance policy is recreated with the snapshot's non-compliance actions: %s", b)
+	}
+	if strings.Contains(bodies["POST /deviceManagement/deviceConfigurations/c1/assign"], "gone") {
+		t.Fatal("a deleted group is not assigned")
 	}
 }
 
@@ -234,5 +244,39 @@ func TestRestoreAllRemapsRecreatedLocations(t *testing.T) {
 	}
 	if !strings.Contains(patch, `"l1new"`) || strings.Contains(patch, `"l1"`) {
 		t.Fatalf("the policy must point at the recreated location: %s", patch)
+	}
+}
+
+// The typed "restore N" lands on a real change even when the first row is a
+// section that could not be read.
+func TestRestoreConfirmationSurvivesASkippedFirstSection(t *testing.T) {
+	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/identity/conditionalAccess/namedLocations":
+			_, _ = w.Write([]byte(`{"value":[]}`))
+		case strings.HasPrefix(r.URL.Path, "/identity/conditionalAccess/namedLocations/"):
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":{"code":"Forbidden","message":"no"}}`))
+		case r.URL.Path == "/identity/conditionalAccess/policies":
+			_, _ = w.Write([]byte(`{"value":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"code":"ResourceNotFound","message":"gone"}}`))
+		}
+	})
+	dir := t.TempDir()
+	sess.SetConfigDir(dir)
+	sess.SetIdentity("tenant-a", true)
+	id := savedSnapshot(t, dir, map[string][]map[string]any{
+		"namedLocations":            {{"id": "l1", "displayName": "Office"}},
+		"conditionalAccessPolicies": {{"id": "p1", "displayName": "MFA", "state": "enabled"}},
+	})
+	e := NewEngine(sess)
+	p, err := e.Plan("config.restore", map[string]string{"snapshot": id, "section": "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Changes[0].Note != "sectionSkipped" || p.ConfirmTarget != "restore 1" {
+		t.Fatalf("plan %+v confirm %q", p.Changes, p.ConfirmTarget)
 	}
 }
