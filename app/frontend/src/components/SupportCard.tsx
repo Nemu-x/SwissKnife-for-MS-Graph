@@ -47,7 +47,7 @@ export function SupportCard() {
               <div key={w.asset} className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5">
                 <span className="w-28 shrink-0 text-xs font-medium text-[var(--text-dim)]">{w.asset}</span>
                 <span className="min-w-0 flex-1 truncate font-mono text-xs" title={w.address}>{w.address}</span>
-                <button onClick={() => copy(w.asset, w.address)} aria-label={t('common.copy')}
+                <button onClick={() => copy(w.asset, w.address)} aria-label={`${t('common.copy')} ${w.asset}`}
                   className="shrink-0 rounded-md p-1 text-[var(--text-faint)] hover:bg-[var(--bg-elev-2)] hover:text-[var(--text)]">
                   <Copy size={13} />
                 </button>

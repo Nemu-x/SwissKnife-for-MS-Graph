@@ -11,7 +11,8 @@ import type { PageId } from '../pages/registry'
 export function MenuCard() {
   const { t } = useTranslation()
   const { hiddenPages, setHiddenPages, workspaces } = useStore()
-  const all = [...NAV_PINNED, ...NAV_GROUPS.flatMap((g) => g.items)].filter((it) => pageEnabled(it.id, workspaces))
+  // The preset covers every page, also those of a part switched off now.
+  const everyPage = [...NAV_PINNED, ...NAV_GROUPS.flatMap((g) => g.items)].map((it) => it.id)
   const toggle = (id: PageId, show: boolean) =>
     setHiddenPages(show ? hiddenPages.filter((p) => p !== id) : [...hiddenPages, id])
   const sections = [{ key: '', items: NAV_PINNED }, ...NAV_GROUPS]
@@ -20,7 +21,7 @@ export function MenuCard() {
     <Card title={t('settings.menu.title')}>
       <p className="text-xs text-[var(--text-faint)]">{t('settings.menu.hint')}</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button variant="subtle" onClick={() => setHiddenPages(all.map((it) => it.id).filter((id) => !ESSENTIAL_PAGES.includes(id)))}>
+        <Button variant="subtle" onClick={() => setHiddenPages(everyPage.filter((id) => !ESSENTIAL_PAGES.includes(id)))}>
           {t('settings.menu.essentials')}
         </Button>
         <Button variant="ghost" onClick={() => setHiddenPages([])}>{t('settings.menu.everything')}</Button>

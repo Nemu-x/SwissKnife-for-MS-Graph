@@ -102,7 +102,7 @@ export function Layout({
   const { connected, status, readOnly, access, hideUnavailable, workspaces, hiddenPages } = useStore()
   // Icons only, names on hover: more room for the page.
   const [compact, setCompact] = useState(loadCompactNav)
-  const toggleCompact = () => setCompact((c) => { saveCompactNav(!c); return !c })
+  const toggleCompact = () => { setTip(null); setCompact((c) => { saveCompactNav(!c); return !c }) }
   // The hover label is drawn outside the scrolling nav, so it is never clipped.
   const [tip, setTip] = useState<{ text: string; top: number } | null>(null)
   const tipProps = (text: string) => compact ? {
@@ -210,6 +210,9 @@ export function Layout({
                   className={`h-2.5 w-2.5 rounded-full ${connected ? 'bg-[var(--ok)]' : 'bg-[var(--text-faint)]'}`} />
               )}
               {readOnly && <span {...tipProps(t('safety.readOnly'))} tabIndex={0} className="text-[var(--warn)]"><Lock size={13} /></span>}
+              {connected && (status as any)?.policy && ((status as any).policy.maxDanger || (status as any).policy.allowedGroups?.length > 0) && (
+                <span {...tipProps(t('connect.limits.badge'))} tabIndex={0} className="text-[var(--warn)]"><ShieldHalf size={13} /></span>
+              )}
             </>
           ) : <>
           {workspaces.cloud && <div className="flex items-center gap-1.5">
