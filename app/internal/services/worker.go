@@ -32,6 +32,14 @@ type WorkerInfo struct {
 	Name        string    `json:"name"`
 	PairedAt    time.Time `json:"pairedAt"`
 	Families    []string  `json:"families"` // from its last health answer
+	// Unavailable: families enabled there whose module is missing.
+	Unavailable []string `json:"unavailable,omitempty"`
+	Version     string   `json:"version,omitempty"`
+	// LastSeen is the last answer; Online and LastError the last check's
+	// outcome (Online is false until a check this session).
+	LastSeen  time.Time `json:"lastSeen,omitempty"`
+	Online    bool      `json:"online"`
+	LastError string    `json:"lastError,omitempty"`
 }
 
 var workerMu sync.Mutex
@@ -50,6 +58,7 @@ func loadWorker(s *session.Session) *WorkerInfo {
 	if json.Unmarshal(b, &w) != nil || w.Addr == "" || w.Fingerprint == "" {
 		return nil
 	}
+	w.Online = false // known only from a check in this session
 	return &w
 }
 
@@ -279,14 +288,17 @@ func (x *WorkerService) Pair(addr, code string) (*WorkerInfo, error) {
 	}
 	w := &WorkerInfo{Addr: addr, Fingerprint: fp, Name: name, PairedAt: time.Now()}
 	if h, err := worker.NewRemote(addr, fp, id).Health(ctx); err == nil {
-		w.Families = h.Families
+		w.Families, w.Unavailable, w.Version = h.Families, h.Unavailable, h.Version
+		w.LastSeen, w.Online = time.Now(), true
 	}
 	workerMu.Lock()
 	defer workerMu.Unlock()
 	return w, saveWorker(x.s, w)
 }
 
-// Check asks the worker what it runs now and remembers it.
+// Check asks the worker what it runs now and remembers it. An unreachable
+// worker is reported as offline (with why), not as an error: what it ran
+// last time stays visible.
 func (x *WorkerService) Check() (*WorkerInfo, error) {
 	r, w := remoteFor(x.s)
 	if r == nil {
@@ -296,10 +308,11 @@ func (x *WorkerService) Check() (*WorkerInfo, error) {
 	defer cancel()
 	h, err := r.Health(ctx)
 	if err != nil {
-		return nil, err
+		w.Online, w.LastError = false, err.Error()
+		return w, nil
 	}
-	w.Families = h.Families
-	w.Name = h.Name
+	w.Families, w.Unavailable, w.Version, w.Name = h.Families, h.Unavailable, h.Version, h.Name
+	w.LastSeen, w.Online, w.LastError = time.Now(), true, ""
 	workerMu.Lock()
 	defer workerMu.Unlock()
 	return w, saveWorker(x.s, w)

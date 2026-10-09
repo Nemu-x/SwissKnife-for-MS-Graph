@@ -2109,6 +2109,12 @@ export namespace services {
 	    // Go type: time
 	    pairedAt: any;
 	    families: string[];
+	    unavailable?: string[];
+	    version?: string;
+	    // Go type: time
+	    lastSeen?: any;
+	    online: boolean;
+	    lastError?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new WorkerInfo(source);
@@ -2121,6 +2127,11 @@ export namespace services {
 	        this.name = source["name"];
 	        this.pairedAt = this.convertValues(source["pairedAt"], null);
 	        this.families = source["families"];
+	        this.unavailable = source["unavailable"];
+	        this.version = source["version"];
+	        this.lastSeen = this.convertValues(source["lastSeen"], null);
+	        this.online = source["online"];
+	        this.lastError = source["lastError"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

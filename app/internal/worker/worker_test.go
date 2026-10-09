@@ -189,3 +189,13 @@ func TestRevokeFromAnotherProcessAndPerConnectionRunners(t *testing.T) {
 		t.Fatal("unpaired")
 	}
 }
+
+// Health says which enabled families run now and which miss their module.
+func TestHealthSplitsReadyAndMissingFamilies(t *testing.T) {
+	s := &Server{Families: map[string]bool{"exo": true, "teams": true, "ipps": false},
+		Available: func() map[string]bool { return map[string]bool{"exo": true, "ipps": true} }}
+	ready, missing := s.familyState()
+	if strings.Join(ready, ",") != "exo" || strings.Join(missing, ",") != "teams" {
+		t.Fatalf("ready %v missing %v", ready, missing)
+	}
+}

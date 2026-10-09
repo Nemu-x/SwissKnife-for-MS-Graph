@@ -49,6 +49,9 @@ type Health struct {
 	Name     string   `json:"name"`
 	Version  string   `json:"version"`
 	Families []string `json:"families"` // module families it will run
+	// Unavailable are families the operator enabled whose module is not
+	// usable there now (PowerShell or the module missing).
+	Unavailable []string `json:"unavailable,omitempty"`
 }
 
 // PairedClient is a client allowed to call the worker.
@@ -356,23 +359,30 @@ func (s *Server) handleUnpair(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) families() []string {
+// familyState splits the enabled families into those that run now and
+// those whose module is missing.
+func (s *Server) familyState() (ready, missing []string) {
 	var avail map[string]bool
 	if s.Available != nil {
 		avail = s.Available()
 	}
-	var out []string
 	for f, on := range s.Families {
-		if on && (avail == nil || avail[f]) {
-			out = append(out, f)
+		switch {
+		case !on:
+		case avail == nil || avail[f]:
+			ready = append(ready, f)
+		default:
+			missing = append(missing, f)
 		}
 	}
-	sort.Strings(out)
-	return out
+	sort.Strings(ready)
+	sort.Strings(missing)
+	return ready, missing
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	_ = json.NewEncoder(w).Encode(Health{Name: s.Name, Version: s.Version, Families: s.families()})
+	ready, missing := s.familyState()
+	_ = json.NewEncoder(w).Encode(Health{Name: s.Name, Version: s.Version, Families: ready, Unavailable: missing})
 }
 
 func (s *Server) allowed(family, cmdlet string) bool {

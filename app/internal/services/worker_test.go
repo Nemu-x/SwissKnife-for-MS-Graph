@@ -94,3 +94,44 @@ func (unavailablePS) Backend() engine.Backend { return pwsh.BackendExchangePS }
 func (unavailablePS) Status(*session.Session) *engine.Reason {
 	return &engine.Reason{Key: "pwshMissing"}
 }
+
+// The worker card's status: online with a last-seen time after a check;
+// offline (with why) once it stops answering, keeping what it ran.
+func TestWorkerCheckReportsOnlineAndOffline(t *testing.T) {
+	wdir := t.TempDir()
+	wid, _ := worker.LoadOrCreateIdentity(wdir, "worker")
+	srv := &worker.Server{Identity: wid, Dir: wdir, Name: "SRV01", Version: "2.0.0", NewRunner: func() engine.PSRunner { return &echoRunner{} },
+		Families: map[string]bool{"exo": true, "teams": true}, Available: func() map[string]bool { return map[string]bool{"exo": true} },
+		Allow: map[string][]string{"exo": {"Get-Mailbox"}}, Audit: auditlog.New(wdir)}
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _ = srv.ServeListener(ctx, l) }()
+	code := srv.StartPairing()
+
+	sess := session.New(auditlog.New(t.TempDir()))
+	sess.SetConfigDir(t.TempDir())
+	ws := NewWorkerService(sess)
+	if _, err := ws.Pair(l.Addr().String(), code); err != nil {
+		t.Fatal(err)
+	}
+	w, err := ws.Check()
+	if err != nil || !w.Online || w.LastSeen.IsZero() || w.Version != "2.0.0" ||
+		strings.Join(w.Families, ",") != "exo" || strings.Join(w.Unavailable, ",") != "teams" {
+		t.Fatalf("online: %+v %v", w, err)
+	}
+	if ws.Status().Online {
+		t.Fatal("online is known only from a check in this session")
+	}
+	cancel()
+	_ = l.Close()
+	workerMu.Lock()
+	for k, r := range remotes { // drop the kept-alive connection
+		r.Close()
+		delete(remotes, k)
+	}
+	workerMu.Unlock()
+	w, err = ws.Check()
+	if err != nil || w.Online || w.LastError == "" || strings.Join(w.Families, ",") != "exo" || w.LastSeen.IsZero() {
+		t.Fatalf("offline: %+v %v", w, err)
+	}
+}
