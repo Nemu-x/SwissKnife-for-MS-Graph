@@ -288,9 +288,10 @@ func (e *Engine) Catalog() []CatalogEntry {
 			entry.Fields = []Field{} // the UI maps over it: [] not null
 		}
 		impl, reason := e.resolve(a)
+		pr := e.policyReason(a)
 		switch {
-		case !onDirectory(a) && !dangerAllowed(effectiveDanger(a), e.s.Policy().MaxDanger):
-			entry.Reason = &Reason{Key: "policy"}
+		case pr != nil:
+			entry.Reason = pr
 		case impl != nil:
 			entry.Available, entry.Backend = true, impl.Backend()
 			entry.MissingPermissions = missingPermissions(a.Manifest, have)

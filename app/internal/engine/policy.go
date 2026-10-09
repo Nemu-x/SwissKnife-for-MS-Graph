@@ -61,6 +61,35 @@ func (e *Engine) checkPolicy(env Env, a Action, in Inputs) error {
 	return nil
 }
 
+// policyReason is what the profile's limits say about an action before any
+// input is known: the danger ceiling, and under a group scope the actions
+// that can never pass it (pack scripts, tenant-wide changes). The catalog
+// and the capabilities view use it; checkPolicy stays the authority.
+func (e *Engine) policyReason(a Action) *Reason {
+	if onDirectory(a) {
+		return nil
+	}
+	pol := e.s.Policy()
+	if !dangerAllowed(effectiveDanger(a), pol.MaxDanger) {
+		return &Reason{Key: "policy"}
+	}
+	if len(pol.AllowedGroups) == 0 {
+		return nil
+	}
+	if a.Pack != "" && !a.Workflow {
+		return &Reason{Key: "policyUnscoped"}
+	}
+	if a.Danger == Read {
+		return nil
+	}
+	for _, f := range a.Fields {
+		if f.Kind == FieldUser || f.Kind == FieldGroup {
+			return nil
+		}
+	}
+	return &Reason{Key: "policyUnscoped"}
+}
+
 // CheckTarget applies the group scope to one user or group outside the
 // catalog (playbooks naming their target).
 func (e *Engine) CheckTarget(env Env, kind FieldKind, v string) error {

@@ -61,7 +61,8 @@ func (e *Engine) CapabilityAction(c string) (string, bool) {
 	return "", false
 }
 
-// Capabilities lists every capability with its implementation chain.
+// Capabilities lists every capability with its implementation chain. Each
+// backend is checked once (a PowerShell check can take seconds).
 func (e *Engine) Capabilities() []CapabilityView {
 	e.mu.RLock()
 	all := make([]Action, 0, len(e.actions))
@@ -69,6 +70,30 @@ func (e *Engine) Capabilities() []CapabilityView {
 		all = append(all, a)
 	}
 	e.mu.RUnlock()
+	type backendState struct {
+		reason *Reason
+		via    string
+	}
+	states := map[Backend]backendState{}
+	stateOf := func(b Backend) backendState {
+		if st, ok := states[b]; ok {
+			return st
+		}
+		var st backendState
+		p, ok := e.providers[b]
+		switch {
+		case !ok:
+			st.reason = &Reason{Key: "backendMissing", Params: map[string]string{"backend": string(b)}}
+		default:
+			if st.reason = p.Status(e.s); st.reason == nil {
+				if r, ok := p.(Router); ok {
+					st.via = r.Via(e.s)
+				}
+			}
+		}
+		states[b] = st
+		return st
+	}
 	out := make([]CapabilityView, 0, len(all))
 	for _, a := range all {
 		v := CapabilityView{Capability: capabilityOf(a.Manifest), Action: a.ID, Page: a.Page, Danger: a.Danger,
@@ -76,22 +101,21 @@ func (e *Engine) Capabilities() []CapabilityView {
 		if a.Gate != nil {
 			v.Reason = a.Gate()
 		}
-		if v.Reason == nil && !onDirectory(a) && !dangerAllowed(effectiveDanger(a), e.s.Policy().MaxDanger) {
-			v.Reason = &Reason{Key: "policy"}
+		if v.Reason == nil {
+			v.Reason = e.policyReason(a)
 		}
 		picked := false
 		for _, impl := range a.Impls {
-			st := ImplStatus{Backend: impl.Backend(), State: "unavailable"}
-			p, ok := e.providers[impl.Backend()]
-			if !ok {
-				st.Reason = &Reason{Key: "backendMissing", Params: map[string]string{"backend": string(impl.Backend())}}
-			} else if st.Reason = p.Status(e.s); st.Reason == nil {
+			bs := stateOf(impl.Backend())
+			st := ImplStatus{Backend: impl.Backend(), State: "unavailable", Reason: bs.reason}
+			if bs.reason == nil {
 				st.State = "ready"
 				if !picked && v.Reason == nil {
 					st.State, picked = "runs", true
 				}
-				if r, ok := p.(Router); ok {
-					st.Via = r.Via(e.s)
+				// Pack scripts never leave this machine.
+				if a.Pack == "" || a.Workflow {
+					st.Via = bs.via
 				}
 			}
 			v.Impls = append(v.Impls, st)

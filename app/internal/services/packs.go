@@ -120,10 +120,16 @@ func packActions(s *session.Session, e *engine.Engine, list []packs.Pack) []engi
 			if d.Module == "teams" {
 				impl.family, impl.backend = pwsh.FamilyTeams, pwsh.BackendTeamsPS
 			}
+			module := d.Module
 			a := engine.Action{
 				Manifest: engine.Manifest{ID: id, Page: d.Page, Danger: engine.Danger(d.Danger),
 					Fields: fields, ConfirmField: d.ConfirmField, Label: d.Label, Hint: d.Hint, Pack: p.Manifest.Name},
-				Gate: gate,
+				Gate: func() *engine.Reason {
+					if r := gate(); r != nil {
+						return r
+					}
+					return packLocalPS(s, module)
+				},
 			}
 			if d.Danger == "read" {
 				a.Impls = []engine.Impl{engine.ReadImpl(packReader{impl})}
@@ -136,6 +142,16 @@ func packActions(s *session.Session, e *engine.Engine, list []packs.Pack) []engi
 		out = append(out, wf...)
 	}
 	return out
+}
+
+// packLocalPS reports whether this machine can run a pack script: pack
+// scripts never run on the worker, so PowerShell and the module must be here
+// (tests replace it).
+var packLocalPS = func(s *session.Session, module string) *engine.Reason {
+	if module == "teams" {
+		return pwsh.NewTeamsProvider(psDetector).Status(s)
+	}
+	return pwsh.NewExchangeProvider(psDetector).Status(s)
 }
 
 // workflowActions builds a pack's workflows as catalog actions.
@@ -367,7 +383,7 @@ type PacksService struct{ s *session.Session }
 
 func NewPacksService(s *session.Session) *PacksService { return &PacksService{s: s} }
 
-func (x *PacksService) infos(list []packs.Pack) []PackInfo {
+func (x *PacksService) infos(list []packs.Pack, e *engine.Engine) []PackInfo {
 	out := []PackInfo{}
 	for _, p := range list {
 		pi := PackInfo{Name: p.Manifest.Name, Version: p.Manifest.Version, Author: p.Manifest.Author, Description: p.Manifest.Description,
@@ -381,7 +397,13 @@ func (x *PacksService) infos(list []packs.Pack) []PackInfo {
 		for _, w := range p.Manifest.Workflows {
 			f := PackFlowInfo{ID: w.ID, Label: w.Label, Page: w.Page, Steps: []string{}}
 			for _, st := range w.Steps {
-				f.Steps = append(f.Steps, st.Action)
+				id := st.Action
+				if st.Capability != "" {
+					if id, _ = e.CapabilityAction(st.Capability); id == "" {
+						id = st.Capability
+					}
+				}
+				f.Steps = append(f.Steps, id)
 			}
 			pi.Workflows = append(pi.Workflows, f)
 		}
@@ -395,7 +417,8 @@ func (x *PacksService) List() ([]PackInfo, error) {
 	if x.s.ConfigDir() == "" {
 		return nil, errors.New("config directory is not set")
 	}
-	return x.infos(reloadPacks(x.s, EngineFor(x.s))), nil
+	e := EngineFor(x.s)
+	return x.infos(reloadPacks(x.s, e), e), nil
 }
 
 // Trust pins a pack's exact contents. digest is what the operator reviewed:

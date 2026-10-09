@@ -63,3 +63,32 @@ func TestDuplicateCapabilityPanics(t *testing.T) {
 	}()
 	e.Register(Action{Manifest: Manifest{ID: "b", Capability: "x.y.z"}, Impls: []Impl{fakeImpl{backend: "graph"}}})
 }
+
+// Under a group scope, tenant-wide changes and pack scripts can never pass
+// the policy: the catalog and the capabilities view say so up front.
+func TestGroupScopeMarksUnscopedActions(t *testing.T) {
+	s := newSession(t)
+	s.SetPolicy("", session.Policy{AllowedGroups: []string{"g1"}})
+	e := New(s, fakeProvider{backend: "graph"})
+	e.Register(
+		Action{Manifest: Manifest{ID: "tenantWide", Danger: Write}, Impls: []Impl{fakeImpl{backend: "graph"}}},
+		Action{Manifest: Manifest{ID: "perUser", Danger: Write, Fields: []Field{{Name: "user", Kind: FieldUser}}}, Impls: []Impl{fakeImpl{backend: "graph"}}},
+		Action{Manifest: Manifest{ID: "report", Danger: Read}, Impls: []Impl{fakeImpl{backend: "graph"}}},
+	)
+	want := map[string]string{"tenantWide": "policyUnscoped", "perUser": "", "report": ""}
+	for _, c := range e.Catalog() {
+		got := ""
+		if c.Reason != nil {
+			got = c.Reason.Key
+		}
+		if got != want[c.ID] {
+			t.Errorf("catalog %s: reason %q, want %q", c.ID, got, want[c.ID])
+		}
+	}
+	for _, c := range e.Capabilities() {
+		runs := c.Impls[0].State == "runs"
+		if runs != (want[c.Action] == "") {
+			t.Errorf("capabilities %s: %+v", c.Action, c)
+		}
+	}
+}

@@ -1471,6 +1471,7 @@ const ru: Dict<typeof en> = {
     notes: { defaultPhone: 'Если этот телефон — способ входа по умолчанию, Microsoft не даёт удалить его здесь: назначьте другой способ по умолчанию (или удалите его) в центре администрирования Entra.', stepFailed: 'Этот шаг не удалось спланировать, он пропущен: {{error}}', noSuspiciousRules: 'Подозрительных правил не найдено.', purge: { recoverable: 'перенесены в Recoverable Items — можно вернуть', permanent: 'удалены безвозвратно — не вернуть', recoverableOverLimit: 'вероятно, больше 100 в некоторых ящиках: за проход удаляется не больше 100 на ящик — проверьте дело в Purview после' }, forwardKeepCopy: 'копия остаётся в ящике', forwardNoCopy: 'копия в ящике не остаётся', inheritedLicense: 'Выдана через группу — уберите пользователя из группы (или лицензию у группы).' },
     values: { randomPassword: 'новый случайный пароль', locked: 'заблокирована', unlocked: 'разблокирована', newPassword: 'новый пароль задан', newPasswordMustChange: 'новый пароль, смена при входе', snapshot: 'как в снапшоте', included: 'включено', excluded: 'исключено', required: 'обязательно', available: 'доступно', uninstall: 'удалить', allUsers: 'все пользователи', allDevices: 'все устройства', configuration: 'конфигурация', compliance: 'соответствие', settingsCatalog: 'каталог параметров', conflict: 'конфликт', app: 'приложение', TotalItemSize: 'Общий размер', ItemCount: 'Писем', DeletedItemCount: 'Удалённых', TotalDeletedItemSize: 'Размер удалённых', LastUserActionTime: 'Последняя активность', yes: 'да', no: 'нет', released: 'выпущено', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', Global: 'Global (стандартная)', shared: 'общий', regular: 'ящик пользователя', enabled: 'вкл.', disabled: 'выкл.', allowed: 'разрешён', blocked: 'заблокирован', active: 'активны', revoked: 'отозваны' },
     reasons: {
+      policyUnscoped: 'Этот профиль подключения может менять только участников своих групп: изменения на весь тенант и скрипты пакетов с ним не выполняются.',
       stepUnavailable: 'Шаг этого сценария сейчас не может выполниться ({{action}}).',
       packDisabled: 'Пакет выключен в Настройки → Пакеты действий.',
       packUntrusted: 'Из пакета действий, которому вы ещё не доверились — Настройки → Пакеты действий.',
@@ -1486,7 +1487,7 @@ const ru: Dict<typeof en> = {
       exoApiNotEnabled: 'Exchange Admin API в этом тенанте пока недоступен (Preview) — это закроет PowerShell-бэкенд.',
       exoUnreachable: 'Exchange Online не ответил — проверьте сеть и попробуйте ещё раз.',
     },
-    backends: { 'ldap-tls': 'AD (TLS)', 'exo-ps': 'Exchange PS', 'teams-ps': 'Teams PS', graph: 'Graph', 'exo-api': 'Exchange', pwsh: 'PowerShell', compliance: 'Compliance', ldap: 'AD', worker: 'Воркер' },
+    backends: { workflow: 'Сценарий', 'ldap-tls': 'AD (TLS)', 'exo-ps': 'Exchange PS', 'teams-ps': 'Teams PS', graph: 'Graph', 'exo-api': 'Exchange', pwsh: 'PowerShell', compliance: 'Compliance', ldap: 'AD', worker: 'Воркер' },
   },
   powershell: {
     installPwsh: 'Установить PowerShell 7',

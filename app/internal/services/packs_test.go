@@ -92,6 +92,21 @@ func TestPackActionsNeedTrustAndRunThroughTheScriptHost(t *testing.T) {
 		t.Fatalf("trusted pack: %+v", c)
 	}
 
+	// Pack scripts run only here: without PowerShell on this machine the
+	// action is unavailable, whatever a worker could run.
+	packLocalPS = func(*session.Session, string) *engine.Reason { return &engine.Reason{Key: "pwshMissing"} }
+	if c := entry(); c.Available || c.Reason.Key != "pwshMissing" {
+		t.Fatalf("no local PowerShell: %+v", c)
+	}
+	for _, c := range e.Capabilities() {
+		for _, i := range c.Impls {
+			if c.Action == "pack.contoso-tools.setHold" && (i.State == "runs" || i.Via != "") {
+				t.Fatalf("a pack script is not routed: %+v", c)
+			}
+		}
+	}
+	packLocalPS = func(*session.Session, string) *engine.Reason { return nil }
+
 	fake.reply = []string{`{"target":"ann@contoso.com","field":"hold","op":"set","before":"off","after":"on","ref":{"id":"m1","confirmRef":"x"}}`}
 	p, err := e.Plan("pack.contoso-tools.setHold", engine.Inputs{"mailbox": "ann@contoso.com"})
 	if err != nil {

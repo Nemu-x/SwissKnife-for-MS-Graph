@@ -390,6 +390,7 @@ test('capabilities show what runs, the fallbacks and why the others cannot', asy
 
   const mail = page.locator('[data-capability="exchange.mailbox.sendOnBehalf"]')
   await expect(mail.getByText('Exchange PS · via worker')).toBeVisible()
+  await expect(mail.getByText(/Exchange: The Exchange Admin API is not available/)).toBeVisible()
   await expect(page.getByText('1 of 3 can run now')).toBeVisible()
   await page.getByLabel('Only those that cannot run').check()
   await expect(mail).toHaveCount(0)

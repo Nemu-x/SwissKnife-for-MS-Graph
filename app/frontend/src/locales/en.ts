@@ -1471,6 +1471,7 @@ const en = {
     notes: { defaultPhone: 'If this phone is the default sign-in method, Microsoft does not let it be removed here — set another default (or remove it) in the Entra admin center.', stepFailed: 'This step could not be planned and is skipped: {{error}}', noSuspiciousRules: 'No suspicious inbox rules found.', purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone', recoverableOverLimit: 'likely more than 100 in some mailboxes: one run removes at most 100 per mailbox — check the case in Purview afterwards' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
     values: { randomPassword: 'new random password', locked: 'locked', unlocked: 'unlocked', newPassword: 'new password set', newPasswordMustChange: 'new password, change at next sign-in', snapshot: 'as in the snapshot', included: 'included', excluded: 'excluded', required: 'required', available: 'available', uninstall: 'uninstall', allUsers: 'all users', allDevices: 'all devices', configuration: 'configuration', compliance: 'compliance', settingsCatalog: 'settings catalog', conflict: 'conflict', app: 'app', TotalItemSize: 'Total size', ItemCount: 'Items', DeletedItemCount: 'Deleted items', TotalDeletedItemSize: 'Deleted items size', LastUserActionTime: 'Last activity', yes: 'yes', no: 'no', released: 'released', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', Global: 'Global (org default)', shared: 'shared', regular: 'user mailbox', enabled: 'on', disabled: 'off', allowed: 'allowed', blocked: 'blocked', active: 'active', revoked: 'revoked' },
     reasons: {
+      policyUnscoped: 'This connection profile may only change members of its groups: tenant-wide changes and pack scripts cannot run with it.',
       stepUnavailable: 'A step of this workflow cannot run now ({{action}}).',
       packDisabled: 'The pack is turned off in Settings → Action packs.',
       packUntrusted: 'From an action pack you have not trusted yet — Settings → Action packs.',
@@ -1486,7 +1487,7 @@ const en = {
       exoApiNotEnabled: 'The Exchange Admin API is not available in this tenant yet (Preview) — the PowerShell backend will cover this.',
       exoUnreachable: 'Exchange Online did not answer — check the network and try again.',
     },
-    backends: { 'ldap-tls': 'AD (TLS)', 'exo-ps': 'Exchange PS', 'teams-ps': 'Teams PS', graph: 'Graph', 'exo-api': 'Exchange', pwsh: 'PowerShell', compliance: 'Compliance', ldap: 'AD', worker: 'Worker' },
+    backends: { workflow: 'Workflow', 'ldap-tls': 'AD (TLS)', 'exo-ps': 'Exchange PS', 'teams-ps': 'Teams PS', graph: 'Graph', 'exo-api': 'Exchange', pwsh: 'PowerShell', compliance: 'Compliance', ldap: 'AD', worker: 'Worker' },
   },
   powershell: {
     installPwsh: 'Install PowerShell 7',
