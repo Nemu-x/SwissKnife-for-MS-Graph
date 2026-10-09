@@ -35,7 +35,9 @@ var policyTypes = []string{"meeting", "messaging", "calling", "appSetup", "appPe
 
 func teamsCmdlets() []string {
 	out := []string{"Get-CsOnlineUser", "Get-CsGroupPolicyAssignment", "New-CsGroupPolicyAssignment",
-		"Set-CsGroupPolicyAssignment", "Remove-CsGroupPolicyAssignment"}
+		"Set-CsGroupPolicyAssignment", "Remove-CsGroupPolicyAssignment",
+		// Restoring a snapshot (services/snapshot_restore.go).
+		"Set-CsTeamsMeetingPolicy", "New-CsTeamsMeetingPolicy"}
 	for _, p := range teamsPolicies {
 		out = append(out, p.get, p.grant)
 	}

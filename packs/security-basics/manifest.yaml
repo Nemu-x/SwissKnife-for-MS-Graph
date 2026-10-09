@@ -2,7 +2,7 @@
 # every step is an action the app already has, previewed together and
 # confirmed once. Copy the folder into the app's packs folder and trust it.
 name: security-basics
-version: 1.0.0
+version: 1.1.0
 author: SwissKnife sample
 description: Compromised account response, shared-mailbox conversion and a quick offboarding.
 category: security

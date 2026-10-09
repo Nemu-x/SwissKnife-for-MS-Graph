@@ -397,3 +397,36 @@ test('capabilities show what runs, the fallbacks and why the others cannot', asy
   await expect(page.locator('[data-capability="teams.policy.list"]').getByText(/Needs PowerShell 7/)).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('restoring everything previews one group per section', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    ;(window as any).__stub = {
+      Catalog: [{ id: 'config.restore', page: 'security', danger: 'destructive', confirmField: 'snapshot', available: true, backend: 'graph', fields: [
+        { name: 'snapshot', kind: 'snapshot', required: true },
+        { name: 'section', kind: 'choice', required: true, default: 'conditionalAccessPolicies', options: ['namedLocations', 'conditionalAccessPolicies',
+          'intuneConfigurations', 'intuneCompliancePolicies', 'exchangeOrganizationConfig', 'transportRules', 'teamsMeetingPolicies', 'all'] },
+        { name: 'object', kind: 'text' }] }],
+      Plan: { id: 'p1', actionId: 'config.restore', backend: 'graph', inputs: {}, confirmTarget: 'restore 1', changes: [
+        { target: 'Win baseline', field: 'restoredObject', op: 'set', before: 'assignments', after: 'snapshot', step: 'snapshot.section.intuneConfigurations', stepNo: 1 },
+        { target: 'teamsMeetingPolicies', field: 'restoredSection', op: 'none', note: 'sectionSkipped', after: 'PowerShell backend not available (pwshMissing)',
+          step: 'snapshot.section.teamsMeetingPolicies', stepNo: 2 }] },
+    }
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.locator('nav').getByRole('button', { name: 'Security' }).click()
+  await page.getByRole('button', { name: /Restore from a snapshot/ }).click()
+  await page.getByRole('button', { name: 'Snapshot', exact: true }).click()
+  await page.getByPlaceholder('Search or paste', { exact: false }).fill('baseline')
+  await page.keyboard.press('Enter')
+  await page.getByRole('combobox', { name: 'What to restore' }).selectOption('all')
+  await page.getByRole('button', { name: 'Preview changes' }).click()
+
+  const preview = page.locator('li')
+  await expect(preview.getByText('Intune configuration profiles')).toBeVisible()
+  await expect(preview.getByText('Teams meeting policies')).toHaveCount(2) // the step and the skipped section
+  await expect(preview.getByText(/This section is left out: PowerShell backend not available/)).toHaveCount(1)
+  expect(errors).toEqual([])
+})

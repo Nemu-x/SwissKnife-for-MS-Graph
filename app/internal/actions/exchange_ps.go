@@ -27,6 +27,8 @@ var exchangeCmdlets = []string{
 	"Get-CalendarProcessing", "Set-CalendarProcessing",
 	"Get-DistributionGroupMember", "Add-DistributionGroupMember", "Remove-DistributionGroupMember",
 	"Get-TransportRule", "Enable-TransportRule", "Disable-TransportRule",
+	// Restoring a snapshot (services/snapshot_restore.go).
+	"Set-OrganizationConfig", "Set-TransportRule",
 }
 
 // PowerShellCmdlets returns the allow-list per module family for the host pool.

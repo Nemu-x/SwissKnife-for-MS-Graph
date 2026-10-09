@@ -1311,6 +1311,11 @@ const en = {
       groups: 'Groups',
       applications: 'App registrations & credentials',
       servicePrincipals: 'Enterprise apps (count)',
+      intuneConfigurations: 'Intune configuration profiles',
+      intuneCompliancePolicies: 'Intune compliance policies',
+      exchangeOrganizationConfig: 'Exchange organization settings',
+      transportRules: 'Exchange transport rules',
+      teamsMeetingPolicies: 'Teams meeting policies',
     },
   },
   cleanup: {
@@ -1381,7 +1386,7 @@ const en = {
       calendarProcessing: { label: 'Room booking behaviour', hint: 'Whether a room or equipment mailbox accepts meeting requests on its own.', note: 'Auto-accept books the room by itself; None leaves requests for a delegate.' },
     },
     config: {
-      restore: { label: 'Restore from a snapshot', hint: 'Put conditional access policies or named locations back as they were in a snapshot.', note: 'Restoring a conditional access policy changes who can sign in and how. A deleted policy is recreated with a new id. The preview lists the fields that differ.' },
+      restore: { label: 'Restore from a snapshot', hint: 'Put conditional access, Intune policies, Exchange settings and transport rules or Teams meeting policies back as they were — one section, or everything since the snapshot.', note: 'Restoring changes who can sign in, what devices must do and how mail flows. Deleted objects are recreated with a new id (a deleted transport rule cannot be: the snapshot keeps too little of it). The preview lists the fields that differ; Exchange and Teams sections need PowerShell.' },
     },
     ad: {
       findUser: { label: 'Find an AD user', hint: 'Search by name, account, UPN or mail; see whether the account is enabled or locked.' },
@@ -1435,7 +1440,7 @@ const en = {
       manager: { label: 'Set a manager', hint: 'Who they report to — the preview shows the current one.' },
       usageLocation: { label: 'Set usage location', hint: 'The country that decides which licenses can be assigned.', note: 'Two-letter ISO code. License assignment fails while it is empty.' },
     },
-    options: { disable: 'Disable', enable: 'Enable', conditionalAccessPolicies: 'Conditional access policies', namedLocations: 'Named locations', configuration: 'Configuration', compliance: 'Compliance', '30': '30', '90': '90', '180': '180', phishing: 'Phishing', spam: 'Spam', malware: 'Malware', notJunk: 'Not junk', recoverable: 'Recoverable', permanent: 'Permanently', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
+    options: { intuneConfigurations: 'Intune configuration profiles', intuneCompliancePolicies: 'Intune compliance policies', exchangeOrganizationConfig: 'Exchange organization settings', transportRules: 'Transport rules', teamsMeetingPolicies: 'Teams meeting policies', all: 'Everything since the snapshot', disable: 'Disable', enable: 'Enable', conditionalAccessPolicies: 'Conditional access policies', namedLocations: 'Named locations', configuration: 'Configuration', compliance: 'Compliance', '30': '30', '90': '90', '180': '180', phishing: 'Phishing', spam: 'Spam', malware: 'Malware', notJunk: 'Not junk', recoverable: 'Recoverable', permanent: 'Permanently', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
     changeFields: {
       step: 'step',
       authMethod: 'sign-in method',
@@ -1445,6 +1450,7 @@ const en = {
       adLockout: 'lockout',
       adPassword: 'password',
       restoredObject: 'restore',
+      restoredSection: 'section',
       intuneAssignment: 'assigned to',
       threatReport: 'report to Microsoft',
       blockedSender: 'blocked sender',
@@ -1468,7 +1474,7 @@ const en = {
       usageLocation: 'usage location',
       group: { member: 'member of', owner: 'owner of' },
     },
-    notes: { defaultPhone: 'If this phone is the default sign-in method, Microsoft does not let it be removed here — set another default (or remove it) in the Entra admin center.', stepFailed: 'This step could not be planned and is skipped: {{error}}', noSuspiciousRules: 'No suspicious inbox rules found.', purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone', recoverableOverLimit: 'likely more than 100 in some mailboxes: one run removes at most 100 per mailbox — check the case in Purview afterwards' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
+    notes: { sectionSkipped: 'This section is left out: {{error}}', cannotRecreate: 'Deleted since the snapshot, which keeps too little to recreate it — recreate it by hand.', defaultPhone: 'If this phone is the default sign-in method, Microsoft does not let it be removed here — set another default (or remove it) in the Entra admin center.', stepFailed: 'This step could not be planned and is skipped: {{error}}', noSuspiciousRules: 'No suspicious inbox rules found.', purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone', recoverableOverLimit: 'likely more than 100 in some mailboxes: one run removes at most 100 per mailbox — check the case in Purview afterwards' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
     values: { randomPassword: 'new random password', locked: 'locked', unlocked: 'unlocked', newPassword: 'new password set', newPasswordMustChange: 'new password, change at next sign-in', snapshot: 'as in the snapshot', included: 'included', excluded: 'excluded', required: 'required', available: 'available', uninstall: 'uninstall', allUsers: 'all users', allDevices: 'all devices', configuration: 'configuration', compliance: 'compliance', settingsCatalog: 'settings catalog', conflict: 'conflict', app: 'app', TotalItemSize: 'Total size', ItemCount: 'Items', DeletedItemCount: 'Deleted items', TotalDeletedItemSize: 'Deleted items size', LastUserActionTime: 'Last activity', yes: 'yes', no: 'no', released: 'released', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', Global: 'Global (org default)', shared: 'shared', regular: 'user mailbox', enabled: 'on', disabled: 'off', allowed: 'allowed', blocked: 'blocked', active: 'active', revoked: 'revoked' },
     reasons: {
       policyUnscoped: 'This connection profile may only change members of its groups: tenant-wide changes and pack scripts cannot run with it.',
