@@ -11,9 +11,12 @@ type Pack = {
   name: string; version: string; author: string; description: string; dir: string
   status: 'signed' | 'trusted' | 'untrusted' | 'changed' | 'disabled' | 'invalid'
   signer?: string; error?: string; digest: string
-  actions: { id: string; label: Record<string, string>; page: string; danger: string; module: string }[]
+  actions: { id: string; label: Record<string, string>; page: string; danger: string; module: string; cmdlets?: string[]; sensitive?: string[] }[]
+  permissions?: string[]
   workflows?: { id: string; label: Record<string, string>; page: string; steps: string[] }[]
 }
+
+type Key = { key: string; name: string }
 
 const KIND: Record<Pack['status'], 'ok' | 'warn' | 'danger' | 'neutral'> = {
   signed: 'ok', trusted: 'ok', untrusted: 'neutral', changed: 'warn', disabled: 'neutral', invalid: 'danger',
@@ -25,15 +28,16 @@ export function PacksCard() {
   const { t } = useTranslation()
   const { toast, setCache } = useStore()
   const [list, setList] = useState<Pack[] | null>(null)
-  const [keys, setKeys] = useState<string[]>([])
+  const [keys, setKeys] = useState<Key[]>([])
   const [newKey, setNewKey] = useState('')
+  const [newName, setNewName] = useState('')
   const [tab, setTab] = useState<'installed' | 'hub'>('installed')
   // The catalog changes with the trust: pages fetch it again.
   const changed = (l: unknown) => { setList((l ?? []) as Pack[]); setCache('catalog.rev', Date.now()) }
 
   const load = () => {
     api.packs.list().then(changed).catch((e) => toast('err', errMessage(e)))
-    api.packs.keys().then((k) => setKeys(k ?? [])).catch(() => {})
+    api.packs.keys().then((k) => setKeys((k ?? []) as Key[])).catch(() => {})
   }
   useEffect(load, [])
 
@@ -41,10 +45,10 @@ export function PacksCard() {
     try { changed(await fn()) } catch (e) { toast('err', errMessage(e)) }
   }
   const addKey = async () => {
-    try { setKeys((await api.packs.addKey(newKey)) ?? []); setNewKey(''); load(); setCache('catalog.rev', Date.now()) } catch (e) { toast('err', errMessage(e)) }
+    try { setKeys(((await api.packs.addKey(newKey, newName)) ?? []) as Key[]); setNewKey(''); setNewName(''); load(); setCache('catalog.rev', Date.now()) } catch (e) { toast('err', errMessage(e)) }
   }
   const removeKey = async (k: string) => {
-    try { setKeys((await api.packs.removeKey(k)) ?? []); load(); setCache('catalog.rev', Date.now()) } catch (e) { toast('err', errMessage(e)) }
+    try { setKeys(((await api.packs.removeKey(k)) ?? []) as Key[]); load(); setCache('catalog.rev', Date.now()) } catch (e) { toast('err', errMessage(e)) }
   }
 
   return (
@@ -80,7 +84,15 @@ export function PacksCard() {
             {(p.actions ?? []).length > 0 && (
               <ul className="mt-1 list-disc pl-5 text-xs text-[var(--text-dim)]">
                 {(p.actions ?? []).map((a) => (
-                  <li key={a.id}>{localized(a.label) || a.id} · {t(`nav.${a.page}`, { defaultValue: a.page })} · {t(`packs.danger.${a.danger}`)} · {a.module === 'teams' ? 'Teams PS' : 'Exchange PS'}</li>
+                  <li key={a.id}>{localized(a.label) || a.id} · {t(`nav.${a.page}`, { defaultValue: a.page })} · {t(`packs.danger.${a.danger}`)} · {a.module === 'teams' ? 'Teams PS' : 'Exchange PS'}
+                    {/* What the script may call: the host enforces this list. */}
+                    <span className="mt-0.5 flex flex-wrap gap-1" data-cmdlets>
+                      {(a.cmdlets ?? []).map((c) => (
+                        <span key={c} title={(a.sensitive ?? []).includes(c) ? t('packs.sensitiveHint') : undefined}
+                          className={`rounded px-1 font-mono text-[10px] ${(a.sensitive ?? []).includes(c) ? 'bg-[var(--warn)]/15 text-[var(--warn)]' : 'bg-[var(--bg-elev-2)] text-[var(--text-faint)]'}`}>{c}</span>
+                      ))}
+                    </span>
+                  </li>
                 ))}
               </ul>
             )}
@@ -96,6 +108,14 @@ export function PacksCard() {
             {(p.status === 'untrusted' || p.status === 'changed') && (
               <div className="mt-2 flex flex-col gap-1.5">
                 <p className="text-xs text-[var(--warn)]">{(p.actions ?? []).length > 0 ? t('packs.reviewWarn', { dir: p.dir }) : t('packs.reviewWarnWorkflow')}</p>
+                {(p.actions ?? []).some((a) => (a.sensitive ?? []).length > 0) && (
+                  <p className="text-xs text-[var(--warn)]">{t('packs.sensitiveWarn', { list: [...new Set((p.actions ?? []).flatMap((a) => a.sensitive ?? []))].join(', ') })}</p>
+                )}
+                {(p.permissions ?? []).length > 0 && (
+                  <div className="text-xs text-[var(--text-dim)]">{t('packs.permissions')}
+                    <ul className="list-disc pl-5">{(p.permissions ?? []).map((x) => <li key={x}>{x}</li>)}</ul>
+                  </div>
+                )}
                 <p className="break-all font-mono text-[10px] text-[var(--text-faint)]">SHA-256 {p.digest}</p>
                 <Button variant="primary" onClick={() => act(() => api.packs.trust(p.name, p.digest))}><ShieldCheck size={14} /> {t('packs.trust')}</Button>
               </div>
@@ -118,15 +138,17 @@ export function PacksCard() {
       <p className="mb-1 mt-4 text-xs font-medium text-[var(--text-dim)]">{t('packs.keys')}</p>
       <p className="mb-2 text-xs text-[var(--text-faint)]">{t('packs.keysHint')}</p>
       {keys.map((k) => (
-        <div key={k} className="mb-1 flex items-center gap-2">
+        <div key={k.key} className="mb-1 flex items-center gap-2">
           <KeyRound size={13} className="shrink-0 text-[var(--text-faint)]" />
-          <span className="min-w-0 flex-1 truncate font-mono text-xs">{k}</span>
-          <Button variant="ghost" className="!px-2 !py-1" onClick={() => removeKey(k)}><Trash2 size={13} /></Button>
+          <span className="shrink-0 text-xs font-medium">{k.name || t('packs.unnamedKey')}</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--text-faint)]">{k.key}</span>
+          <Button variant="ghost" className="!px-2 !py-1" aria-label={t('packs.removeKey')} onClick={() => removeKey(k.key)}><Trash2 size={13} /></Button>
         </div>
       ))}
-      <div className="flex gap-2">
-        <Input value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="RWS…" className="min-w-0 flex-1 font-mono text-xs" />
-        <Button variant="subtle" disabled={!newKey.trim()} onClick={addKey}>{t('common.add')}</Button>
+      <div className="flex flex-wrap gap-2">
+        <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t('packs.publisher')} aria-label={t('packs.publisher')} className="w-40" />
+        <Input value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="RWS…" aria-label={t('packs.publicKey')} className="min-w-0 flex-1 font-mono text-xs" />
+        <Button variant="subtle" disabled={!newKey.trim() || !newName.trim()} onClick={addKey}>{t('common.add')}</Button>
       </div>
       </>)}
     </Card>

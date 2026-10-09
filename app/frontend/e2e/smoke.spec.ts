@@ -70,7 +70,7 @@ test('sidebar navigation works and data tabs are locked while disconnected', asy
   await page.goto('/')
 
   await page.getByRole('button', { name: 'Settings' }).click()
-  await expect(page.getByText('Language')).toBeVisible()
+  await expect(page.getByText('Language', { exact: true })).toBeVisible()
 
   // Data pages must be disabled until a tenant connection exists.
   await expect(page.getByRole('button', { name: 'Raw Graph' })).toBeDisabled()
@@ -428,5 +428,28 @@ test('restoring everything previews one group per section', async ({ page }) => 
   await expect(preview.getByText('Intune configuration profiles')).toBeVisible()
   await expect(preview.getByText('Teams meeting policies')).toHaveCount(2) // the step and the skipped section
   await expect(preview.getByText(/This section is left out: PowerShell backend not available/)).toHaveCount(1)
+  expect(errors).toEqual([])
+})
+
+test('a pack shows what its scripts may call and who signed the keys', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    ;(window as any).__stub = {
+      List: [{ name: 'contoso-tools', version: '1.0.0', author: 'Contoso', description: '', dir: 'C:\packs\contoso', status: 'untrusted', digest: 'ab',
+        permissions: ['Exchange: Recipient Management'], workflows: null,
+        actions: [{ id: 'hold', label: { en: 'Hold' }, page: 'users', danger: 'write', module: 'exo', cmdlets: ['Get-Mailbox', 'Export-Csv'], sensitive: ['Export-Csv'] }] }],
+      Keys: [{ key: 'RWQkey', name: 'Contoso IT' }],
+    }
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  const cmdlets = page.locator('[data-cmdlets]')
+  await expect(cmdlets.getByText('Get-Mailbox')).toBeVisible()
+  await expect(cmdlets.getByText('Export-Csv')).toHaveAttribute('title', 'Reaches the network or the disk')
+  await expect(page.getByText('Its scripts may reach the network or files: Export-Csv.')).toBeVisible()
+  await expect(page.getByText('Exchange: Recipient Management')).toBeVisible()
+  await expect(page.getByText('Contoso IT', { exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })

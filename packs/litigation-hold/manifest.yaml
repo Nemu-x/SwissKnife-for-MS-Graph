@@ -2,10 +2,11 @@
 # %APPDATA%\SwissKnifeGraph\actions\ (Linux/macOS: the app's config folder),
 # then trust it in Settings → Action packs.
 name: litigation-hold
-version: 1.0.0
+version: 1.1.0
 author: SwissKnife sample
 description: List mailboxes on litigation hold and turn the hold on or off.
 category: exchange
+permissions: ["Exchange: Recipient Management (Set-Mailbox -LitigationHoldEnabled)"]
 title: { en: Litigation hold, ru: Удержание для судебных разбирательств }
 summary: { en: "List mailboxes on litigation hold and turn the hold on or off (PowerShell).", ru: "Список ящиков на удержании и включение/выключение удержания (PowerShell)." }
 actions:
@@ -14,6 +15,7 @@ actions:
     danger: read
     module: exo
     script: list.ps1
+    cmdlets: [Get-Mailbox]
     label: { en: Mailboxes on litigation hold, ru: Ящики на удержании для судебных разбирательств }
     hint: { en: Every mailbox with litigation hold enabled, ru: Все ящики с включённым удержанием }
     columns: [name, address, duration]
@@ -22,6 +24,7 @@ actions:
     danger: write
     module: exo
     script: set.ps1
+    cmdlets: [Get-Mailbox, Set-Mailbox]
     label: { en: Turn litigation hold on or off, ru: Включить или выключить удержание }
     hint: { en: Keeps every item of the mailbox, ru: Сохраняет все элементы ящика }
     fields:

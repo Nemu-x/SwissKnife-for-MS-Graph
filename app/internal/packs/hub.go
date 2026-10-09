@@ -218,7 +218,7 @@ func Install(ctx context.Context, hub, root string, e HubEntry) (string, error) 
 	if d != e.Digest {
 		return "", errors.New("the downloaded pack does not match the catalog — not installing it")
 	}
-	got := loadOne(tmp, Trust{}, trustedKeys(nil))
+	got := loadOne(tmp, Trust{}, trustedKeys(nil, nil))
 	if got.Manifest.Name != e.Name {
 		return "", fmt.Errorf("the downloaded pack is named %q, not %q — not installing it", got.Manifest.Name, e.Name)
 	}
@@ -232,7 +232,7 @@ func Install(ctx context.Context, hub, root string, e HubEntry) (string, error) 
 		}
 	}
 	if _, err := os.Stat(dir); err == nil {
-		if cur := loadOne(dir, Trust{}, trustedKeys(nil)); cur.Manifest.Name != "" && cur.Manifest.Name != e.Name {
+		if cur := loadOne(dir, Trust{}, trustedKeys(nil, nil)); cur.Manifest.Name != "" && cur.Manifest.Name != e.Name {
 			return "", fmt.Errorf("%s holds another pack (%s) — move it first", dir, cur.Manifest.Name)
 		}
 	}
@@ -274,7 +274,7 @@ func BuildIndex(dir string) (*HubIndex, error) {
 		if !de.IsDir() || strings.HasPrefix(de.Name(), ".") {
 			continue
 		}
-		p := loadOne(filepath.Join(root, de.Name()), Trust{}, trustedKeys(nil))
+		p := loadOne(filepath.Join(root, de.Name()), Trust{}, trustedKeys(nil, nil))
 		if p.Status == Invalid && !strings.Contains(p.Error, "signature") {
 			return nil, fmt.Errorf("%s: %s", de.Name(), p.Error)
 		}

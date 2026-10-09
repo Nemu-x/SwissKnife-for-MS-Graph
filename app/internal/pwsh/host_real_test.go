@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -61,8 +63,9 @@ func TestRealHostRunsOnlyTrustedScripts(t *testing.T) {
 	if exe == "" {
 		t.Skip("PowerShell 7 is not installed")
 	}
-	script := "param($Mode, $Inputs)\n[pscustomobject]@{ mode = $Mode; name = $Inputs.name }"
-	h, err := StartWithScripts(exe, nil, []string{ScriptHash(script)})
+	// ConstrainedLanguage: objects are hashtables ([pscustomobject] is .NET).
+	script := "param($Mode, $Inputs)\n@{ mode = $Mode; name = $Inputs.name }"
+	h, err := StartWithScripts(exe, nil, []TrustedScript{{Hash: ScriptHash(script)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,5 +82,84 @@ func TestRealHostRunsOnlyTrustedScripts(t *testing.T) {
 	}
 	if _, err := h.RunScript(ctx, script+"\n# changed", nil); err == nil || !strings.Contains(err.Error(), "not trusted") {
 		t.Fatalf("an untrusted script must be refused: %v", err)
+	}
+}
+
+// TestRealHostSandboxesPackScripts: a pack script calls only what its pack
+// declared, by name, and runs in ConstrainedLanguage.
+func TestRealHostSandboxesPackScripts(t *testing.T) {
+	exe := findExe()
+	if exe == "" {
+		t.Skip("PowerShell 7 is not installed")
+	}
+	cases := map[string]string{ // script → refusal ("" = runs)
+		"Get-Date | Out-Null; Write-Output (Get-Random -Maximum 1)":  "",
+		"function Helper { 'ok' }; Helper | ForEach-Object { $_ }":   "",
+		"Remove-Item -Path nothing":                                  "did not declare the command Remove-Item",
+		"$c = 'Get-Random'; & $c":                                    "must name the commands",
+		"& ('Get-' + 'Random')":                                      "must name the commands",
+		"Invoke-Expression 'Get-Random'":                             "cannot call Invoke-Expression",
+		"[System.IO.File]::Exists('x')":                              "Method invocation is supported only",
+		"1..2 | ForEach-Object -Parallel { [IO.File]::Exists('x') }": "cannot use -Parallel",
+		"$ExecutionContext.InvokeCommand.InvokeScript('Get-Random')": "cannot use $ExecutionContext",
+		"${function:Get-Random}":                                     "cannot read",
+		"Get-Random -AsJob":                                          "cannot use -AsJob",
+		". { Get-Random }":                                           "",
+	}
+	var trusted []TrustedScript
+	for sc := range cases {
+		trusted = append(trusted, TrustedScript{Hash: ScriptHash(sc), Cmdlets: []string{"Get-Random"}})
+	}
+	h, err := StartWithScripts(exe, nil, trusted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	for sc, want := range cases {
+		_, err := h.RunScript(ctx, sc, nil)
+		switch {
+		case want == "" && err != nil && sc != ". { Get-Random }":
+			t.Errorf("%q: %v", sc, err)
+		case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
+			t.Errorf("%q: got %v, want %q", sc, err, want)
+		}
+	}
+	// The host itself is still in FullLanguage after a constrained script.
+	if _, err := h.RunScript(ctx, "Get-Date | Out-Null; Write-Output (Get-Random -Maximum 1)", nil); err != nil {
+		t.Fatalf("after the sandboxed runs: %v", err)
+	}
+}
+
+// The sample pack's scripts pass the sandbox: run without Exchange, they get
+// as far as calling Get-Mailbox.
+func TestRealHostAcceptsTheSamplePack(t *testing.T) {
+	exe := findExe()
+	if exe == "" {
+		t.Skip("PowerShell 7 is not installed")
+	}
+	var scripts []string
+	var trusted []TrustedScript
+	for _, f := range []string{"list.ps1", "set.ps1"} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "..", "packs", "litigation-hold", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		scripts = append(scripts, string(b))
+		trusted = append(trusted, TrustedScript{Hash: ScriptHash(string(b)), Cmdlets: []string{"Get-Mailbox", "Set-Mailbox"}})
+	}
+	h, err := StartWithScripts(exe, nil, trusted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	for _, sc := range scripts {
+		_, err := h.RunScript(ctx, sc, map[string]any{"Mode": "plan", "Inputs": map[string]any{"mailbox": "a@b.c", "state": "on"}})
+		if err == nil || !strings.Contains(err.Error(), "Get-Mailbox") || strings.Contains(err.Error(), "pack") {
+			t.Fatalf("the sample should reach Get-Mailbox: %v", err)
+		}
 	}
 }

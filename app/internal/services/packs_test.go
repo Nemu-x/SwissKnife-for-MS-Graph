@@ -23,6 +23,7 @@ actions:
     danger: write
     module: exo
     script: hold.ps1
+    cmdlets: [Get-Mailbox, Set-Mailbox]
     label: { en: Put a mailbox on hold }
     fields:
       - { name: mailbox, kind: user, required: true }
@@ -143,6 +144,7 @@ actions:
     danger: read
     module: exo
     script: holds.ps1
+    cmdlets: [Get-Mailbox, Set-Mailbox]
     label: { en: Holds }
 `
 

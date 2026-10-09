@@ -32,25 +32,46 @@ func packsRoot(s *session.Session) string { return filepath.Join(s.ConfigDir(), 
 func trustFile(s *session.Session) string { return filepath.Join(s.ConfigDir(), "packs.json") }
 
 // trustedScriptHashes are the scripts the session's pack hosts may run.
-func trustedScriptHashes(s *session.Session) func() []string {
-	return func() []string {
+func trustedScriptHashes(s *session.Session) func() []pwsh.TrustedScript {
+	return func() []pwsh.TrustedScript {
 		packMu.Lock()
 		defer packMu.Unlock()
 		return scriptHashesLocked(s)
 	}
 }
 
-func scriptHashesLocked(s *session.Session) []string {
-	var out []string
+// scriptHashesLocked lists the trusted scripts with the commands their pack
+// declared (two actions sharing a script share their declarations).
+func scriptHashesLocked(s *session.Session) []pwsh.TrustedScript {
+	cmdlets := map[string]map[string]bool{}
 	for _, p := range loaded[s] {
 		if !p.Usable() {
 			continue
 		}
-		for _, text := range p.Scripts {
-			out = append(out, pwsh.ScriptHash(text))
+		for _, a := range p.Manifest.Actions {
+			text, ok := p.Scripts[a.Script]
+			if !ok {
+				continue
+			}
+			h := pwsh.ScriptHash(text)
+			if cmdlets[h] == nil {
+				cmdlets[h] = map[string]bool{}
+			}
+			for _, c := range a.Cmdlets {
+				cmdlets[h][c] = true
+			}
 		}
 	}
-	sort.Strings(out)
+	out := make([]pwsh.TrustedScript, 0, len(cmdlets))
+	for h, set := range cmdlets {
+		ts := pwsh.TrustedScript{Hash: h, Cmdlets: []string{}}
+		for c := range set {
+			ts.Cmdlets = append(ts.Cmdlets, c)
+		}
+		sort.Strings(ts.Cmdlets)
+		out = append(out, ts)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Hash < out[j].Hash })
 	return out
 }
 
@@ -65,12 +86,13 @@ func reloadPacks(s *session.Session, e *engine.Engine) []packs.Pack {
 	packMu.Lock()
 	defer packMu.Unlock()
 	list := packs.Load(packsRoot(s), packs.LoadTrust(trustFile(s)))
-	before := strings.Join(scriptHashesLocked(s), ",")
+	before := fmt.Sprint(scriptHashesLocked(s))
 	loaded[s] = list
 	e.SetPacks(packActions(s, e, list))
-	// Pack hosts know their trusted scripts from the start: replace them
+	// Pack hosts know their trusted scripts (and what each may call) from
+	// the start: replace them
 	// (at their next use) only when that set changed.
-	if pool, ok := e.PS.(interface{ ResetPacks() }); ok && strings.Join(scriptHashesLocked(s), ",") != before {
+	if pool, ok := e.PS.(interface{ ResetPacks() }); ok && fmt.Sprint(scriptHashesLocked(s)) != before {
 		pool.ResetPacks()
 	}
 	return list
@@ -359,6 +381,8 @@ type PackInfo struct {
 	Digest      string           `json:"digest"`
 	Actions     []PackActionInfo `json:"actions"`
 	Workflows   []PackFlowInfo   `json:"workflows"`
+	// Permissions the pack says it needs, shown before trusting it.
+	Permissions []string `json:"permissions"`
 }
 
 // PackFlowInfo lists one workflow of a pack and the actions it chains.
@@ -376,6 +400,16 @@ type PackActionInfo struct {
 	Page   string            `json:"page"`
 	Danger string            `json:"danger"`
 	Module string            `json:"module"`
+	// Cmdlets the script may call; Sensitive those that reach the network
+	// or the disk.
+	Cmdlets   []string `json:"cmdlets"`
+	Sensitive []string `json:"sensitive"`
+}
+
+// KeyInfo is a trusted signing key and the publisher it stands for.
+type KeyInfo struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
 }
 
 // PacksService manages packs and their trust.
@@ -387,12 +421,20 @@ func (x *PacksService) infos(list []packs.Pack, e *engine.Engine) []PackInfo {
 	out := []PackInfo{}
 	for _, p := range list {
 		pi := PackInfo{Name: p.Manifest.Name, Version: p.Manifest.Version, Author: p.Manifest.Author, Description: p.Manifest.Description,
-			Dir: p.Dir, Status: p.Status, Signer: p.Signer, Error: p.Error, Digest: p.Digest, Actions: []PackActionInfo{}, Workflows: []PackFlowInfo{}}
+			Dir: p.Dir, Status: p.Status, Signer: p.Signer, Error: p.Error, Digest: p.Digest, Actions: []PackActionInfo{}, Workflows: []PackFlowInfo{},
+			Permissions: append([]string{}, p.Manifest.Permissions...)}
 		if pi.Name == "" {
 			pi.Name = filepath.Base(p.Dir)
 		}
 		for _, a := range p.Manifest.Actions {
-			pi.Actions = append(pi.Actions, PackActionInfo{ID: a.ID, Label: a.Label, Page: a.Page, Danger: a.Danger, Module: a.Module})
+			ai := PackActionInfo{ID: a.ID, Label: a.Label, Page: a.Page, Danger: a.Danger, Module: a.Module,
+				Cmdlets: append([]string{}, a.Cmdlets...), Sensitive: []string{}}
+			for _, c := range a.Cmdlets {
+				if packs.SensitiveCmdlets[strings.ToLower(c)] {
+					ai.Sensitive = append(ai.Sensitive, c)
+				}
+			}
+			pi.Actions = append(pi.Actions, ai)
 		}
 		for _, w := range p.Manifest.Workflows {
 			f := PackFlowInfo{ID: w.ID, Label: w.Label, Page: w.Page, Steps: []string{}}
@@ -484,19 +526,29 @@ func (x *PacksService) Untrust(name string) ([]PackInfo, error) {
 	return x.List()
 }
 
-// Keys lists the extra trusted signing keys.
-func (x *PacksService) Keys() []string {
-	k := packs.LoadTrust(trustFile(x.s)).Keys
-	if k == nil {
-		k = []string{}
+// Keys lists the extra trusted signing keys with their publishers.
+func (x *PacksService) Keys() []KeyInfo { return keyInfos(packs.LoadTrust(trustFile(x.s))) }
+
+func keyInfos(t packs.Trust) []KeyInfo {
+	out := []KeyInfo{}
+	for _, k := range t.Keys {
+		out = append(out, KeyInfo{Key: k, Name: t.Names[k]})
 	}
-	return k
+	return out
 }
 
-// AddKey trusts an author's minisign public key (the base64 line).
-func (x *PacksService) AddKey(key string) ([]string, error) {
+// AddKey trusts an author's minisign public key (the base64 line) under the
+// publisher name the operator gives it: packs it signs show that name.
+func (x *PacksService) AddKey(key, name string) ([]KeyInfo, error) {
 	trustMu.Lock()
 	defer trustMu.Unlock()
+	name = strings.TrimSpace(name)
+	if name == "" || len([]rune(name)) > 60 || strings.ContainsAny(name, "\r\n\t") {
+		return nil, errors.New("give the publisher a name (up to 60 characters)")
+	}
+	if strings.EqualFold(name, packs.BuiltinPublisher) {
+		return nil, fmt.Errorf("%q is the project's own key", packs.BuiltinPublisher)
+	}
 	key = strings.TrimSpace(key)
 	if i := strings.LastIndex(key, "\n"); i >= 0 { // a whole .pub file was pasted
 		key = strings.TrimSpace(key[i+1:])
@@ -505,22 +557,27 @@ func (x *PacksService) AddKey(key string) ([]string, error) {
 		return nil, fmt.Errorf("not a minisign public key: %w", err)
 	}
 	t := packs.LoadTrust(trustFile(x.s))
+	known := false
 	for _, k := range t.Keys {
-		if k == key {
-			return t.Keys, nil
-		}
+		known = known || k == key
 	}
-	t.Keys = append(t.Keys, key)
+	if !known {
+		t.Keys = append(t.Keys, key)
+	}
+	if t.Names == nil {
+		t.Names = map[string]string{}
+	}
+	t.Names[key] = name
 	if err := packs.SaveTrust(trustFile(x.s), t); err != nil {
 		return nil, err
 	}
-	x.s.Record("pack.addKey", key, "", nil)
+	x.s.Record("pack.addKey", key, "publisher="+name, nil)
 	reloadPacks(x.s, EngineFor(x.s))
-	return t.Keys, nil
+	return keyInfos(t), nil
 }
 
 // RemoveKey stops trusting a signing key.
-func (x *PacksService) RemoveKey(key string) ([]string, error) {
+func (x *PacksService) RemoveKey(key string) ([]KeyInfo, error) {
 	trustMu.Lock()
 	defer trustMu.Unlock()
 	t := packs.LoadTrust(trustFile(x.s))
@@ -531,12 +588,13 @@ func (x *PacksService) RemoveKey(key string) ([]string, error) {
 		}
 	}
 	t.Keys = kept
+	delete(t.Names, key)
 	if err := packs.SaveTrust(trustFile(x.s), t); err != nil {
 		return nil, err
 	}
 	x.s.Record("pack.removeKey", key, "", nil)
 	reloadPacks(x.s, EngineFor(x.s))
-	return kept, nil
+	return keyInfos(t), nil
 }
 
 // OpenFolder shows the packs folder (created if missing).

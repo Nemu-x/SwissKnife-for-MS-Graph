@@ -87,9 +87,16 @@ const startTimeout = 30 * time.Second
 // cmdlet allow-list.
 func Start(exe string, allow []string) (*Host, error) { return StartWithScripts(exe, allow, nil) }
 
+// TrustedScript is a pack script the host may run, by the SHA-256 of its
+// text, and the commands its pack declared for it.
+type TrustedScript struct {
+	Hash    string   `json:"hash"`
+	Cmdlets []string `json:"cmdlets"`
+}
+
 // StartWithScripts also trusts scripts by the SHA-256 of their text (action
 // packs); the host refuses any other script.
-func StartWithScripts(exe string, allow, scripts []string) (*Host, error) {
+func StartWithScripts(exe string, allow []string, scripts []TrustedScript) (*Host, error) {
 	cmd := exec.Command(exe, "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedScript)
 	cmd.WaitDelay = 2 * time.Second
 	hideWindow(cmd)
@@ -114,7 +121,7 @@ func StartWithScripts(exe string, allow, scripts []string) (*Host, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
 	defer cancel()
 	if scripts == nil {
-		scripts = []string{}
+		scripts = []TrustedScript{}
 	}
 	if _, err := h.call(ctx, map[string]any{"op": "init", "allow": allow, "scripts": scripts}); err != nil {
 		h.Close()
