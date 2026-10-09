@@ -544,8 +544,9 @@ type HubPack struct {
 
 // HubView is the catalog as the Settings page shows it.
 type HubView struct {
-	URL   string    `json:"url"`
-	Packs []HubPack `json:"packs"`
+	URL    string    `json:"url"`
+	Custom bool      `json:"custom"` // not the community hub
+	Packs  []HubPack `json:"packs"`
 }
 
 func (x *PacksService) hubURL() string {
@@ -568,17 +569,18 @@ func (x *PacksService) HubCatalog() (*HubView, error) {
 	for _, p := range packs.Load(packsRoot(x.s), packs.LoadTrust(trustFile(x.s))) {
 		installed[p.Manifest.Name] = p.Manifest.Version
 	}
-	view := &HubView{URL: hub, Packs: []HubPack{}}
+	view := &HubView{URL: hub, Custom: hub != packs.DefaultHub, Packs: []HubPack{}}
 	for _, e := range idx.Packs {
 		v, ok := installed[e.Name]
-		view.Packs = append(view.Packs, HubPack{HubEntry: e, Installed: v, Update: ok && v != e.Version})
+		view.Packs = append(view.Packs, HubPack{HubEntry: e, Installed: v, Update: ok && packs.Newer(e.Version, v)})
 	}
 	return view, nil
 }
 
-// HubInstall downloads a pack from the hub (or updates it). It still needs
-// a trusted signature or the operator's review before it runs.
-func (x *PacksService) HubInstall(name string) ([]PackInfo, error) {
+// HubInstall downloads a pack from the hub (or updates it) — exactly the
+// version shown (digest), never an older one. It still needs a trusted
+// signature or the operator's review before it runs.
+func (x *PacksService) HubInstall(name, digest string) ([]PackInfo, error) {
 	ctx, cancel := context.WithTimeout(x.s.Ctx(), 2*time.Minute)
 	defer cancel()
 	hub := x.hubURL()
@@ -590,8 +592,20 @@ func (x *PacksService) HubInstall(name string) ([]PackInfo, error) {
 		if e.Name != name {
 			continue
 		}
+		if e.Digest != digest {
+			return nil, errors.New("the hub changed this pack since the list was shown — refresh and look again")
+		}
+		prev := "none"
+		for _, p := range packs.Load(packsRoot(x.s), packs.Trust{}) {
+			if p.Manifest.Name == name {
+				if !packs.Newer(e.Version, p.Manifest.Version) {
+					return nil, fmt.Errorf("version %s is installed; the hub offers %s — not going back", p.Manifest.Version, e.Version)
+				}
+				prev = p.Manifest.Version + " " + p.Digest
+			}
+		}
 		dir, err := packs.Install(ctx, hub, packsRoot(x.s), e)
-		x.s.Record("pack.install", name, "hub="+hub+" version="+e.Version+" digest="+e.Digest, err)
+		x.s.Record("pack.install", name, "hub="+hub+" version="+e.Version+" digest="+e.Digest+" replaces="+prev, err)
 		if err != nil {
 			return nil, err
 		}

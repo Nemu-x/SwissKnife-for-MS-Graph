@@ -10,7 +10,7 @@ export function Enable(arg1:string):Promise<Array<services.PackInfo>>;
 
 export function HubCatalog():Promise<services.HubView>;
 
-export function HubInstall(arg1:string):Promise<Array<services.PackInfo>>;
+export function HubInstall(arg1:string,arg2:string):Promise<Array<services.PackInfo>>;
 
 export function Keys():Promise<Array<string>>;
 

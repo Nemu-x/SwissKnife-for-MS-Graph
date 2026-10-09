@@ -82,3 +82,53 @@ func TestHubIndexInstallAndTamper(t *testing.T) {
 		t.Fatal("plain http must be refused")
 	}
 }
+
+func TestHubSafetyRules(t *testing.T) {
+	if !Newer("1.2.0", "1.1.9") || Newer("1.0.0", "1.0.0") || Newer("1.0.0", "1.10.0") || !Newer("2.0", "1.9.9") {
+		t.Fatal("version order")
+	}
+	for _, bad := range []string{"con", "a/NUL.txt", "x.", "a/../b", ".hidden", "a\b"} {
+		if safeRel(bad) {
+			t.Errorf("%q must be refused", bad)
+		}
+	}
+	// Staging and backup folders are never packs.
+	root := t.TempDir()
+	writePack(t, root, ".staging-x-1", manifest)
+	writePack(t, root, ".trash-contoso-tools", manifest)
+	writePack(t, root, "contoso", manifest)
+	if l := Load(root, Trust{}); len(l) != 1 || l[0].Status != Untrusted {
+		t.Fatalf("hidden folders must be skipped: %+v", l)
+	}
+
+	// The hub may not redirect to plain http.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://example.com/index.json", http.StatusFound)
+	}))
+	t.Cleanup(srv.Close)
+	old := hubClient
+	c := srv.Client()
+	c.CheckRedirect = hubClient.CheckRedirect
+	hubClient = c
+	t.Cleanup(func() { hubClient = old })
+	if _, err := FetchIndex(context.Background(), srv.URL); err == nil || !strings.Contains(err.Error(), "redirect") {
+		t.Fatalf("redirect to http: %v", err)
+	}
+}
+
+// A hub entry whose files say another name, or a folder holding another
+// pack, is refused.
+func TestHubInstallRefusesNameMismatch(t *testing.T) {
+	hubDir := t.TempDir()
+	writePack(t, filepath.Join(hubDir, "packs"), "tools", manifest) // manifest says contoso-tools
+	d, _ := Digest(filepath.Join(hubDir, "packs", "tools"))
+	srv := httptest.NewTLSServer(http.FileServer(http.Dir(hubDir)))
+	t.Cleanup(srv.Close)
+	old := hubClient
+	hubClient = srv.Client()
+	t.Cleanup(func() { hubClient = old })
+	e := HubEntry{Name: "tools", Path: "packs/tools", Files: []string{"holds.ps1", "manifest.yaml"}, Digest: d}
+	if _, err := Install(context.Background(), srv.URL, t.TempDir(), e); err == nil || !strings.Contains(err.Error(), "named") {
+		t.Fatalf("name mismatch: %v", err)
+	}
+}

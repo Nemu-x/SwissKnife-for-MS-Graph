@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -57,12 +58,56 @@ const (
 )
 
 var (
-	hubClient = &http.Client{Timeout: time.Minute}
-	fileRe    = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
+	// Redirects stay on https and on the same host: the index is not signed,
+	// so the transport is what keeps it the hub's.
+	hubClient = &http.Client{Timeout: time.Minute, CheckRedirect: func(r *http.Request, via []*http.Request) error {
+		if len(via) >= 5 || r.URL.Scheme != "https" || r.URL.Host != via[0].URL.Host {
+			return errors.New("the hub redirected somewhere else — refused")
+		}
+		return nil
+	}}
+	fileRe = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
+	// Device names Windows reserves in every folder.
+	reservedRe = regexp.MustCompile(`(?i)^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$`)
 )
 
 func safeRel(p string) bool {
-	return fileRe.MatchString(p) && !strings.Contains(p, "..") && !strings.HasPrefix(p, ".")
+	if !fileRe.MatchString(p) || strings.Contains(p, "..") || strings.HasPrefix(p, ".") {
+		return false
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if reservedRe.MatchString(seg) || strings.HasSuffix(seg, ".") || strings.HasPrefix(seg, ".") {
+			return false
+		}
+	}
+	return true
+}
+
+// hubMu runs one install at a time.
+var hubMu sync.Mutex
+
+// Newer reports whether version a is newer than b (dotted numbers; text
+// parts compare as text). Only newer versions are offered as updates.
+func Newer(a, b string) bool {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(pa) || i < len(pb); i++ {
+		var x, y string
+		if i < len(pa) {
+			x = pa[i]
+		}
+		if i < len(pb) {
+			y = pb[i]
+		}
+		nx, ex := strconv.Atoi(x)
+		ny, ey := strconv.Atoi(y)
+		switch {
+		case ex == nil && ey == nil && nx != ny:
+			return nx > ny
+		case (ex != nil || ey != nil) && x != y:
+			return x > y
+		}
+	}
+	return false
 }
 
 func hubGet(ctx context.Context, u string, limit int64) ([]byte, error) {
@@ -107,7 +152,13 @@ func FetchIndex(ctx context.Context, hub string) (*HubIndex, error) {
 	}
 	kept := idx.Packs[:0]
 	for _, e := range idx.Packs {
-		if nameRe.MatchString(e.Name) && safeRel(e.Path) && len(e.Digest) == 64 {
+		if nameRe.MatchString(e.Name) && !reservedRe.MatchString(e.Name) && safeRel(e.Path) && len(e.Digest) == 64 {
+			if e.Kind != "workflow" && e.Kind != "script" && e.Kind != "mixed" {
+				e.Kind = "mixed" // claims nothing it cannot show
+			}
+			if !Categories[e.Category] {
+				e.Category = "other"
+			}
 			kept = append(kept, e)
 		}
 	}
@@ -115,32 +166,35 @@ func FetchIndex(ctx context.Context, hub string) (*HubIndex, error) {
 	return &idx, nil
 }
 
-// Install downloads entry into root/<name>, replacing an older copy only
-// once the new one is complete and matches the index's digest.
+// Install downloads entry and puts it in place of the installed pack of the
+// same name (or root/<name>), only once it is complete, matches the index's
+// digest and its manifest names the same pack.
 func Install(ctx context.Context, hub, root string, e HubEntry) (string, error) {
-	if !nameRe.MatchString(e.Name) || !safeRel(e.Path) {
+	if !nameRe.MatchString(e.Name) || reservedRe.MatchString(e.Name) || !safeRel(e.Path) {
 		return "", errors.New("invalid pack entry")
 	}
 	if len(e.Files) == 0 || len(e.Files) > maxFiles {
 		return "", errors.New("a pack lists 1 to 50 files")
 	}
+	hubMu.Lock()
+	defer hubMu.Unlock()
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return "", err
 	}
-	tmp, err := os.MkdirTemp(root, ".hub-"+e.Name+"-")
+	cleanStale(root)
+	tmp, err := os.MkdirTemp(root, ".staging-"+e.Name+"-")
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 	total := 0
+	seenFiles := map[string]bool{}
 	for _, f := range e.Files {
-		if !safeRel(f) {
-			return "", fmt.Errorf("invalid file name %q", f)
+		if !safeRel(f) || seenFiles[strings.ToLower(f)] {
+			return "", fmt.Errorf("invalid or repeated file name %q", f)
 		}
+		seenFiles[strings.ToLower(f)] = true
 		u := baseURL(hub) + path.Join(e.Path, f)
-		if _, err := url.Parse(u); err != nil {
-			return "", err
-		}
 		b, err := hubGet(ctx, u, maxFile)
 		if err != nil {
 			return "", err
@@ -164,20 +218,47 @@ func Install(ctx context.Context, hub, root string, e HubEntry) (string, error) 
 	if d != e.Digest {
 		return "", errors.New("the downloaded pack does not match the catalog — not installing it")
 	}
+	got := loadOne(tmp, Trust{}, trustedKeys(nil))
+	if got.Manifest.Name != e.Name {
+		return "", fmt.Errorf("the downloaded pack is named %q, not %q — not installing it", got.Manifest.Name, e.Name)
+	}
+	// Update the folder that holds this pack now; never replace a folder
+	// that holds a different pack.
 	dir := filepath.Join(root, e.Name)
-	old := dir + ".old"
-	_ = os.RemoveAll(old)
+	for _, p := range Load(root, Trust{}) {
+		if p.Manifest.Name == e.Name {
+			dir = p.Dir
+			break
+		}
+	}
 	if _, err := os.Stat(dir); err == nil {
-		if err := os.Rename(dir, old); err != nil {
+		if cur := loadOne(dir, Trust{}, trustedKeys(nil)); cur.Manifest.Name != "" && cur.Manifest.Name != e.Name {
+			return "", fmt.Errorf("%s holds another pack (%s) — move it first", dir, cur.Manifest.Name)
+		}
+	}
+	trash := filepath.Join(root, ".trash-"+e.Name)
+	_ = os.RemoveAll(trash)
+	if _, err := os.Stat(dir); err == nil {
+		if err := os.Rename(dir, trash); err != nil {
 			return "", err
 		}
 	}
 	if err := os.Rename(tmp, dir); err != nil {
-		_ = os.Rename(old, dir)
+		_ = os.Rename(trash, dir)
 		return "", err
 	}
-	_ = os.RemoveAll(old)
+	_ = os.RemoveAll(trash) // a held file leaves it: hidden, removed next time
 	return dir, nil
+}
+
+// cleanStale removes staging and backup folders a crash or a held file left.
+func cleanStale(root string) {
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		if e.IsDir() && (strings.HasPrefix(e.Name(), ".staging-") || strings.HasPrefix(e.Name(), ".trash-") || strings.HasPrefix(e.Name(), ".hub-")) {
+			_ = os.RemoveAll(filepath.Join(root, e.Name()))
+		}
+	}
 }
 
 // BuildIndex writes the index of every pack under dir/packs (for the hub's
@@ -190,7 +271,7 @@ func BuildIndex(dir string) (*HubIndex, error) {
 	}
 	idx := &HubIndex{Version: 1, Packs: []HubEntry{}}
 	for _, de := range entries {
-		if !de.IsDir() {
+		if !de.IsDir() || strings.HasPrefix(de.Name(), ".") {
 			continue
 		}
 		p := loadOne(filepath.Join(root, de.Name()), Trust{}, trustedKeys(nil))
@@ -231,9 +312,9 @@ func BuildIndex(dir string) (*HubIndex, error) {
 		if !Categories[cat] {
 			cat = "other"
 		}
-		_, signedErr := os.Stat(filepath.Join(p.Dir, SignatureFile))
+		// "Signed" only when the signature verifies against the project key.
 		idx.Packs = append(idx.Packs, HubEntry{Name: m.Name, Version: m.Version, Category: cat, Kind: kind, Title: title,
-			Description: desc, Author: m.Author, Path: "packs/" + de.Name(), Files: names, Digest: p.Digest, Signed: signedErr == nil})
+			Description: desc, Author: m.Author, Path: "packs/" + de.Name(), Files: names, Digest: p.Digest, Signed: p.Status == Signed})
 	}
 	sort.Slice(idx.Packs, func(i, j int) bool { return idx.Packs[i].Name < idx.Packs[j].Name })
 	return idx, nil

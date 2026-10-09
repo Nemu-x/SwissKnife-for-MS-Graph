@@ -193,7 +193,8 @@ func Load(root string, trust Trust) []Pack {
 	var out []Pack
 	count := map[string]int{}
 	for _, e := range entries {
-		if !e.IsDir() {
+		// Hidden folders are the hub's staging and backups, never packs.
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		p := loadOne(filepath.Join(root, e.Name()), trust, keys)

@@ -18,8 +18,8 @@ export function HubCatalog() {
   return window['go']['services']['PacksService']['HubCatalog']();
 }
 
-export function HubInstall(arg1) {
-  return window['go']['services']['PacksService']['HubInstall'](arg1);
+export function HubInstall(arg1, arg2) {
+  return window['go']['services']['PacksService']['HubInstall'](arg1, arg2);
 }
 
 export function Keys() {

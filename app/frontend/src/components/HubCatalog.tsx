@@ -9,7 +9,7 @@ import { localized } from './CatalogAction'
 type HubPack = {
   name: string; version: string; category: string; kind: 'workflow' | 'script' | 'mixed'
   title: Record<string, string>; description?: Record<string, string>; author?: string
-  signed: boolean; installed?: string; update: boolean
+  signed: boolean; installed?: string; update: boolean; digest: string
 }
 
 const CATEGORIES = ['all', 'security', 'exchange', 'hr', 'teams', 'intune', 'reports', 'other']
@@ -19,7 +19,7 @@ const CATEGORIES = ['all', 'security', 'exchange', 'hr', 'teams', 'intune', 'rep
 export function HubCatalog({ onInstalled }: { onInstalled: (list: unknown) => void }) {
   const { t } = useTranslation()
   const { toast } = useStore()
-  const [view, setView] = useState<{ url: string; packs: HubPack[] } | null>(null)
+  const [view, setView] = useState<{ url: string; custom?: boolean; packs: HubPack[] } | null>(null)
   const [error, setError] = useState('')
   const [cat, setCat] = useState('all')
   const [busy, setBusy] = useState('')
@@ -29,15 +29,15 @@ export function HubCatalog({ onInstalled }: { onInstalled: (list: unknown) => vo
     setError('')
     setView(null)
     api.packs.hubCatalog()
-      .then((v: any) => { setView({ url: v?.url ?? '', packs: v?.packs ?? [] }); setHub(v?.url ?? '') })
+      .then((v: any) => { setView({ url: v?.url ?? '', custom: !!v?.custom, packs: v?.packs ?? [] }); setHub(v?.url ?? '') })
       .catch((e) => setError(errMessage(e)))
   }
   useEffect(load, [])
 
-  const install = async (name: string) => {
+  const install = async (name: string, digest: string) => {
     setBusy(name)
     try {
-      onInstalled(await api.packs.hubInstall(name))
+      onInstalled(await api.packs.hubInstall(name, digest))
       toast('ok', t('hub.installed'))
       load()
     } catch (e) { toast('err', errMessage(e)) } finally { setBusy('') }
@@ -50,6 +50,7 @@ export function HubCatalog({ onInstalled }: { onInstalled: (list: unknown) => vo
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-[var(--text-faint)]">{t('hub.intro')}</p>
+      {view?.custom && <p className="text-xs text-[var(--warn)]">{t('hub.custom', { url: view.url })}</p>}
       <div className="flex flex-wrap gap-1">
         {CATEGORIES.map((c) => (
           <button key={c} onClick={() => setCat(c)}
@@ -74,7 +75,8 @@ export function HubCatalog({ onInstalled }: { onInstalled: (list: unknown) => vo
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium">{localized(p.title) || p.name}</span>
               <Badge kind="neutral">{t(`hub.kind.${p.kind}`)}</Badge>
-              {p.signed && <Badge kind="ok"><ShieldCheck size={11} /> {t('hub.signed')}</Badge>}
+              {/* The index is not authenticated: the signature is checked after install. */}
+              {p.signed && <Badge kind="neutral"><ShieldCheck size={11} /> {t('hub.signed')}</Badge>}
               <span className="text-xs text-[var(--text-faint)]">{p.version}{p.author ? ` · ${p.author}` : ''}</span>
             </div>
             {p.description && <p className="mt-0.5 text-xs text-[var(--text-dim)]">{localized(p.description)}</p>}
@@ -83,7 +85,7 @@ export function HubCatalog({ onInstalled }: { onInstalled: (list: unknown) => vo
             {p.installed && !p.update
               ? <Badge kind="ok">{t('hub.isInstalled')}</Badge>
               : (
-                <Button variant={p.update ? 'subtle' : 'primary'} disabled={!!busy} onClick={() => install(p.name)}>
+                <Button variant={p.update ? 'subtle' : 'primary'} disabled={!!busy} onClick={() => install(p.name, p.digest)}>
                   {busy === p.name ? <Spinner /> : <Download size={14} />} {p.update ? t('hub.update', { v: p.version }) : t('hub.install')}
                 </Button>
               )}

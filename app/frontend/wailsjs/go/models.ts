@@ -1141,6 +1141,7 @@ export namespace services {
 	}
 	export class HubView {
 	    url: string;
+	    custom: boolean;
 	    packs: HubPack[];
 	
 	    static createFrom(source: any = {}) {
@@ -1150,6 +1151,7 @@ export namespace services {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.url = source["url"];
+	        this.custom = source["custom"];
 	        this.packs = this.convertValues(source["packs"], HubPack);
 	    }
 	

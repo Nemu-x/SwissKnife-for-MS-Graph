@@ -84,7 +84,7 @@ export const api = {
     removeKey: (k: string) => Packs.RemoveKey(k) as Promise<string[]>,
     openFolder: () => Packs.OpenFolder(),
     hubCatalog: () => Packs.HubCatalog(),
-    hubInstall: (name: string) => Packs.HubInstall(name),
+    hubInstall: (name: string, digest: string) => Packs.HubInstall(name, digest),
     setHub: (url: string) => Packs.SetHub(url) as Promise<string>,
   },
   onprem: {
