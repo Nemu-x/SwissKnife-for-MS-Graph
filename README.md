@@ -3,7 +3,8 @@
 </h1>
 
 <p align="center">
-  <b>SwissKnife for MS Graph</b> — a clean, fast Microsoft Graph desktop client for IT admins<br />
+  <b>SwissKnife</b> — a cross-platform Microsoft 365 administration runtime with a task-oriented GUI<br />
+  Graph · Exchange &amp; Teams PowerShell · on-prem Active Directory · extensible action packs<br />
   <b>Wails · Go · React</b> · Windows · macOS · Linux
 </p>
 
@@ -12,6 +13,10 @@
   <a href="https://nemu-x.github.io/SwissKnife-for-MS-Graph/">Downloads</a> ·
   <a href="https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki">Wiki</a> ·
   <a href="#support-the-project">Support</a>
+</p>
+
+<p align="center">
+  <a href="https://web.tribute.tg/d/REw"><img src="https://img.shields.io/badge/Support_on-Tribute-8E79B7?style=for-the-badge&amp;logo=telegram&amp;logoColor=white" alt="Support on Tribute" /></a>
 </p>
 
 <p align="center">
@@ -29,7 +34,9 @@
 
 ## Overview
 
-SwissKnife is a lightweight cross-platform desktop client for the Microsoft Graph API — built for IT administrators who prefer clean UI actions over bulky PowerShell scripts. One window gives you Entra ID, Teams, Chats, mail, OneDrive, SharePoint, Intune, devices, app registrations, licensing, storage cleanup, audit logs, usage reports, guided on/offboarding runbooks, and a raw Graph playground.
+SwissKnife is a cross-platform Microsoft 365 administration runtime with a task-oriented GUI, for IT administrators who prefer clear, previewed actions over bulky scripts. One window covers Entra ID, Exchange Online, Teams, Intune, OneDrive & SharePoint, licensing, security and audit — and, when you need it, your **on-premises Active Directory** too.
+
+Under the GUI is one execution engine: every action is described once, runs on whatever backend can do it — **Microsoft Graph**, the **Exchange Online admin API**, **Exchange / Teams PowerShell** (installed for you, or on a paired Windows **worker**), or **LDAP** for on-prem AD — and always goes the same way: **preview → typed confirmation for anything destructive → apply → run journal + audit log**. Your own **action packs** plug into the same engine.
 
 **The app is organised around tasks, not endpoints.** Every page opens as a grid of the jobs it can do — "add someone to a private channel", "why can this person not sign in?", "give the same access as another user" — each with a one-line explanation and the Graph caveats next to the form. Press **Ctrl+K** anywhere and describe the task in your own words instead of hunting for the right tab. Raw tables, JSON and tree views are still one click away; they are just no longer the first thing you see.
 
@@ -38,6 +45,22 @@ Everything is pick-by-name: users, groups, teams, channels, sites, roles, device
 Authentication is **app-only (client credentials)** or **delegated (device code)**. Secrets live only in the OS keychain, the access token never leaves the Go backend, and every write/destructive action is guarded by a typed confirmation and recorded in a local audit log.
 
 ## Features
+
+**New in 2.0** (in progress on `dev`)
+
+- **Execution engine** — preview of every change, one confirmation, journal and audit for Graph, Exchange, Teams, PowerShell and LDAP alike; the CLI runs the same actions headless
+- **Exchange & Teams PowerShell as buttons** — mailbox permissions, convert to shared, forwarding, transport rules, Teams policies; PowerShell 7 and the modules install from inside the app
+- **Incident response** — find and purge a phishing mail tenant-wide, suspicious inbox rules, block senders, quarantine, a one-click compromised-account playbook
+- **Reports & Intune explorer** — inactive users, license waste, MFA status, guests, privileged roles, mailbox sizes and forwarding; what Intune assigns to whom, unassigned policies, conflicts
+- **Configuration as code** — snapshots of Conditional Access, Intune, Exchange and Teams config; export to a git folder, diff, restore, drift alerts
+- **On-prem Active Directory** — find, disable, unlock, reset passwords and manage groups over LDAPS, side by side with Microsoft 365 (or on its own)
+- **Multi-tenant & GDAP** — run reports across several tenants; partner (GDAP) profiles
+- **Profile limits** — read-only or group-scoped profiles for shared and junior use
+- **Action packs** — add your own actions in PowerShell; signed or reviewed before they run, isolated in their own process
+- **Remote worker** — a paired Windows machine runs the PowerShell for a Mac or Linux box (pinned mutual TLS)
+- **Object explorer**, a menu that folds to icons and hides what you do not use, and "what you manage" (Microsoft 365, on-prem AD or both)
+
+**Everything from 1.x**
 
 - **Task palette (Ctrl+K)** — ~60 jobs described in plain language, in English and Russian, each landing on the exact form that performs it
 - **Access mirror** — "give Bell the same access Whitfield has": diffs two people across groups, teams, private channels, admin roles and licenses, then copies only what is missing (additive, typed confirmation, private channels bring their team along)
@@ -152,7 +175,16 @@ Minimal core-only set: `Directory.Read.All`, `User.Read.All`, `Group.ReadWrite.A
 
 ## Support the project
 
-SwissKnife is free and MIT-licensed. If it saves you time, a crypto donation helps keep development and releases going. Thank you! 🗡️
+SwissKnife is free, MIT-licensed and built in spare time. If it saves you hours, help keep it going — every bit funds new features and releases. Thank you! 🗡️
+
+<p>
+  <a href="https://web.tribute.tg/d/REw"><img src="https://img.shields.io/badge/Support_on-Tribute-8E79B7?style=for-the-badge&amp;logo=telegram&amp;logoColor=white" alt="Support on Tribute" /></a>
+</p>
+
+**[Tribute](https://web.tribute.tg/d/REw)** takes cards and Telegram payments, one-time or monthly. A ⭐ on GitHub is free and helps others find the project.
+
+<details>
+<summary>Crypto</summary>
 
 | Asset | Address |
 | --- | --- |
@@ -162,6 +194,8 @@ SwissKnife is free and MIT-licensed. If it saves you time, a crypto donation hel
 | ETH | `0xD9333e859Fb74D885d22E27568589de61E4433b5` |
 
 > Double-check the network before sending — wrong-network transfers are unrecoverable.
+
+</details>
 
 ## Author
 

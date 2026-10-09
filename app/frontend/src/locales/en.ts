@@ -4,6 +4,8 @@ export type Dict<T> = { [K in keyof T]: T[K] extends string ? string : Dict<T[K]
 const en = {
   app: { name: 'SwissKnife for MS Graph' },
   nav: {
+    collapse: 'Collapse the menu',
+    expand: 'Expand the menu',
     onprem: 'On-prem AD',
     explorer: 'Explorer',
     connect: 'Connect',
@@ -93,6 +95,17 @@ const en = {
     badge: 'Pack: {{name}}',
   },
   crash: { title: 'This page ran into a problem', body: 'The rest of the app still works. Please report the message below.', home: 'Go to the start page', retry: 'Try again' },
+  support: {
+    short: 'Support',
+    title: 'Support SwissKnife',
+    pitch: 'SwissKnife is free, open-source and built in spare time. If it saves you hours, help keep it going — every bit funds new features and releases.',
+    tribute: 'Support on Tribute',
+    tributeHint: 'Card or Telegram · one-time or monthly',
+    star: 'Star it on GitHub',
+    starHint: 'Free, and it helps others find the project',
+    crypto: 'Crypto (USDT, BTC, ETH)',
+    cryptoWarn: 'Double-check the network before sending — wrong-network transfers cannot be recovered.',
+  },
   explorer: {
     objects: 'Objects',
     kinds: { users: 'Users', groups: 'Groups', teams: 'Teams' },
@@ -335,6 +348,12 @@ const en = {
     safeMode: 'Safe mode (mask secrets in output)',
     access: 'Available features',
     checkAccess: 'Check access',
+    menu: {
+      title: 'Menu',
+      hint: 'Hide the pages you do not use. They stay one Ctrl+K away, and Settings always stays in the menu.',
+      essentials: 'Essentials only',
+      everything: 'Show everything',
+    },
     workspaces: {
       title: 'What you manage',
       hint: 'Switch off what you do not use: its pages leave the menu and the task palette. Nothing is deleted.',
@@ -357,8 +376,6 @@ const en = {
     teamsTest: 'Send test card',
     teamsSaved: 'Notification settings saved',
     teamsTestOk: 'Test card sent — check the channel',
-    support: 'Support the project',
-    supportHint: 'SwissKnife is free and open-source. If it saves you time, you can support development with crypto:',
     supportCopied: '{{a}} address copied',
     version: 'Version {{v}}',
     checkUpdates: 'Check for updates',
