@@ -36,7 +36,7 @@ func (e *Engine) checkPolicy(env Env, a Action, in Inputs) error {
 	}
 	// A pack script can touch any object whatever its inputs name: under a
 	// group scope packs do not run at all.
-	if a.Pack != "" {
+	if a.Pack != "" && !a.Workflow {
 		return &Error{Code: "policyUnscoped", Msg: "this connection profile may only change members of its groups, and action-pack scripts cannot be checked against them"}
 	}
 	if a.Danger == Read {

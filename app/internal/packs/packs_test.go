@@ -117,8 +117,13 @@ func TestManifestRulesRefuseUnsafePacks(t *testing.T) {
 // The sample pack in the repository must stay loadable.
 func TestSamplePackIsValid(t *testing.T) {
 	list := Load(filepath.Join("..", "..", "..", "packs"), Trust{})
-	if len(list) != 1 || list[0].Status != Untrusted || len(list[0].Manifest.Actions) != 2 {
-		t.Fatalf("sample pack: %+v", list)
+	if len(list) < 2 {
+		t.Fatalf("sample packs: %+v", list)
+	}
+	for _, p := range list {
+		if p.Status != Untrusted {
+			t.Errorf("%s: %s %s", p.Dir, p.Status, p.Error)
+		}
 	}
 }
 

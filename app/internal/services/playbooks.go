@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"swissknife-app/internal/actions"
 	"swissknife-app/internal/engine"
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/journal"
@@ -447,7 +448,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				if json.Unmarshal(raw, &m) != nil {
 					continue
 				}
-				seg, deletable := methodTypeToSegment[m.Type]
+				seg, deletable := actions.AuthMethodSegments[m.Type]
 				if !deletable {
 					continue
 				}

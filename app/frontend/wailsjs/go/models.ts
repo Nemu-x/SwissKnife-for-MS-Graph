@@ -94,6 +94,7 @@ export namespace engine {
 	    label?: Record<string, string>;
 	    hint?: Record<string, string>;
 	    pack?: string;
+	    workflow?: boolean;
 	    available: boolean;
 	    backend?: string;
 	    reason?: Reason;
@@ -115,6 +116,7 @@ export namespace engine {
 	        this.label = source["label"];
 	        this.hint = source["hint"];
 	        this.pack = source["pack"];
+	        this.workflow = source["workflow"];
 	        this.available = source["available"];
 	        this.backend = source["backend"];
 	        this.reason = this.convertValues(source["reason"], Reason);
@@ -147,6 +149,8 @@ export namespace engine {
 	    before?: string;
 	    after?: string;
 	    note?: string;
+	    step?: string;
+	    stepNo?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Change(source);
@@ -160,6 +164,8 @@ export namespace engine {
 	        this.before = source["before"];
 	        this.after = source["after"];
 	        this.note = source["note"];
+	        this.step = source["step"];
+	        this.stepNo = source["stepNo"];
 	    }
 	}
 	export class Outcome {
@@ -169,6 +175,8 @@ export namespace engine {
 	    before?: string;
 	    after?: string;
 	    note?: string;
+	    step?: string;
+	    stepNo?: number;
 	    ok: boolean;
 	    skipped: boolean;
 	    error?: string;
@@ -185,6 +193,8 @@ export namespace engine {
 	        this.before = source["before"];
 	        this.after = source["after"];
 	        this.note = source["note"];
+	        this.step = source["step"];
+	        this.stepNo = source["stepNo"];
 	        this.ok = source["ok"];
 	        this.skipped = source["skipped"];
 	        this.error = source["error"];
@@ -1478,6 +1488,24 @@ export namespace services {
 	        this.module = source["module"];
 	    }
 	}
+	export class PackFlowInfo {
+	    id: string;
+	    label: Record<string, string>;
+	    page: string;
+	    steps: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PackFlowInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.page = source["page"];
+	        this.steps = source["steps"];
+	    }
+	}
 	export class PackInfo {
 	    name: string;
 	    version: string;
@@ -1489,6 +1517,7 @@ export namespace services {
 	    error?: string;
 	    digest: string;
 	    actions: PackActionInfo[];
+	    workflows: PackFlowInfo[];
 	
 	    static createFrom(source: any = {}) {
 	        return new PackInfo(source);
@@ -1506,6 +1535,7 @@ export namespace services {
 	        this.error = source["error"];
 	        this.digest = source["digest"];
 	        this.actions = this.convertValues(source["actions"], PackActionInfo);
+	        this.workflows = this.convertValues(source["workflows"], PackFlowInfo);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
