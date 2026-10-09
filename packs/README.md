@@ -1,8 +1,9 @@
 # Action packs
 
-An action pack adds actions to SwissKnife's catalog without rebuilding the app:
-a folder with a `manifest.yaml` and PowerShell scripts that run in the app's
-signed-in Exchange Online or Teams PowerShell session.
+An action pack adds to SwissKnife's catalog without rebuilding the app: a
+folder with a `manifest.yaml` that declares **workflows** (chains of the app's
+own actions, no code) and/or **script actions** (PowerShell scripts that run in
+the app's signed-in Exchange Online or Teams PowerShell session).
 
 See [`litigation-hold/`](litigation-hold) for a complete example.
 

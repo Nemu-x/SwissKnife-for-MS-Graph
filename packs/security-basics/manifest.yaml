@@ -27,6 +27,7 @@ workflows:
       - action: user.resetMfa
         with: { user: "{{user}}" }
         when: { input: resetMfa, equals: "yes" }
+        onError: continue   # a default phone method stays: report it, keep cleaning up
       - action: mail.disableRules
         with: { user: "{{user}}" }
         when: { input: cleanMailbox, equals: "yes" }

@@ -84,7 +84,7 @@ export function PacksCard() {
             )}
             {(p.status === 'untrusted' || p.status === 'changed') && (
               <div className="mt-2 flex flex-col gap-1.5">
-                <p className="text-xs text-[var(--warn)]">{t('packs.reviewWarn', { dir: p.dir })}</p>
+                <p className="text-xs text-[var(--warn)]">{(p.actions ?? []).length > 0 ? t('packs.reviewWarn', { dir: p.dir }) : t('packs.reviewWarnWorkflow')}</p>
                 <p className="break-all font-mono text-[10px] text-[var(--text-faint)]">SHA-256 {p.digest}</p>
                 <Button variant="primary" onClick={() => act(() => api.packs.trust(p.name, p.digest))}><ShieldCheck size={14} /> {t('packs.trust')}</Button>
               </div>

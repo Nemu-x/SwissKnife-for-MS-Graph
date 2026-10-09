@@ -79,7 +79,7 @@ const en = {
   packs: {
     workflowSteps: 'Steps: {{count}}',
     title: 'Action packs',
-    intro: 'Packs add actions written in PowerShell by you or the community. A pack runs only when it is signed by a key you trust, or you reviewed and trusted its exact files. Scripts are full PowerShell with your admin connection: blocked in read-only mode and audited.',
+    intro: 'Packs add workflows — chains of the app’s own actions, no code — and actions written in PowerShell, by you or the community. A pack runs only when it is signed by a key you trust, or you reviewed and trusted its exact files. Scripts are full PowerShell with your admin connection: blocked in read-only mode and audited.',
     openFolder: 'Open folder',
     reload: 'Reload',
     none: 'No packs installed. Put a pack folder into the packs folder.',
@@ -87,6 +87,7 @@ const en = {
     danger: { read: 'reads', write: 'changes', destructive: 'destructive' },
     signedBy: 'Signature verified (key {{key}})',
     reviewWarn: 'Its scripts will run with your admin connection. Read the files in {{dir}} before trusting it.',
+    reviewWarnWorkflow: 'It only chains the app’s own actions (no scripts). Check which steps it runs before trusting it.',
     trust: 'I reviewed it — trust this version',
     disable: 'Turn off',
     enable: 'Turn on',
@@ -1438,7 +1439,7 @@ const en = {
       usageLocation: 'usage location',
       group: { member: 'member of', owner: 'owner of' },
     },
-    notes: { stepFailed: 'This step could not be planned and is skipped: {{error}}', noSuspiciousRules: 'No suspicious inbox rules found.', purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone', recoverableOverLimit: 'likely more than 100 in some mailboxes: one run removes at most 100 per mailbox — check the case in Purview afterwards' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
+    notes: { defaultPhone: 'If this phone is the default sign-in method, Microsoft does not let it be removed here — set another default (or remove it) in the Entra admin center.', stepFailed: 'This step could not be planned and is skipped: {{error}}', noSuspiciousRules: 'No suspicious inbox rules found.', purge: { recoverable: 'moved to Recoverable Items — can be restored', permanent: 'deleted permanently — cannot be undone', recoverableOverLimit: 'likely more than 100 in some mailboxes: one run removes at most 100 per mailbox — check the case in Purview afterwards' }, forwardKeepCopy: 'a copy stays in the mailbox', forwardNoCopy: 'no copy stays in the mailbox', inheritedLicense: 'Assigned through a group — remove the user from that group (or the license from the group) instead.' },
     values: { randomPassword: 'new random password', locked: 'locked', unlocked: 'unlocked', newPassword: 'new password set', newPasswordMustChange: 'new password, change at next sign-in', snapshot: 'as in the snapshot', included: 'included', excluded: 'excluded', required: 'required', available: 'available', uninstall: 'uninstall', allUsers: 'all users', allDevices: 'all devices', configuration: 'configuration', compliance: 'compliance', settingsCatalog: 'settings catalog', conflict: 'conflict', app: 'app', TotalItemSize: 'Total size', ItemCount: 'Items', DeletedItemCount: 'Deleted items', TotalDeletedItemSize: 'Deleted items size', LastUserActionTime: 'Last activity', yes: 'yes', no: 'no', released: 'released', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', Global: 'Global (org default)', shared: 'shared', regular: 'user mailbox', enabled: 'on', disabled: 'off', allowed: 'allowed', blocked: 'blocked', active: 'active', revoked: 'revoked' },
     reasons: {
       stepUnavailable: 'A step of this workflow cannot run now ({{action}}).',

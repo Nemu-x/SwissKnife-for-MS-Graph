@@ -114,8 +114,13 @@ func (graphResetMfa) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, er
 			continue // the password, or not removable
 		}
 		kind := strings.TrimSuffix(strings.TrimPrefix(m.Type, "#microsoft.graph."), "AuthenticationMethod")
-		changes = append(changes, engine.Change{Target: u.UPN, Field: "authMethod", Op: "remove", Before: kind,
-			Ref: map[string]string{"path": userPath(u.ID) + "/authentication/" + seg + "/" + url.PathEscape(m.ID)}})
+		ch := engine.Change{Target: u.UPN, Field: "authMethod", Op: "remove", Before: kind,
+			Ref: map[string]string{"path": userPath(u.ID) + "/authentication/" + seg + "/" + url.PathEscape(m.ID)}}
+		if kind == "phone" {
+			// Graph cannot delete a phone that is the default MFA method.
+			ch.Note = "defaultPhone"
+		}
+		changes = append(changes, ch)
 	}
 	if len(changes) == 0 {
 		changes = []engine.Change{{Target: u.UPN, Field: "authMethod", Op: "none"}}
