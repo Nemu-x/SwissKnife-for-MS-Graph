@@ -14,6 +14,14 @@ export function Enable(arg1) {
   return window['go']['services']['PacksService']['Enable'](arg1);
 }
 
+export function HubCatalog() {
+  return window['go']['services']['PacksService']['HubCatalog']();
+}
+
+export function HubInstall(arg1, arg2) {
+  return window['go']['services']['PacksService']['HubInstall'](arg1, arg2);
+}
+
 export function Keys() {
   return window['go']['services']['PacksService']['Keys']();
 }
@@ -28,6 +36,10 @@ export function OpenFolder() {
 
 export function RemoveKey(arg1) {
   return window['go']['services']['PacksService']['RemoveKey'](arg1);
+}
+
+export function SetHub(arg1) {
+  return window['go']['services']['PacksService']['SetHub'](arg1);
 }
 
 export function Trust(arg1, arg2) {
