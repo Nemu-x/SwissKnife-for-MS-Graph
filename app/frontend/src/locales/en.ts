@@ -1407,6 +1407,7 @@ const en = {
     },
     options: { disable: 'Disable', enable: 'Enable', conditionalAccessPolicies: 'Conditional access policies', namedLocations: 'Named locations', configuration: 'Configuration', compliance: 'Compliance', '30': '30', '90': '90', '180': '180', phishing: 'Phishing', spam: 'Spam', malware: 'Malware', notJunk: 'Not junk', recoverable: 'Recoverable', permanent: 'Permanently', meeting: 'Meetings', messaging: 'Messaging', calling: 'Calling', appSetup: 'App setup', appPermission: 'App permissions', shared: 'Shared', regular: 'User mailbox', set: 'Forward', clear: 'Stop forwarding', yes: 'Yes', no: 'No', AutoAccept: 'Accept automatically', AutoUpdate: 'Only tentative', None: 'Leave for a delegate', enabled: 'On', disabled: 'Off', calendar: 'Calendar', inbox: 'Inbox', AvailabilityOnly: 'Free/busy', LimitedDetails: 'Limited details', Reviewer: 'Reviewer', Author: 'Author', Editor: 'Editor', Owner: 'Owner', none: 'Remove access', blocked: 'Block', allowed: 'Allow', member: 'Member', owner: 'Owner', add: 'Add', remove: 'Remove' },
     changeFields: {
+      step: 'step',
       authMethod: 'sign-in method',
       password: 'password',
       inboxRule: 'inbox rule',

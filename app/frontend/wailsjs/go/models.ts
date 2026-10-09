@@ -150,6 +150,7 @@ export namespace engine {
 	    after?: string;
 	    note?: string;
 	    step?: string;
+	    stepNo?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Change(source);
@@ -164,6 +165,7 @@ export namespace engine {
 	        this.after = source["after"];
 	        this.note = source["note"];
 	        this.step = source["step"];
+	        this.stepNo = source["stepNo"];
 	    }
 	}
 	export class Outcome {
@@ -174,6 +176,7 @@ export namespace engine {
 	    after?: string;
 	    note?: string;
 	    step?: string;
+	    stepNo?: number;
 	    ok: boolean;
 	    skipped: boolean;
 	    error?: string;
@@ -191,6 +194,7 @@ export namespace engine {
 	        this.after = source["after"];
 	        this.note = source["note"];
 	        this.step = source["step"];
+	        this.stepNo = source["stepNo"];
 	        this.ok = source["ok"];
 	        this.skipped = source["skipped"];
 	        this.error = source["error"];

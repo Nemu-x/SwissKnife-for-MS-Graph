@@ -154,17 +154,15 @@ func workflowActions(e *engine.Engine, p packs.Pack, gate func() *engine.Reason)
 			}
 			steps = append(steps, step)
 		}
-		danger, err := e.ValidateWorkflow(fields, steps)
+		danger, perms, err := e.ValidateWorkflow(fields, w.ConfirmField, steps)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", w.ID, err)
-		}
-		if danger == engine.Destructive && w.ConfirmField == "" {
-			return nil, fmt.Errorf("%s: it has destructive steps, so it names its confirmField", w.ID)
 		}
 		trust := gate
 		out = append(out, engine.Action{
 			Manifest: engine.Manifest{ID: "pack." + p.Manifest.Name + "." + w.ID, Page: w.Page, Danger: danger,
-				Fields: fields, ConfirmField: w.ConfirmField, Label: w.Label, Hint: w.Hint, Pack: p.Manifest.Name, Workflow: true},
+				Fields: fields, ConfirmField: w.ConfirmField, Label: w.Label, Hint: w.Hint, Pack: p.Manifest.Name, Workflow: true,
+				Permissions: perms},
 			Impls: []engine.Impl{e.NewWorkflow(steps)},
 			// Trusted, and every step can run now.
 			Gate: func() *engine.Reason {

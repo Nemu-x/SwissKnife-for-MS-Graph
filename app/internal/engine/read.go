@@ -36,7 +36,7 @@ type Reader interface {
 type readerImpl struct{ Reader }
 
 func (readerImpl) Plan(Env, Inputs) ([]Change, error) { return nil, errReadOnlyAction }
-func (readerImpl) Apply(Env, Inputs, Change) error      { return errReadOnlyAction }
+func (readerImpl) Apply(Env, Inputs, Change) error    { return errReadOnlyAction }
 
 var errReadOnlyAction = &Error{Code: "readAction", Msg: "this action only reads — run it instead of previewing"}
 

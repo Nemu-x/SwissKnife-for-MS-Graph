@@ -1407,6 +1407,7 @@ const ru: Dict<typeof en> = {
     },
     options: { disable: 'Отключить', enable: 'Включить', conditionalAccessPolicies: 'Политики условного доступа', namedLocations: 'Именованные расположения', configuration: 'Конфигурация', compliance: 'Соответствие', '30': '30', '90': '90', '180': '180', phishing: 'Фишинг', spam: 'Спам', malware: 'Вредонос', notJunk: 'Не спам', recoverable: 'С восстановлением', permanent: 'Безвозвратно', meeting: 'Собрания', messaging: 'Сообщения', calling: 'Звонки', appSetup: 'Настройка приложений', appPermission: 'Разрешения приложений', shared: 'Общий', regular: 'Ящик пользователя', set: 'Пересылать', clear: 'Отключить пересылку', yes: 'Да', no: 'Нет', AutoAccept: 'Принимать автоматически', AutoUpdate: 'Только под вопросом', None: 'Оставить делегату', enabled: 'Вкл.', disabled: 'Выкл.', calendar: 'Календарь', inbox: 'Входящие', AvailabilityOnly: 'Только занятость', LimitedDetails: 'Ограниченные сведения', Reviewer: 'Читатель', Author: 'Автор', Editor: 'Редактор', Owner: 'Владелец', none: 'Убрать доступ', blocked: 'Заблокировать', allowed: 'Разрешить', member: 'Участник', owner: 'Владелец', add: 'Добавить', remove: 'Убрать' },
     changeFields: {
+      step: 'шаг',
       authMethod: 'способ входа',
       password: 'пароль',
       inboxRule: 'правило ящика',

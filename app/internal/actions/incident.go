@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math/big"
 	"net/url"
+	"sort"
 	"strings"
 
 	"swissknife-app/internal/engine"
@@ -76,10 +77,10 @@ func incidentActions() []engine.Action {
 			Fields: []engine.Field{user}, Permissions: []string{"UserAuthenticationMethod.ReadWrite.All"}},
 			Impls: []engine.Impl{graphResetMfa{}}},
 		{Manifest: engine.Manifest{ID: "user.resetPassword", Page: "security", Danger: engine.Destructive, ConfirmField: "user",
-			Fields: []engine.Field{user}, Permissions: []string{"User.ReadWrite.All"}},
+			Fields: []engine.Field{user}, Permissions: []string{"User.ReadWrite.All", "User-PasswordProfile.ReadWrite.All"}},
 			Impls: []engine.Impl{graphResetPassword{}}},
 		{Manifest: engine.Manifest{ID: "mail.disableRules", Page: "security", Danger: engine.Write,
-			Fields: []engine.Field{user}, Permissions: []string{"MailboxSettings.ReadWrite", "Mail.ReadBasic.All", "Domain.Read.All"}},
+			Fields: []engine.Field{user}, Permissions: []string{"MailboxSettings.ReadWrite", "Mail.ReadBasic.All", "User.Read.All", "Domain.Read.All"}},
 			Impls: []engine.Impl{graphDisableRules{}}},
 	}
 }
@@ -119,7 +120,20 @@ func (graphResetMfa) Plan(env engine.Env, in engine.Inputs) ([]engine.Change, er
 	if len(changes) == 0 {
 		changes = []engine.Change{{Target: u.UPN, Field: "authMethod", Op: "none"}}
 	}
+	// Entra refuses to delete the default method while others remain: the
+	// kinds usually set as default go last.
+	sort.SliceStable(changes, func(i, j int) bool { return defaultRank(changes[i].Before) < defaultRank(changes[j].Before) })
 	return changes, nil
+}
+
+func defaultRank(kind string) int {
+	switch kind {
+	case "microsoftAuthenticator":
+		return 2
+	case "phone":
+		return 1
+	}
+	return 0
 }
 
 func (graphResetMfa) Apply(env engine.Env, _ engine.Inputs, ch engine.Change) error {

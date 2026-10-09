@@ -452,7 +452,7 @@ function PlanView({ changes }: { changes: engine.Change[] }) {
       {nothing && <p className="mb-2 text-sm text-[var(--text-dim)]">{t('actions.nothingToDo')}</p>}
       <ul className="flex flex-col gap-1.5">
         {changes.map((c, i) => (<Fragment key={i}>
-          {c.step && (i === 0 || changes[i - 1].step !== c.step) && (
+          {c.step && (i === 0 || changes[i - 1].stepNo !== c.stepNo) && (
             // A workflow: its changes are grouped under the step that makes them.
             <li className="mt-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--accent)]">
               <ListOrdered size={12} /> {t(catalogLabel(c.step), { defaultValue: c.step })}
@@ -464,12 +464,12 @@ function PlanView({ changes }: { changes: engine.Change[] }) {
             </span>
             <span className="font-medium">{c.target}</span>
             <span className="text-[var(--text-faint)]">{t(`actions.changeFields.${c.field}`, { defaultValue: c.field })}</span>
-            <span className="text-[var(--text-dim)]">
+            {c.note !== 'stepFailed' && <span className="text-[var(--text-dim)]">
               {c.op === 'add' ? shown(c.field, c.after)
                 : c.op === 'remove' ? <s>{shown(c.field, c.before)}</s>
                 : c.op === 'none' ? `${shown(c.field, c.after || c.before)} · ${t('actions.op.none')}`
                 : <>{shown(c.field, c.before)} → <span className="text-[var(--text)]">{shown(c.field, c.after)}</span></>}
-            </span>
+            </span>}
             {c.note && <span className="w-full text-xs text-[var(--warn)]">{t(`actions.notes.${c.note}`, { defaultValue: c.note, error: c.after })}</span>}
           </li>
         </Fragment>))}

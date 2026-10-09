@@ -39,7 +39,10 @@ Settings → Action packs, *Reload*, or restarting the app).
 
 - **Workflow packs** chain actions the app already has — no code at all. Each
   step is planned by its action, all of it shown as one preview, confirmed
-  once and written to one journal entry; profile limits apply to every step.
+  once and written to one journal entry; profile limits apply to every step
+  (also at apply). Steps are planned against the state before the run, so do
+  not change the same thing twice in one workflow. On-prem AD actions and
+  actions that take a password cannot be steps.
   This is the kind to write first. See [`security-basics/`](security-basics).
 - **Script packs** add new actions written in PowerShell (below). Use them for
   what no built-in action does.
@@ -71,7 +74,10 @@ workflows:
 - `with` gives the action's inputs; `{{name}}` takes a field of the workflow.
 - A step that fails stops the run unless it says `onError: continue`.
 - The workflow is as dangerous as its most dangerous step; a destructive one
-  names `confirmField`, the field the operator retypes to confirm.
+  names `confirmField` (a user, group or text field), and every destructive
+  step must act on exactly that field — the operator never confirms one name
+  while another is changed. A step's own stronger confirmation (a purge's
+  "sender N") is asked for too.
 
 ## Manifest
 

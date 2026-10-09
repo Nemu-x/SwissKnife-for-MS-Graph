@@ -31,7 +31,7 @@ func TestWorkflowChainsActionsWithTemplatesConditionsAndStop(t *testing.T) {
 	user := Field{Name: "user", Kind: FieldUser, Required: true}
 	e.Register(
 		Action{Manifest: Manifest{ID: "a.block", Danger: Write, Fields: []Field{user, {Name: "state", Kind: FieldText}}}, Impls: []Impl{stepImpl{applied: &applied}}},
-		Action{Manifest: Manifest{ID: "a.fails", Danger: Destructive, Fields: []Field{user}}, Impls: []Impl{stepImpl{applied: &applied, fail: true}}},
+		Action{Manifest: Manifest{ID: "a.fails", Danger: Destructive, ConfirmField: "user", Fields: []Field{user}}, Impls: []Impl{stepImpl{applied: &applied, fail: true}}},
 		Action{Manifest: Manifest{ID: "a.read", Danger: Read}, Impls: []Impl{ReadImpl(nil)}},
 	)
 	fields := []Field{user, {Name: "extra", Kind: FieldChoice, Options: []string{"yes", "no"}, Default: "no"}}
@@ -41,7 +41,7 @@ func TestWorkflowChainsActionsWithTemplatesConditionsAndStop(t *testing.T) {
 		{Action: "a.fails", With: map[string]string{"user": "{{user}}"}},
 		{Action: "a.block", With: map[string]string{"user": "{{user}}", "state": "after"}},
 	}
-	danger, err := e.ValidateWorkflow(fields, steps)
+	danger, _, err := e.ValidateWorkflow(fields, "user", steps)
 	if err != nil || danger != Destructive {
 		t.Fatalf("validate: %v %v", danger, err)
 	}
@@ -52,12 +52,13 @@ func TestWorkflowChainsActionsWithTemplatesConditionsAndStop(t *testing.T) {
 		"unknown input":  {{Action: "a.block", With: map[string]string{"user": "{{who}}"}}},
 		"unknown field":  {{Action: "a.block", With: map[string]string{"user": "x", "color": "red"}}},
 		"missing input":  {{Action: "a.block", With: map[string]string{"state": "x"}}},
+		"confirm other":  {{Action: "a.fails", With: map[string]string{"user": "{{extra}}"}}},
 	} {
-		if _, err := e.ValidateWorkflow(fields, bad); err == nil {
+		if _, _, err := e.ValidateWorkflow(fields, "user", bad); err == nil {
 			t.Errorf("%s must be refused", name)
 		}
 	}
-	e.Register(Action{Manifest: Manifest{ID: "pack.p.wf", Danger: danger, Fields: fields, ConfirmField: "user", Pack: "p"},
+	e.Register(Action{Manifest: Manifest{ID: "pack.p.wf", Danger: danger, Fields: fields, ConfirmField: "user", Pack: "p", Workflow: true},
 		Impls: []Impl{e.NewWorkflow(steps)}})
 
 	p, err := e.Plan("pack.p.wf", Inputs{"user": "ann"})
@@ -89,5 +90,41 @@ func TestWorkflowChainsActionsWithTemplatesConditionsAndStop(t *testing.T) {
 	s.Disconnect()
 	if r := e.WorkflowGate(steps); r == nil || r.Key != "stepUnavailable" {
 		t.Fatalf("gate when the tenant is gone: %+v", r)
+	}
+}
+
+func TestWorkflowConfirmationsAndScope(t *testing.T) {
+	s := newSession(t)
+	var applied []string
+	e := New(s, GraphProvider{}, WorkflowProvider{})
+	user := Field{Name: "user", Kind: FieldUser, Required: true}
+	strong := fakeImpl{backend: BackendGraph, applied: &applied, changes: []Change{{Target: "a", Op: "set", Ref: map[string]string{ConfirmRef: "delete 3"}}}}
+	strong2 := fakeImpl{backend: BackendGraph, applied: &applied, changes: []Change{{Target: "b", Op: "set", Ref: map[string]string{ConfirmRef: "delete 5"}}}}
+	idle := fakeImpl{backend: BackendGraph, applied: &applied, changes: []Change{{Target: "c", Op: "none", Ref: map[string]string{ConfirmRef: "delete 0"}}}}
+	e.Register(
+		Action{Manifest: Manifest{ID: "x.one", Danger: Destructive, ConfirmField: "user", Fields: []Field{user}}, Impls: []Impl{strong}},
+		Action{Manifest: Manifest{ID: "x.two", Danger: Destructive, ConfirmField: "user", Fields: []Field{user}}, Impls: []Impl{strong2}},
+		Action{Manifest: Manifest{ID: "x.idle", Danger: Destructive, ConfirmField: "user", Fields: []Field{user}}, Impls: []Impl{idle}},
+	)
+	steps := []WorkflowStep{
+		{Action: "x.one", With: map[string]string{"user": "{{user}}"}},
+		{Action: "x.idle", With: map[string]string{"user": "{{user}}"}},
+		{Action: "x.two", With: map[string]string{"user": "{{user}}"}},
+	}
+	if _, _, err := e.ValidateWorkflow([]Field{user}, "user", steps); err != nil {
+		t.Fatal(err)
+	}
+	e.Register(Action{Manifest: Manifest{ID: "pack.p.x", Danger: Destructive, Fields: []Field{user}, ConfirmField: "user", Pack: "p", Workflow: true},
+		Impls: []Impl{e.NewWorkflow(steps)}})
+	p, err := e.Plan("pack.p.x", Inputs{"user": "ann"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both strong confirmations are asked for; the idle step adds none.
+	if p.ConfirmTarget != "delete 3 + delete 5" {
+		t.Fatalf("confirm %q", p.ConfirmTarget)
+	}
+	if _, err := e.Apply(p.ID, "delete 5"); err == nil {
+		t.Fatal("only part of the confirmation must not apply")
 	}
 }

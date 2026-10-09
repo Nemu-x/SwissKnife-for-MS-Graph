@@ -111,8 +111,10 @@ type Change struct {
 	Note string `json:"note,omitempty"`
 	// Ref carries implementation data Apply needs (resolved ids); not shown.
 	Ref map[string]string `json:"-"`
-	// Step is the action id of the workflow step this change belongs to.
-	Step string `json:"step,omitempty"`
+	// Step is the action id of the workflow step this change belongs to;
+	// StepNo its 1-based position (two steps may run the same action).
+	Step   string `json:"step,omitempty"`
+	StepNo int    `json:"stepNo,omitempty"`
 }
 
 // ConfirmRef is the Change.Ref key an implementation sets to replace the
@@ -427,10 +429,18 @@ func (e *Engine) Plan(actionID string, in Inputs) (*Plan, error) {
 	}
 	// An implementation may ask for a stronger confirmation than the input
 	// (e.g. the sender plus the number of messages a purge will delete).
+	// Several (a workflow with two such steps) are all asked for; a change
+	// that does nothing asks for nothing.
+	var strong []string
+	seen := map[string]bool{}
 	for _, ch := range changes {
-		if c := ch.Ref[ConfirmRef]; c != "" {
-			p.ConfirmTarget = c
+		if c := ch.Ref[ConfirmRef]; c != "" && ch.Op != "none" && !seen[c] {
+			seen[c] = true
+			strong = append(strong, c)
 		}
+	}
+	if len(strong) > 0 {
+		p.ConfirmTarget = strings.Join(strong, " + ")
 	}
 	e.plans.put(p)
 	// The caller gets a copy: Apply must run the stored preview, not one a
