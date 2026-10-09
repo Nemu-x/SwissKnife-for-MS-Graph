@@ -1103,6 +1103,74 @@ export namespace services {
 	        this.after = source["after"];
 	    }
 	}
+	export class HubPack {
+	    name: string;
+	    version: string;
+	    category: string;
+	    kind: string;
+	    title: Record<string, string>;
+	    description: Record<string, string>;
+	    author: string;
+	    path: string;
+	    files: string[];
+	    digest: string;
+	    signed: boolean;
+	    installed?: string;
+	    update: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new HubPack(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.version = source["version"];
+	        this.category = source["category"];
+	        this.kind = source["kind"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.author = source["author"];
+	        this.path = source["path"];
+	        this.files = source["files"];
+	        this.digest = source["digest"];
+	        this.signed = source["signed"];
+	        this.installed = source["installed"];
+	        this.update = source["update"];
+	    }
+	}
+	export class HubView {
+	    url: string;
+	    packs: HubPack[];
+	
+	    static createFrom(source: any = {}) {
+	        return new HubView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.packs = this.convertValues(source["packs"], HubPack);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	
 	export class MailboxCopyRequest {
 	    source: string;

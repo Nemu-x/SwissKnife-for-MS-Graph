@@ -182,7 +182,7 @@ func init() {
 		{name: "help", args: "[command]", summary: "show this help or one command's flags", setup: setupHelp},
 		{name: "version", summary: "print the application version", setup: setupVersion},
 		{name: "worker", args: "serve [--listen :8743] [--families exo,teams] [--pair] | clients | revoke <fp>", summary: "run this machine as a PowerShell worker for paired SwissKnife apps", setup: setupWorker},
-		{name: "pack", args: "digest <folder>", summary: "for pack authors: write pack.digest for minisign to sign", setup: setupPack},
+		{name: "pack", args: "digest <folder> | index <hub folder>", summary: "for pack authors: pack.digest to sign; for hub maintainers: index.json", setup: setupPack},
 		{name: "profiles", summary: "list saved connection profiles (id, name, tenant, mode)", setup: setupProfiles},
 		{name: "get", args: "<graph path> [--top N] [--all]", summary: "raw Graph GET; prints the JSON response (--all follows @odata.nextLink)", setup: setupGet},
 		{name: "user", args: "<upn>", summary: "user snapshot: profile, group membership, licenses", setup: setupUser},

@@ -5,6 +5,7 @@ import { Card, Button, Badge, Input } from './ui'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
 import { localized, catalogLabel } from './CatalogAction'
+import { HubCatalog } from './HubCatalog'
 
 type Pack = {
   name: string; version: string; author: string; description: string; dir: string
@@ -26,6 +27,7 @@ export function PacksCard() {
   const [list, setList] = useState<Pack[] | null>(null)
   const [keys, setKeys] = useState<string[]>([])
   const [newKey, setNewKey] = useState('')
+  const [tab, setTab] = useState<'installed' | 'hub'>('installed')
   // The catalog changes with the trust: pages fetch it again.
   const changed = (l: unknown) => { setList((l ?? []) as Pack[]); setCache('catalog.rev', Date.now()) }
 
@@ -48,6 +50,15 @@ export function PacksCard() {
   return (
     <Card title={t('packs.title')}>
       <p className="mb-3 text-xs text-[var(--text-faint)]">{t('packs.intro')}</p>
+      <div className="mb-3 flex gap-1 border-b border-[var(--border)]">
+        {(['installed', 'hub'] as const).map((k) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`-mb-px border-b-2 px-3 py-1.5 text-sm ${tab === k ? 'border-[var(--accent)] text-[var(--text)]' : 'border-transparent text-[var(--text-faint)] hover:text-[var(--text-dim)]'}`}>
+            {t(`hub.tab.${k}`)}
+          </button>
+        ))}
+      </div>
+      {tab === 'hub' ? <HubCatalog onInstalled={changed} /> : (<>
       <div className="mb-3 flex gap-2">
         <Button variant="subtle" onClick={() => api.packs.openFolder().catch((e) => toast('err', errMessage(e)))}><FolderOpen size={14} /> {t('packs.openFolder')}</Button>
         <Button variant="subtle" onClick={load}><RefreshCw size={14} /> {t('packs.reload')}</Button>
@@ -117,6 +128,7 @@ export function PacksCard() {
         <Input value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="RWS…" className="min-w-0 flex-1 font-mono text-xs" />
         <Button variant="subtle" disabled={!newKey.trim()} onClick={addKey}>{t('common.add')}</Button>
       </div>
+      </>)}
     </Card>
   )
 }

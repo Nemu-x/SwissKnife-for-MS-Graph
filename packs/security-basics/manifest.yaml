@@ -5,6 +5,9 @@ name: security-basics
 version: 1.0.0
 author: SwissKnife sample
 description: Compromised account response, shared-mailbox conversion and a quick offboarding.
+category: security
+title: { en: Security basics, ru: Базовая безопасность }
+summary: { en: "Compromised account response, shared-mailbox conversion and a quick offboarding — built-in actions only.", ru: "Реакция на взломанную учётку, перевод в общий ящик и быстрый офбординг — только встроенные действия." }
 workflows:
   - id: compromisedUser
     page: security

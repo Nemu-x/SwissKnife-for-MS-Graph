@@ -8,6 +8,10 @@ export function Disable(arg1:string):Promise<Array<services.PackInfo>>;
 
 export function Enable(arg1:string):Promise<Array<services.PackInfo>>;
 
+export function HubCatalog():Promise<services.HubView>;
+
+export function HubInstall(arg1:string):Promise<Array<services.PackInfo>>;
+
 export function Keys():Promise<Array<string>>;
 
 export function List():Promise<Array<services.PackInfo>>;
@@ -15,6 +19,8 @@ export function List():Promise<Array<services.PackInfo>>;
 export function OpenFolder():Promise<void>;
 
 export function RemoveKey(arg1:string):Promise<Array<string>>;
+
+export function SetHub(arg1:string):Promise<string>;
 
 export function Trust(arg1:string,arg2:string):Promise<Array<services.PackInfo>>;
 

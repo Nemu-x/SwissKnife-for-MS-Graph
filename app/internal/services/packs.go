@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -530,4 +531,89 @@ func folderCheck(dir, digest string) func() bool {
 		}
 		return same
 	}
+}
+
+// --- Action Hub --------------------------------------------------------------
+
+// HubPack is a catalog entry with what is installed here.
+type HubPack struct {
+	packs.HubEntry
+	Installed string `json:"installed,omitempty"` // installed version
+	Update    bool   `json:"update"`              // the hub has another version
+}
+
+// HubView is the catalog as the Settings page shows it.
+type HubView struct {
+	URL   string    `json:"url"`
+	Packs []HubPack `json:"packs"`
+}
+
+func (x *PacksService) hubURL() string {
+	if h := packs.LoadTrust(trustFile(x.s)).Hub; h != "" {
+		return h
+	}
+	return packs.DefaultHub
+}
+
+// HubCatalog reads the Action Hub's index.
+func (x *PacksService) HubCatalog() (*HubView, error) {
+	ctx, cancel := context.WithTimeout(x.s.Ctx(), time.Minute)
+	defer cancel()
+	hub := x.hubURL()
+	idx, err := packs.FetchIndex(ctx, hub)
+	if err != nil {
+		return nil, err
+	}
+	installed := map[string]string{}
+	for _, p := range packs.Load(packsRoot(x.s), packs.LoadTrust(trustFile(x.s))) {
+		installed[p.Manifest.Name] = p.Manifest.Version
+	}
+	view := &HubView{URL: hub, Packs: []HubPack{}}
+	for _, e := range idx.Packs {
+		v, ok := installed[e.Name]
+		view.Packs = append(view.Packs, HubPack{HubEntry: e, Installed: v, Update: ok && v != e.Version})
+	}
+	return view, nil
+}
+
+// HubInstall downloads a pack from the hub (or updates it). It still needs
+// a trusted signature or the operator's review before it runs.
+func (x *PacksService) HubInstall(name string) ([]PackInfo, error) {
+	ctx, cancel := context.WithTimeout(x.s.Ctx(), 2*time.Minute)
+	defer cancel()
+	hub := x.hubURL()
+	idx, err := packs.FetchIndex(ctx, hub)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range idx.Packs {
+		if e.Name != name {
+			continue
+		}
+		dir, err := packs.Install(ctx, hub, packsRoot(x.s), e)
+		x.s.Record("pack.install", name, "hub="+hub+" version="+e.Version+" digest="+e.Digest, err)
+		if err != nil {
+			return nil, err
+		}
+		_ = dir
+		return x.List()
+	}
+	return nil, fmt.Errorf("the hub has no pack named %q", name)
+}
+
+// SetHub changes the Action Hub address ("" restores the default).
+func (x *PacksService) SetHub(hub string) (string, error) {
+	hub = strings.TrimSpace(hub)
+	if hub != "" && !strings.HasPrefix(hub, "https://") {
+		return "", errors.New("the hub address must start with https://")
+	}
+	trustMu.Lock()
+	defer trustMu.Unlock()
+	t := packs.LoadTrust(trustFile(x.s))
+	t.Hub = hub
+	if err := packs.SaveTrust(trustFile(x.s), t); err != nil {
+		return "", err
+	}
+	x.s.Record("pack.hub", hub, "", nil)
+	return x.hubURL(), nil
 }

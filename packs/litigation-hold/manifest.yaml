@@ -5,6 +5,9 @@ name: litigation-hold
 version: 1.0.0
 author: SwissKnife sample
 description: List mailboxes on litigation hold and turn the hold on or off.
+category: exchange
+title: { en: Litigation hold, ru: Удержание для судебных разбирательств }
+summary: { en: "List mailboxes on litigation hold and turn the hold on or off (PowerShell).", ru: "Список ящиков на удержании и включение/выключение удержания (PowerShell)." }
 actions:
   - id: list
     page: reports

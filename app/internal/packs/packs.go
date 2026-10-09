@@ -35,11 +35,15 @@ const BuiltinKey = "RWSG5GttbIKtpCqGS1IxYmyO07AbVOztAbwaWSi22mlNsVzJTXHRLH+9"
 
 // Manifest describes a pack.
 type Manifest struct {
-	Name        string      `yaml:"name" json:"name"`
-	Version     string      `yaml:"version" json:"version"`
-	Author      string      `yaml:"author" json:"author"`
-	Description string      `yaml:"description" json:"description"`
-	Actions     []ActionDef `yaml:"actions" json:"actions"`
+	Name        string `yaml:"name" json:"name"`
+	Version     string `yaml:"version" json:"version"`
+	Author      string `yaml:"author" json:"author"`
+	Description string `yaml:"description" json:"description"`
+	// Title, Summary and Category describe the pack in the Action Hub.
+	Title    map[string]string `yaml:"title" json:"title"`
+	Summary  map[string]string `yaml:"summary" json:"summary"`
+	Category string            `yaml:"category" json:"category"`
+	Actions  []ActionDef       `yaml:"actions" json:"actions"`
 	// Workflows chain built-in actions: no code, so the safest kind of pack.
 	Workflows []WorkflowDef `yaml:"workflows" json:"workflows"`
 }
@@ -119,6 +123,7 @@ type Trust struct {
 	Keys     []string          `json:"keys"`               // extra minisign public keys
 	Pinned   map[string]string `json:"pinned"`             // pack name → trusted digest
 	Disabled []string          `json:"disabled,omitempty"` // pack names turned off
+	Hub      string            `json:"hub,omitempty"`      // Action Hub address ("" = DefaultHub)
 }
 
 var (
