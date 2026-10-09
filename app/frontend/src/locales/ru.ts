@@ -379,6 +379,7 @@ const ru: Dict<typeof en> = {
     area: { entra: 'Entra ID', exchange: 'Exchange', defender: 'Defender', compliance: 'Соответствие', teams: 'Teams', intune: 'Intune', reports: 'Отчёты', ad: 'Локальный AD', config: 'Конфигурация', pack: 'Пакеты действий' },
   },
   settings: {
+    social: { github: 'GitHub — Nemu-x', telegram: 'Telegram-канал — @nemux_dev' },
     title: 'Настройки',
     language: 'Язык',
     theme: 'Тема',

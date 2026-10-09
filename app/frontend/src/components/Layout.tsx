@@ -255,12 +255,15 @@ export function Layout({
   )
 }
 
-export function Page({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+export function Page({ title, subtitle, actions, children }: { title: string; subtitle?: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex h-full flex-col">
-      <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
-        <h1 className="text-lg font-semibold">{title}</h1>
-        {subtitle && <p className="mt-0.5 text-sm text-[var(--text-dim)]">{subtitle}</p>}
+      <header className="flex shrink-0 items-start gap-3 border-b border-[var(--border)] px-6 py-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-semibold">{title}</h1>
+          {subtitle && <p className="mt-0.5 text-sm text-[var(--text-dim)]">{subtitle}</p>}
+        </div>
+        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
       </header>
       <div className="min-h-0 flex-1 overflow-auto p-6">{children}</div>
     </div>

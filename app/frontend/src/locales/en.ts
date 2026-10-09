@@ -379,6 +379,7 @@ const en = {
     area: { entra: 'Entra ID', exchange: 'Exchange', defender: 'Defender', compliance: 'Compliance', teams: 'Teams', intune: 'Intune', reports: 'Reports', ad: 'On-prem AD', config: 'Configuration', pack: 'Action packs' },
   },
   settings: {
+    social: { github: 'GitHub — Nemu-x', telegram: 'Telegram channel — @nemux_dev' },
     title: 'Settings',
     language: 'Language',
     theme: 'Theme',
