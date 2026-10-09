@@ -65,7 +65,7 @@ func TestPackActionsNeedTrustAndRunThroughTheScriptHost(t *testing.T) {
 	fake := &fakeScripts{}
 	e.PS = fake
 	list := packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))
-	e.SetPacks(packActions(sess, list))
+	e.SetPacks(packActions(sess, e, list))
 
 	entry := func() engine.CatalogEntry {
 		for _, c := range e.Catalog() {
@@ -87,7 +87,7 @@ func TestPackActionsNeedTrustAndRunThroughTheScriptHost(t *testing.T) {
 	if err := packs.SaveTrust(trustFile(sess), packs.Trust{Pinned: map[string]string{"contoso-tools": list[0].Digest}}); err != nil {
 		t.Fatal(err)
 	}
-	e.SetPacks(packActions(sess, packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
+	e.SetPacks(packActions(sess, e, packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
 	if c := entry(); !c.Available {
 		t.Fatalf("trusted pack: %+v", c)
 	}
@@ -111,7 +111,7 @@ func TestPackActionsNeedTrustAndRunThroughTheScriptHost(t *testing.T) {
 
 	// Editing the script after trusting it makes the action unavailable.
 	_ = os.WriteFile(filepath.Join(pack, "hold.ps1"), []byte("Remove-Mailbox *"), 0o644)
-	e.SetPacks(packActions(sess, packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
+	e.SetPacks(packActions(sess, e, packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
 	if c := entry(); c.Available || c.Reason.Key != "packChanged" {
 		t.Fatalf("changed pack: %+v", c)
 	}
@@ -149,7 +149,7 @@ func TestPackReadsAreGuardedLikeWrites(t *testing.T) {
 	e := engine.New(sess, readyPS{})
 	fake := &fakeScripts{reply: []string{`{"name":"Ann"}`}}
 	e.PS = fake
-	e.SetPacks(packActions(sess, packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
+	e.SetPacks(packActions(sess, e, packs.Load(packsRoot(sess), packs.LoadTrust(trustFile(sess)))))
 	const id = "pack.contoso-read.holds"
 
 	if res, err := e.Run(t.Context(), id, nil); err != nil || len(res.Rows) != 1 {

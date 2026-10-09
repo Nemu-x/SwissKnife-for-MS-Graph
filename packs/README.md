@@ -35,6 +35,44 @@ keeps them on a short leash:
 Changes to a pack folder take effect when the packs are reloaded (opening
 Settings → Action packs, *Reload*, or restarting the app).
 
+## Two kinds of packs
+
+- **Workflow packs** chain actions the app already has — no code at all. Each
+  step is planned by its action, all of it shown as one preview, confirmed
+  once and written to one journal entry; profile limits apply to every step.
+  This is the kind to write first. See [`security-basics/`](security-basics).
+- **Script packs** add new actions written in PowerShell (below). Use them for
+  what no built-in action does.
+
+## Workflows
+
+```yaml
+workflows:
+  - id: compromisedUser
+    page: security
+    label: { en: Compromised account response }
+    confirmField: user            # needed when any step is destructive
+    fields:
+      - { name: user, kind: user, required: true }
+      - { name: resetMfa, kind: choice, options: ["yes", "no"], default: "yes" }
+    steps:
+      - action: user.signIn
+        with: { user: "{{user}}", state: blocked }
+      - action: user.resetMfa
+        with: { user: "{{user}}" }
+        when: { input: resetMfa, equals: "yes" }   # optional step
+      - action: mail.disableRules
+        with: { user: "{{user}}" }
+        onError: continue                          # default: stop
+```
+
+- `action` is a built-in catalog action id (Settings → PowerShell lists the
+  backends; `SwissKnifeGraph action list` lists every action and its inputs).
+- `with` gives the action's inputs; `{{name}}` takes a field of the workflow.
+- A step that fails stops the run unless it says `onError: continue`.
+- The workflow is as dangerous as its most dangerous step; a destructive one
+  names `confirmField`, the field the operator retypes to confirm.
+
 ## Manifest
 
 | Key | Meaning |

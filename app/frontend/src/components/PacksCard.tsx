@@ -4,13 +4,14 @@ import { FolderOpen, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Trash2, Power 
 import { Card, Button, Badge, Input } from './ui'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
-import { localized } from './CatalogAction'
+import { localized, catalogLabel } from './CatalogAction'
 
 type Pack = {
   name: string; version: string; author: string; description: string; dir: string
   status: 'signed' | 'trusted' | 'untrusted' | 'changed' | 'disabled' | 'invalid'
   signer?: string; error?: string; digest: string
   actions: { id: string; label: Record<string, string>; page: string; danger: string; module: string }[]
+  workflows?: { id: string; label: Record<string, string>; page: string; steps: string[] }[]
 }
 
 const KIND: Record<Pack['status'], 'ok' | 'warn' | 'danger' | 'neutral'> = {
@@ -69,6 +70,15 @@ export function PacksCard() {
               <ul className="mt-1 list-disc pl-5 text-xs text-[var(--text-dim)]">
                 {(p.actions ?? []).map((a) => (
                   <li key={a.id}>{localized(a.label) || a.id} · {t(`nav.${a.page}`, { defaultValue: a.page })} · {t(`packs.danger.${a.danger}`)} · {a.module === 'teams' ? 'Teams PS' : 'Exchange PS'}</li>
+                ))}
+              </ul>
+            )}
+            {(p.workflows ?? []).length > 0 && (
+              <ul className="mt-1 list-disc pl-5 text-xs text-[var(--text-dim)]">
+                {(p.workflows ?? []).map((w) => (
+                  <li key={w.id}>{localized(w.label) || w.id} · {t(`nav.${w.page}`, { defaultValue: w.page })} · {t('packs.workflowSteps', { count: w.steps.length })}
+                    <span className="block text-[var(--text-faint)]">{w.steps.map((s) => t(catalogLabel(s), { defaultValue: s })).join(' → ')}</span>
+                  </li>
                 ))}
               </ul>
             )}

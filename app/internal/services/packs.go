@@ -66,7 +66,7 @@ func reloadPacks(s *session.Session, e *engine.Engine) []packs.Pack {
 	list := packs.Load(packsRoot(s), packs.LoadTrust(trustFile(s)))
 	before := strings.Join(scriptHashesLocked(s), ",")
 	loaded[s] = list
-	e.SetPacks(packActions(s, list))
+	e.SetPacks(packActions(s, e, list))
 	// Pack hosts know their trusted scripts from the start: replace them
 	// (at their next use) only when that set changed.
 	if pool, ok := e.PS.(interface{ ResetPacks() }); ok && strings.Join(scriptHashesLocked(s), ",") != before {
@@ -75,8 +75,17 @@ func reloadPacks(s *session.Session, e *engine.Engine) []packs.Pack {
 	return list
 }
 
-func packActions(s *session.Session, list []packs.Pack) []engine.Action {
+func packActions(s *session.Session, e *engine.Engine, list []packs.Pack) []engine.Action {
 	var out []engine.Action
+	for i := range list {
+		// Workflows are checked against the catalog: an unknown action or
+		// input makes the whole pack invalid, with the reason shown.
+		if list[i].Status != packs.Invalid {
+			if _, err := workflowActions(e, list[i], nil); err != nil {
+				list[i].Status, list[i].Error = packs.Invalid, err.Error()
+			}
+		}
+	}
 	for _, p := range list {
 		if p.Status == packs.Invalid {
 			continue
@@ -122,8 +131,53 @@ func packActions(s *session.Session, list []packs.Pack) []engine.Action {
 			}
 			out = append(out, a)
 		}
+		wf, _ := workflowActions(e, p, gate)
+		out = append(out, wf...)
 	}
 	return out
+}
+
+// workflowActions builds a pack's workflows as catalog actions.
+func workflowActions(e *engine.Engine, p packs.Pack, gate func() *engine.Reason) ([]engine.Action, error) {
+	var out []engine.Action
+	for _, w := range p.Manifest.Workflows {
+		var fields []engine.Field
+		for _, f := range w.Fields {
+			fields = append(fields, engine.Field{Name: f.Name, Kind: engine.FieldKind(f.Kind), Required: f.Required,
+				Options: f.Options, Default: f.Default, Label: f.Label})
+		}
+		var steps []engine.WorkflowStep
+		for _, st := range w.Steps {
+			step := engine.WorkflowStep{Action: st.Action, With: st.With, OnError: st.OnError}
+			if len(st.When) > 0 {
+				step.When = &engine.StepCondition{Input: st.When["input"], Equals: st.When["equals"]}
+			}
+			steps = append(steps, step)
+		}
+		danger, err := e.ValidateWorkflow(fields, steps)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", w.ID, err)
+		}
+		if danger == engine.Destructive && w.ConfirmField == "" {
+			return nil, fmt.Errorf("%s: it has destructive steps, so it names its confirmField", w.ID)
+		}
+		trust := gate
+		out = append(out, engine.Action{
+			Manifest: engine.Manifest{ID: "pack." + p.Manifest.Name + "." + w.ID, Page: w.Page, Danger: danger,
+				Fields: fields, ConfirmField: w.ConfirmField, Label: w.Label, Hint: w.Hint, Pack: p.Manifest.Name, Workflow: true},
+			Impls: []engine.Impl{e.NewWorkflow(steps)},
+			// Trusted, and every step can run now.
+			Gate: func() *engine.Reason {
+				if trust != nil {
+					if r := trust(); r != nil {
+						return r
+					}
+				}
+				return e.WorkflowGate(steps)
+			},
+		})
+	}
+	return out, nil
 }
 
 // packImpl runs a pack script: param($Mode, $Inputs, $Change), where Mode is
@@ -277,6 +331,15 @@ type PackInfo struct {
 	Error       string           `json:"error,omitempty"`
 	Digest      string           `json:"digest"`
 	Actions     []PackActionInfo `json:"actions"`
+	Workflows   []PackFlowInfo   `json:"workflows"`
+}
+
+// PackFlowInfo lists one workflow of a pack and the actions it chains.
+type PackFlowInfo struct {
+	ID    string            `json:"id"`
+	Label map[string]string `json:"label"`
+	Page  string            `json:"page"`
+	Steps []string          `json:"steps"`
 }
 
 // PackActionInfo lists one action of a pack.
@@ -297,12 +360,19 @@ func (x *PacksService) infos(list []packs.Pack) []PackInfo {
 	out := []PackInfo{}
 	for _, p := range list {
 		pi := PackInfo{Name: p.Manifest.Name, Version: p.Manifest.Version, Author: p.Manifest.Author, Description: p.Manifest.Description,
-			Dir: p.Dir, Status: p.Status, Signer: p.Signer, Error: p.Error, Digest: p.Digest, Actions: []PackActionInfo{}}
+			Dir: p.Dir, Status: p.Status, Signer: p.Signer, Error: p.Error, Digest: p.Digest, Actions: []PackActionInfo{}, Workflows: []PackFlowInfo{}}
 		if pi.Name == "" {
 			pi.Name = filepath.Base(p.Dir)
 		}
 		for _, a := range p.Manifest.Actions {
 			pi.Actions = append(pi.Actions, PackActionInfo{ID: a.ID, Label: a.Label, Page: a.Page, Danger: a.Danger, Module: a.Module})
+		}
+		for _, w := range p.Manifest.Workflows {
+			f := PackFlowInfo{ID: w.ID, Label: w.Label, Page: w.Page, Steps: []string{}}
+			for _, st := range w.Steps {
+				f.Steps = append(f.Steps, st.Action)
+			}
+			pi.Workflows = append(pi.Workflows, f)
 		}
 		out = append(out, pi)
 	}

@@ -1,0 +1,70 @@
+# Workflow pack: built-in actions chained into everyday flows. No scripts —
+# every step is an action the app already has, previewed together and
+# confirmed once. Copy the folder into the app's packs folder and trust it.
+name: security-basics
+version: 1.0.0
+author: SwissKnife sample
+description: Compromised account response, shared-mailbox conversion and a quick offboarding.
+workflows:
+  - id: compromisedUser
+    page: security
+    label: { en: Compromised account response, ru: Реакция на взломанную учётку }
+    hint: { en: "Block, sign out everywhere, then clean up what an attacker leaves behind.", ru: "Заблокировать, разлогинить везде и убрать то, что оставляет злоумышленник." }
+    confirmField: user
+    fields:
+      - { name: user, kind: user, required: true, label: { en: Account, ru: Учётка } }
+      - { name: resetPassword, kind: choice, options: ["yes", "no"], default: "yes", label: { en: Reset the password, ru: Сбросить пароль } }
+      - { name: resetMfa, kind: choice, options: ["yes", "no"], default: "yes", label: { en: Reset MFA, ru: Сбросить MFA } }
+      - { name: cleanMailbox, kind: choice, options: ["yes", "no"], default: "yes", label: { en: Stop forwarding and suspicious rules, ru: Снять пересылку и подозрительные правила } }
+    steps:
+      - action: user.signIn
+        with: { user: "{{user}}", state: blocked }
+      - action: user.revokeSessions
+        with: { user: "{{user}}" }
+      - action: user.resetPassword
+        with: { user: "{{user}}" }
+        when: { input: resetPassword, equals: "yes" }
+      - action: user.resetMfa
+        with: { user: "{{user}}" }
+        when: { input: resetMfa, equals: "yes" }
+      - action: mail.disableRules
+        with: { user: "{{user}}" }
+        when: { input: cleanMailbox, equals: "yes" }
+        onError: continue
+      - action: mailbox.forwarding
+        with: { mailbox: "{{user}}", op: clear }
+        when: { input: cleanMailbox, equals: "yes" }
+        onError: continue
+
+  - id: sharedMailbox
+    page: mail
+    label: { en: Turn a mailbox into a shared one, ru: Превратить ящик в общий }
+    hint: { en: "Convert to shared and give a colleague Full Access — the license can then go.", ru: "Сделать общим и дать коллеге полный доступ — лицензию потом можно снять." }
+    fields:
+      - { name: mailbox, kind: user, required: true, label: { en: Mailbox, ru: Ящик } }
+      - { name: delegate, kind: user, required: true, label: { en: Who gets access, ru: Кому доступ } }
+    steps:
+      - action: mailbox.type
+        with: { mailbox: "{{mailbox}}", type: shared }
+      - action: mailbox.fullAccess
+        with: { mailbox: "{{mailbox}}", user: "{{delegate}}", op: add }
+
+  - id: quickOffboarding
+    page: users
+    label: { en: Quick offboarding, ru: Быстрый офбординг }
+    hint: { en: "Block, sign out, forward mail to a colleague and keep the mailbox as shared.", ru: "Заблокировать, разлогинить, переслать почту коллеге и оставить ящик общим." }
+    confirmField: user
+    fields:
+      - { name: user, kind: user, required: true, label: { en: Leaver, ru: Уходящий } }
+      - { name: forwardTo, kind: user, required: true, label: { en: Forward mail to, ru: Пересылать почту } }
+    steps:
+      - action: user.signIn
+        with: { user: "{{user}}", state: blocked }
+      - action: user.revokeSessions
+        with: { user: "{{user}}" }
+      - action: mailbox.forwarding
+        with: { mailbox: "{{user}}", op: set, forwardTo: "{{forwardTo}}", keepCopy: "yes" }
+        onError: continue
+      - action: mailbox.type
+        with: { mailbox: "{{user}}", type: shared }
+        onError: continue

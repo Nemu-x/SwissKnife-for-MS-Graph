@@ -46,7 +46,7 @@ func NewEngine(s *session.Session) *engine.Engine {
 	e := engine.New(s, engine.GraphProvider{}, exoapi.NewProvider(),
 		workerAware{pwsh.NewExchangeProvider(psDetector), pwsh.FamilyExchange},
 		workerAware{pwsh.NewTeamsProvider(psDetector), pwsh.FamilyTeams},
-		engine.LDAPProvider{Get: dir}, engine.LDAPProvider{Get: dir, Secure: true})
+		engine.LDAPProvider{Get: dir}, engine.LDAPProvider{Get: dir, Secure: true}, engine.WorkflowProvider{})
 	e.LDAP = dir
 	// Cmdlets run here when this machine can, else on a paired worker.
 	e.PS = &psDispatch{s: s, local: pool, det: psDetector}

@@ -40,6 +40,8 @@ type Manifest struct {
 	Author      string      `yaml:"author" json:"author"`
 	Description string      `yaml:"description" json:"description"`
 	Actions     []ActionDef `yaml:"actions" json:"actions"`
+	// Workflows chain built-in actions: no code, so the safest kind of pack.
+	Workflows []WorkflowDef `yaml:"workflows" json:"workflows"`
 }
 
 // ActionDef is one action of a pack.
@@ -57,6 +59,25 @@ type ActionDef struct {
 }
 
 // FieldDef is one input of a pack action.
+// WorkflowDef is a sequence of built-in catalog actions.
+type WorkflowDef struct {
+	ID           string            `yaml:"id" json:"id"`
+	Page         string            `yaml:"page" json:"page"`
+	Label        map[string]string `yaml:"label" json:"label"`
+	Hint         map[string]string `yaml:"hint" json:"hint"`
+	ConfirmField string            `yaml:"confirmField" json:"confirmField"`
+	Fields       []FieldDef        `yaml:"fields" json:"fields"`
+	Steps        []StepDef         `yaml:"steps" json:"steps"`
+}
+
+// StepDef runs one built-in action; "{{input}}" in With takes a workflow input.
+type StepDef struct {
+	Action  string            `yaml:"action" json:"action"`
+	With    map[string]string `yaml:"with" json:"with"`
+	When    map[string]string `yaml:"when" json:"when"` // {input: name, equals: value}
+	OnError string            `yaml:"onError" json:"onError"`
+}
+
 type FieldDef struct {
 	Name     string            `yaml:"name" json:"name"`
 	Kind     string            `yaml:"kind" json:"kind"` // text | choice | user | group
@@ -282,7 +303,10 @@ func validate(files map[string][]byte, m *Manifest) (map[string]string, error) {
 	if !nameRe.MatchString(m.Name) {
 		return nil, errors.New("name: lowercase letters, digits and dashes (2-40)")
 	}
-	if len(m.Actions) == 0 {
+	if err := validateWorkflows(m); err != nil {
+		return nil, err
+	}
+	if len(m.Actions) == 0 && len(m.Workflows) == 0 {
 		return nil, errors.New("no actions")
 	}
 	scripts := map[string]string{}
@@ -307,21 +331,9 @@ func validate(files map[string][]byte, m *Manifest) (map[string]string, error) {
 		if a.Label["en"] == "" {
 			return nil, fmt.Errorf("%s: an English label is required", a.ID)
 		}
-		names := map[string]bool{}
-		for _, f := range a.Fields {
-			if !fieldRe.MatchString(f.Name) || names[f.Name] {
-				return nil, fmt.Errorf("%s: field names must be unique identifiers", a.ID)
-			}
-			names[f.Name] = true
-			switch f.Kind {
-			case "text", "user", "group":
-			case "choice":
-				if len(f.Options) == 0 {
-					return nil, fmt.Errorf("%s.%s: a choice needs options", a.ID, f.Name)
-				}
-			default:
-				return nil, fmt.Errorf("%s.%s: kind must be text, choice, user or group", a.ID, f.Name)
-			}
+		names, err := validateFields(a.ID, a.Fields)
+		if err != nil {
+			return nil, err
 		}
 		if a.Danger == "destructive" && !names[a.ConfirmField] {
 			return nil, fmt.Errorf("%s: a destructive action names its confirmField", a.ID)
@@ -377,4 +389,65 @@ func SaveTrust(path string, t Trust) error {
 func CheckKey(k string) error {
 	_, err := minisign.NewPublicKey(strings.TrimSpace(k))
 	return err
+}
+
+func validateFields(id string, fields []FieldDef) (map[string]bool, error) {
+	names := map[string]bool{}
+	for _, f := range fields {
+		if !fieldRe.MatchString(f.Name) || names[f.Name] {
+			return nil, fmt.Errorf("%s: field names must be unique identifiers", id)
+		}
+		names[f.Name] = true
+		switch f.Kind {
+		case "text", "user", "group":
+		case "choice":
+			if len(f.Options) == 0 {
+				return nil, fmt.Errorf("%s.%s: a choice needs options", id, f.Name)
+			}
+		default:
+			return nil, fmt.Errorf("%s.%s: kind must be text, choice, user or group", id, f.Name)
+		}
+	}
+	return names, nil
+}
+
+// validateWorkflows checks the shape of the workflows; which actions exist
+// and what they take is checked against the catalog when the pack loads.
+func validateWorkflows(m *Manifest) error {
+	ids := map[string]bool{}
+	for _, a := range m.Actions {
+		ids[a.ID] = true
+	}
+	for i, w := range m.Workflows {
+		where := fmt.Sprintf("workflow %d", i+1)
+		if !idRe.MatchString(w.ID) || ids[w.ID] {
+			return fmt.Errorf("%s: id must be unique, a letter then letters/digits", where)
+		}
+		ids[w.ID] = true
+		if !Pages[w.Page] {
+			return fmt.Errorf("%s: page %q is not one packs may use", w.ID, w.Page)
+		}
+		if w.Label["en"] == "" {
+			return fmt.Errorf("%s: an English label is required", w.ID)
+		}
+		names, err := validateFields(w.ID, w.Fields)
+		if err != nil {
+			return err
+		}
+		if w.ConfirmField != "" && !names[w.ConfirmField] {
+			return fmt.Errorf("%s: confirmField %q is not one of its fields", w.ID, w.ConfirmField)
+		}
+		if len(w.Steps) == 0 || len(w.Steps) > 30 {
+			return fmt.Errorf("%s: a workflow has 1 to 30 steps", w.ID)
+		}
+		for j, st := range w.Steps {
+			if st.Action == "" {
+				return fmt.Errorf("%s step %d: action is required", w.ID, j+1)
+			}
+			if len(st.When) > 0 && (st.When["input"] == "" || !names[st.When["input"]]) {
+				return fmt.Errorf("%s step %d: when.input must name a field of the workflow", w.ID, j+1)
+			}
+		}
+	}
+	return nil
 }

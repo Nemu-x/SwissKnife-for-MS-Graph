@@ -1,12 +1,11 @@
 package services
 
 import (
-	"crypto/rand"
 	"fmt"
-	"math/big"
 	"net/url"
 	"time"
 
+	"swissknife-app/internal/actions"
 	"swissknife-app/internal/engine"
 	"swissknife-app/internal/ops"
 )
@@ -38,49 +37,6 @@ type CompromisedResult struct {
 	PlaybookResult
 	TempPassword string      `json:"tempPassword,omitempty"`
 	SignIns      []SignInRow `json:"signIns"`
-}
-
-// tempPassword makes a 20-character password from an alphabet without
-// look-alike characters, with every character class present.
-func tempPassword() (string, error) {
-	const (
-		lower = "abcdefghijkmnpqrstuvwxyz"
-		upper = "ABCDEFGHJKLMNPQRSTUVWXYZ"
-		digit = "23456789"
-		sym   = "!#$%&*+-=?@"
-	)
-	all := lower + upper + digit + sym
-	pick := func(set string) (byte, error) {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(set))))
-		if err != nil {
-			return 0, err
-		}
-		return set[n.Int64()], nil
-	}
-	out := make([]byte, 0, 20)
-	for _, set := range []string{lower, upper, digit, sym} {
-		c, err := pick(set)
-		if err != nil {
-			return "", err
-		}
-		out = append(out, c)
-	}
-	for len(out) < 20 {
-		c, err := pick(all)
-		if err != nil {
-			return "", err
-		}
-		out = append(out, c)
-	}
-	// Shuffle so the class order does not leak.
-	for i := len(out) - 1; i > 0; i-- {
-		j, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
-		if err != nil {
-			return "", err
-		}
-		out[i], out[j.Int64()] = out[j.Int64()], out[i]
-	}
-	return string(out), nil
 }
 
 // Compromised runs the compromised-account response.
@@ -124,7 +80,7 @@ func (p *PlaybookService) Compromised(req CompromisedRequest) (*CompromisedResul
 	})
 	if req.ResetPassword && !r.stop() {
 		r.do("Reset password", req.Upn, func() error {
-			pw, err := tempPassword()
+			pw, err := actions.TempPassword()
 			if err != nil {
 				return err
 			}

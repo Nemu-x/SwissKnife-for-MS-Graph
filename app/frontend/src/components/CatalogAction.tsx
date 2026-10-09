@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode, Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
-import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Target, FileWarning, Swords, Link2, History, Eye, Check, ArrowRight, Minus, Search, LockOpen, KeyRound } from 'lucide-react'
+import { Ban, LogOut, UserPlus, Plus, Zap, UserSquare, Globe, Send, FolderLock, KeySquare, AtSign, Inbox, Forward, CalendarCheck, ListPlus, ShieldOff, ScrollText, UsersRound, ListChecks, BadgeCheck, Play, MailX, Siren, Flag, ShieldBan, Archive, ArchiveRestore, UserX, BadgeDollarSign, Plane, ShieldQuestion, Crown, HardDrive, Forward as ForwardIcon, BarChart3, Download, Target, FileWarning, Swords, Link2, History, Eye, Check, ArrowRight, Minus, Search, LockOpen, KeyRound, ListOrdered } from 'lucide-react'
 import { Button, Field, Input, Spinner } from './ui'
 import { EntityPicker } from './EntityPicker'
 import type { TaskAction } from './TaskPage'
@@ -83,6 +83,9 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
   'intune.unassigned': { label: 'actions.intune.unassigned.label', hint: 'actions.intune.unassigned.hint', icon: <FileWarning size={16} /> },
   'intune.conflicts': { label: 'actions.intune.conflicts.label', hint: 'actions.intune.conflicts.hint', icon: <Swords size={16} /> },
   'intune.assign': { label: 'actions.intune.assign.label', hint: 'actions.intune.assign.hint', notes: ['actions.intune.assign.note'], icon: <Link2 size={16} /> },
+  'user.resetMfa': { label: 'actions.incident.resetMfa.label', hint: 'actions.incident.resetMfa.hint', warn: ['actions.incident.resetMfa.note'], icon: <KeyRound size={16} /> },
+  'user.resetPassword': { label: 'actions.incident.resetPassword.label', hint: 'actions.incident.resetPassword.hint', warn: ['actions.incident.resetPassword.note'], icon: <KeyRound size={16} /> },
+  'mail.disableRules': { label: 'actions.incident.disableRules.label', hint: 'actions.incident.disableRules.hint', icon: <MailX size={16} /> },
   'ad.findUser': { label: 'actions.ad.findUser.label', hint: 'actions.ad.findUser.hint', icon: <Search size={16} /> },
   'ad.userState': { label: 'actions.ad.userState.label', hint: 'actions.ad.userState.hint', icon: <UserX size={16} /> },
   'ad.unlock': { label: 'actions.ad.unlock.label', hint: 'actions.ad.unlock.hint', notes: ['actions.ad.unlock.note'], icon: <LockOpen size={16} /> },
@@ -94,7 +97,7 @@ const UI: Record<string, { label: string; hint?: string; notes?: string[]; warn?
 }
 
 // Display tokens the backend puts into Change.before/after.
-const VALUE_TOKENS = new Set(['allowed', 'blocked', 'active', 'revoked', 'shared', 'regular', 'enabled', 'disabled', 'locked', 'unlocked', 'newPassword', 'newPasswordMustChange'])
+const VALUE_TOKENS = new Set(['allowed', 'blocked', 'active', 'revoked', 'shared', 'regular', 'enabled', 'disabled', 'locked', 'unlocked', 'newPassword', 'newPasswordMustChange', 'randomPassword'])
 
 // One fetch per connection (profile), shared by every page. A failed fetch is
 // not cached: the next page that mounts asks again.
@@ -448,8 +451,14 @@ function PlanView({ changes }: { changes: engine.Change[] }) {
       <div className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--text-faint)]">{t('actions.planTitle')}</div>
       {nothing && <p className="mb-2 text-sm text-[var(--text-dim)]">{t('actions.nothingToDo')}</p>}
       <ul className="flex flex-col gap-1.5">
-        {changes.map((c, i) => (
-          <li key={i} className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm ${c.op === 'none' ? 'opacity-50' : ''}`}>
+        {changes.map((c, i) => (<Fragment key={i}>
+          {c.step && (i === 0 || changes[i - 1].step !== c.step) && (
+            // A workflow: its changes are grouped under the step that makes them.
+            <li className="mt-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--accent)]">
+              <ListOrdered size={12} /> {t(catalogLabel(c.step), { defaultValue: c.step })}
+            </li>
+          )}
+          <li className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm ${c.step ? 'pl-4' : ''} ${c.op === 'none' ? 'opacity-50' : ''}`}>
             <span className={`flex items-center ${c.op === 'remove' ? 'text-[var(--danger)]' : c.op === 'none' ? 'text-[var(--text-faint)]' : 'text-[var(--ok)]'}`}>
               {c.op === 'remove' ? <Minus size={13} /> : c.op === 'add' ? <Plus size={13} /> : <ArrowRight size={13} />}
             </span>
@@ -461,9 +470,9 @@ function PlanView({ changes }: { changes: engine.Change[] }) {
                 : c.op === 'none' ? `${shown(c.field, c.after || c.before)} · ${t('actions.op.none')}`
                 : <>{shown(c.field, c.before)} → <span className="text-[var(--text)]">{shown(c.field, c.after)}</span></>}
             </span>
-            {c.note && <span className="w-full text-xs text-[var(--warn)]">{t(`actions.notes.${c.note}`, { defaultValue: c.note })}</span>}
+            {c.note && <span className="w-full text-xs text-[var(--warn)]">{t(`actions.notes.${c.note}`, { defaultValue: c.note, error: c.after })}</span>}
           </li>
-        ))}
+        </Fragment>))}
       </ul>
     </div>
   )

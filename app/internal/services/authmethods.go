@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"swissknife-app/internal/actions"
 	"swissknife-app/internal/session"
 )
 
@@ -15,18 +16,6 @@ type AuthMethodsService struct {
 }
 
 func NewAuthMethodsService(s *session.Session) *AuthMethodsService { return &AuthMethodsService{s: s} }
-
-// methodTypeToSegment maps a method's @odata.type to its type-specific
-// collection segment used for deletion. Password methods are not deletable.
-var methodTypeToSegment = map[string]string{
-	"#microsoft.graph.phoneAuthenticationMethod":                   "phoneMethods",
-	"#microsoft.graph.microsoftAuthenticatorAuthenticationMethod":  "microsoftAuthenticatorMethods",
-	"#microsoft.graph.softwareOathAuthenticationMethod":            "softwareOathMethods",
-	"#microsoft.graph.fido2AuthenticationMethod":                   "fido2Methods",
-	"#microsoft.graph.windowsHelloForBusinessAuthenticationMethod": "windowsHelloForBusinessMethods",
-	"#microsoft.graph.emailAuthenticationMethod":                   "emailMethods",
-	"#microsoft.graph.temporaryAccessPassAuthenticationMethod":     "temporaryAccessPassMethods",
-}
 
 // List returns the user's registered authentication methods.
 func (a *AuthMethodsService) List(user string) ([]json.RawMessage, error) {
@@ -98,7 +87,7 @@ func (a *AuthMethodsService) resetMFA(ctx context.Context, user string) (map[str
 		if json.Unmarshal(raw, &m) != nil {
 			continue
 		}
-		seg, ok := methodTypeToSegment[m.Type]
+		seg, ok := actions.AuthMethodSegments[m.Type]
 		if !ok {
 			continue // password or non-deletable
 		}

@@ -90,6 +90,8 @@ type Manifest struct {
 	Label map[string]string `json:"label,omitempty"`
 	Hint  map[string]string `json:"hint,omitempty"`
 	Pack  string            `json:"pack,omitempty"`
+	// Workflow marks an action that chains other actions (from a pack).
+	Workflow bool `json:"workflow,omitempty"`
 }
 
 // Inputs are the operator's field values, keyed by Field.Name.
@@ -109,6 +111,8 @@ type Change struct {
 	Note string `json:"note,omitempty"`
 	// Ref carries implementation data Apply needs (resolved ids); not shown.
 	Ref map[string]string `json:"-"`
+	// Step is the action id of the workflow step this change belongs to.
+	Step string `json:"step,omitempty"`
 }
 
 // ConfirmRef is the Change.Ref key an implementation sets to replace the
@@ -535,12 +539,18 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 	env := e.env(op.Ctx)
 	res := &Result{OpID: op.ID, Outcomes: []Outcome{}}
 	var firstErr error
+	// A workflow step that fails can end the run: later changes do not run.
+	stopper, _ := p.impl.(interface{ StopOnError(Change) bool })
+	stopped := false
 	for _, ch := range p.Changes {
 		out := Outcome{Change: ch, OK: true}
 		switch {
 		case ch.Op == "none":
 			res.Skipped++
 			out.Skipped = true
+		case stopped:
+			out.OK, out.Error = false, "not run: an earlier step failed"
+			res.Failed++
 		case op.Canceled():
 			res.Canceled = true
 			out.OK, out.Error = false, "canceled"
@@ -553,6 +563,9 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 				if firstErr == nil {
 					firstErr = err
 				}
+				if stopper != nil && stopper.StopOnError(ch) {
+					stopped = true
+				}
 			} else {
 				res.Applied++
 			}
@@ -560,6 +573,7 @@ func (e *Engine) Apply(planID, confirm string) (*Result, error) {
 		res.Outcomes = append(res.Outcomes, out)
 		if j := e.s.Journal; j != nil {
 			j.Event(op.ID, "item", map[string]any{
+				"step":   ch.Step,
 				"target": ch.Target, "field": ch.Field, "op": ch.Op,
 				"before": ch.Before, "after": ch.After,
 				"ok": out.OK, "skipped": out.Skipped, "error": out.Error,
@@ -703,4 +717,10 @@ func onDirectory(a Action) bool {
 		}
 	}
 	return len(a.Impls) > 0
+}
+
+// ActionManifest returns a registered action's manifest.
+func (e *Engine) ActionManifest(id string) (Manifest, bool) {
+	a, err := e.lookup(id)
+	return a.Manifest, err == nil
 }
