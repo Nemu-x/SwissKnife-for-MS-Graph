@@ -9,7 +9,7 @@ switch ($Mode) {
         $m = Get-Mailbox -Identity $Inputs.mailbox
         $before = if ($m.LitigationHoldEnabled) { 'on' } else { 'off' }
         $op = if ($before -eq $Inputs.state) { 'none' } else { 'set' }
-        [pscustomobject]@{
+        @{
             target = [string]$m.PrimarySmtpAddress
             field  = 'litigationHold'
             op     = $op

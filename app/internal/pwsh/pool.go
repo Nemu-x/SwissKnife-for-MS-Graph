@@ -49,10 +49,10 @@ type Pool struct {
 	hosts  map[string]*entry
 	gen    uint64                    // bumped by Close: a host started before it is discarded
 	closed map[*graphapi.Client]bool // connections whose hosts were closed
-	start  func(exe string, allow, scripts []string) (*Host, error)
-	// Scripts returns the hashes of trusted pack scripts; read when a host
-	// starts (Reset restarts hosts after the trust changed).
-	Scripts func() []string
+	start  func(exe string, allow []string, scripts []TrustedScript) (*Host, error)
+	// Scripts returns the trusted pack scripts; read when a host starts
+	// (Reset restarts hosts after the trust changed).
+	Scripts func() []TrustedScript
 	now     func() time.Time
 }
 
@@ -139,7 +139,7 @@ func (p *Pool) host(env engine.Env, key string) (*Host, error) {
 		gen := p.gen
 		// Built-in hosts run allow-listed cmdlets only; pack hosts run trusted
 		// scripts only.
-		allow, scripts := p.allow[family], []string(nil)
+		allow, scripts := p.allow[family], []TrustedScript(nil)
 		if isPack {
 			allow = nil
 			if p.Scripts != nil {

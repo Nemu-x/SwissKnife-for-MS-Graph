@@ -44,6 +44,9 @@ type Manifest struct {
 	Summary  map[string]string `yaml:"summary" json:"summary"`
 	Category string            `yaml:"category" json:"category"`
 	Actions  []ActionDef       `yaml:"actions" json:"actions"`
+	// Permissions the pack says it needs (roles, scopes): shown before the
+	// operator trusts it. Not enforced — the connection's own rights are.
+	Permissions []string `yaml:"permissions" json:"permissions"`
 	// Workflows chain built-in actions: no code, so the safest kind of pack.
 	Workflows []WorkflowDef `yaml:"workflows" json:"workflows"`
 }
@@ -60,7 +63,28 @@ type ActionDef struct {
 	ConfirmField string            `yaml:"confirmField" json:"confirmField"`
 	Columns      []string          `yaml:"columns" json:"columns"`
 	Fields       []FieldDef        `yaml:"fields" json:"fields"`
+	// Cmdlets are the commands the script may call (besides a few that reach
+	// neither the network nor the disk); the PowerShell host enforces it.
+	Cmdlets []string `yaml:"cmdlets" json:"cmdlets"`
 }
+
+// NeverCmdlets run code, processes, jobs or modules: no pack may declare
+// them (the host refuses them too).
+var NeverCmdlets = map[string]bool{"invoke-expression": true, "invoke-command": true, "add-type": true, "start-process": true,
+	"start-job": true, "start-threadjob": true, "receive-job": true, "import-module": true, "new-module": true, "set-alias": true,
+	"new-alias": true, "register-objectevent": true, "register-engineevent": true, "set-executionpolicy": true,
+	"new-pssession": true, "enter-pssession": true, "invoke-item": true, "set-variable": true, "get-variable": true,
+	"remove-variable": true, "clear-variable": true, "get-command": true}
+
+// SensitiveCmdlets reach the network or the disk: a pack may declare them,
+// and the app points them out before the operator trusts it.
+var SensitiveCmdlets = map[string]bool{"invoke-webrequest": true, "invoke-restmethod": true, "send-mailmessage": true,
+	"test-netconnection": true, "resolve-dnsname": true, "start-bitstransfer": true, "get-content": true, "set-content": true,
+	"add-content": true, "clear-content": true, "out-file": true, "export-csv": true, "import-csv": true, "export-clixml": true,
+	"import-clixml": true, "new-item": true, "remove-item": true, "copy-item": true, "move-item": true, "rename-item": true,
+	"get-item": true, "set-item": true, "get-childitem": true, "test-path": true, "select-string": true}
+
+var cmdletRe = regexp.MustCompile(`^[A-Za-z]+-[A-Za-z0-9]+$`)
 
 // FieldDef is one input of a pack action.
 // WorkflowDef is a sequence of built-in catalog actions.
@@ -127,7 +151,12 @@ type Trust struct {
 	Pinned   map[string]string `json:"pinned"`             // pack name → trusted digest
 	Disabled []string          `json:"disabled,omitempty"` // pack names turned off
 	Hub      string            `json:"hub,omitempty"`      // Action Hub address ("" = DefaultHub)
+	// Names are the publishers the operator gave the keys (key → name).
+	Names map[string]string `json:"names,omitempty"`
 }
+
+// BuiltinPublisher names the project's own key.
+const BuiltinPublisher = "SwissKnife project"
 
 var (
 	nameRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,39}$`)
@@ -192,7 +221,7 @@ func Load(root string, trust Trust) []Pack {
 	if err != nil {
 		return nil
 	}
-	keys := trustedKeys(trust.Keys)
+	keys := trustedKeys(trust.Keys, trust.Names)
 	var out []Pack
 	count := map[string]int{}
 	for _, e := range entries {
@@ -221,16 +250,20 @@ type signingKey struct {
 	name string
 }
 
-func trustedKeys(user []string) map[[8]byte][]signingKey {
+func trustedKeys(user []string, names map[string]string) map[[8]byte][]signingKey {
 	keys := map[[8]byte][]signingKey{}
 	builtin, _ := minisign.NewPublicKey(BuiltinKey)
-	keys[builtin.KeyId] = []signingKey{{builtin, "SwissKnife project"}}
+	keys[builtin.KeyId] = []signingKey{{builtin, BuiltinPublisher}}
 	for _, k := range user {
 		pk, err := minisign.NewPublicKey(strings.TrimSpace(k))
 		if err != nil || pk.KeyId == builtin.KeyId {
 			continue // never shadows the project's key
 		}
-		keys[pk.KeyId] = append(keys[pk.KeyId], signingKey{pk, fmt.Sprintf("%X", pk.KeyId)})
+		name := strings.TrimSpace(names[k])
+		if name == "" || strings.EqualFold(name, BuiltinPublisher) {
+			name = fmt.Sprintf("%X", pk.KeyId)
+		}
+		keys[pk.KeyId] = append(keys[pk.KeyId], signingKey{pk, name})
 	}
 	return keys
 }
@@ -346,6 +379,17 @@ func validate(files map[string][]byte, m *Manifest) (map[string]string, error) {
 		}
 		if a.Danger == "destructive" && !names[a.ConfirmField] {
 			return nil, fmt.Errorf("%s: a destructive action names its confirmField", a.ID)
+		}
+		if len(a.Cmdlets) == 0 || len(a.Cmdlets) > 40 {
+			return nil, fmt.Errorf("%s: list the commands the script calls under cmdlets (1 to 40)", a.ID)
+		}
+		for _, c := range a.Cmdlets {
+			if !cmdletRe.MatchString(c) {
+				return nil, fmt.Errorf("%s: %q is not a command name (Verb-Noun)", a.ID, c)
+			}
+			if NeverCmdlets[strings.ToLower(c)] {
+				return nil, fmt.Errorf("%s: packs cannot use %s", a.ID, c)
+			}
 		}
 		// The script must be a .ps1 inside the pack folder.
 		rel := filepath.ToSlash(filepath.Clean(a.Script))

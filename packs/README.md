@@ -21,11 +21,24 @@ A pack runs only when one of these holds:
 - you **reviewed and trusted** its exact contents — any later change to any
   file makes its actions unavailable until you trust it again.
 
-Pack scripts are **full PowerShell** running in an Exchange Online or Teams
-session signed in with your admin connection — they are not limited to the
-cmdlets built-in actions may use. Read them before trusting. In return the app
-keeps them on a short leash:
+Pack scripts run in an Exchange Online or Teams session signed in with your
+admin connection, so read them before trusting. The app keeps them on a short
+leash:
 
+- a script may call **only the commands its pack declares** (`cmdlets`), plus a
+  few that reach neither the network nor the disk (`Where-Object`,
+  `ForEach-Object`, `Select-Object`, `Sort-Object`, `Group-Object`,
+  `Measure-Object`, `Compare-Object`, `Write-Output`, `Write-Verbose`,
+  `Write-Warning`, `Write-Error`, `Out-Null`, `Out-String`, `ConvertTo-Json`,
+  `ConvertFrom-Json`, `Get-Date`, `New-TimeSpan`, `Join-String`), each named
+  literally — no `& $name`, no dot-sourcing, no `-Parallel` or `-AsJob`;
+- it runs in **ConstrainedLanguage**: no .NET method calls, no `Add-Type`, no
+  `[pscustomobject]` (return hashtables, `@{ ... }`, instead);
+- commands that run code, start processes or jobs, or load modules
+  (`Invoke-Expression`, `Invoke-Command`, `Start-Process`, `Import-Module`, …)
+  can never be declared; commands that reach the network or files
+  (`Invoke-RestMethod`, `Export-Csv`, `Remove-Item`, …) can, and Settings points
+  them out before you trust the pack;
 - they run in their own PowerShell process, apart from the built-in actions;
 - every run (a preview and a "read" included) is blocked in read-only mode and
   written to the audit log;
@@ -94,6 +107,8 @@ workflows:
 | `danger` | `read`, `write` or `destructive` (destructive needs `confirmField`) |
 | `module` | `exo` or `teams` — which PowerShell session the script runs in |
 | `script` | a `.ps1` file inside the pack |
+| `cmdlets` | the commands the script calls (1–40, `Verb-Noun`); the host refuses anything else |
+| `permissions` | pack level: the roles or scopes the pack needs, in words — shown before it is trusted |
 | `label`, `hint` | by language (`en` required, `ru` optional) |
 | `fields` | `name`, `kind` (`text`, `choice`, `user`, `group`), `required`, `options`, `default`, `label` |
 | `columns` | read actions: column order |
@@ -102,7 +117,8 @@ workflows:
 
 `param($Mode, $Inputs, $Change)`
 
-- `read` — return objects; their properties are the table's columns.
+- `read` — return hashtables (`@{ name = ...; address = ... }`); their keys are
+  the table's columns.
 - `plan` — must change nothing (the app cannot enforce this — it is why a
   pack needs your trust); return `{target, field, op, before, after, ref}`
   objects (`op`: `set`, `add`, `remove` or `none`). The app previews them.
@@ -115,4 +131,6 @@ SwissKnifeGraph pack digest ./my-pack     # writes my-pack/pack.digest
 minisign -Sm ./my-pack/pack.digest         # writes pack.digest.minisig
 ```
 
-Publish your minisign public key so users can add it.
+Publish your minisign public key so users can add it: they give it a
+publisher name, and packs it signs show "Signed by <that name>" (no key can be
+named after the project's own).

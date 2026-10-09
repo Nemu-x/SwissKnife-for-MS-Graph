@@ -234,7 +234,7 @@ func TestPoolRetriesOnceAfterAnAuthFailure(t *testing.T) {
 func TestPoolDiscardsHostStartedBeforeClose(t *testing.T) {
 	p := fakePool(t, "Get-Connects")
 	inner := p.start
-	p.start = func(exe string, allow, _ []string) (*Host, error) {
+	p.start = func(exe string, allow []string, _ []TrustedScript) (*Host, error) {
 		h, err := inner(exe, allow, nil)
 		p.gen++ // a Close landed while the host was starting
 		return h, err

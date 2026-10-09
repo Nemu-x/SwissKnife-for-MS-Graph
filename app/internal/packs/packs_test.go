@@ -19,6 +19,7 @@ actions:
     danger: read
     module: exo
     script: holds.ps1
+    cmdlets: [Get-Mailbox]
     label: { en: Mailboxes on litigation hold, ru: Ящики на удержании }
     columns: [name, address]
 `
@@ -89,6 +90,13 @@ func TestSignedPackVerifiesAgainstTrustedKeysOnly(t *testing.T) {
 	if got := Load(root, Trust{Keys: []string{key}})[0]; got.Status != Signed || got.Signer == "" {
 		t.Fatalf("signed pack: %+v", got)
 	}
+	// The operator names the publisher; it cannot pass for the project.
+	if got := Load(root, Trust{Keys: []string{key}, Names: map[string]string{key: "Contoso IT"}})[0]; got.Signer != "Contoso IT" {
+		t.Fatalf("named publisher: %+v", got)
+	}
+	if got := Load(root, Trust{Keys: []string{key}, Names: map[string]string{key: "swissknife PROJECT"}})[0]; got.Signer == "swissknife PROJECT" || got.Signer == BuiltinPublisher {
+		t.Fatalf("a user key took the project's name: %+v", got)
+	}
 	// Tampering after signing breaks it — never silently "unsigned".
 	_ = os.WriteFile(filepath.Join(dir, "holds.ps1"), []byte("Remove-Mailbox -Identity *"), 0o644)
 	if got := Load(root, Trust{Keys: []string{key}})[0]; got.Status != Invalid {
@@ -104,6 +112,9 @@ func TestManifestRulesRefuseUnsafePacks(t *testing.T) {
 		"module":         strings.Replace(manifest, "module: exo", "module: graph", 1),
 		"destructive":    strings.Replace(manifest, "danger: read", "danger: destructive", 1),
 		"name":           strings.Replace(manifest, "contoso-tools", "Contoso Tools", 1),
+		"no cmdlets":     strings.Replace(manifest, "    cmdlets: [Get-Mailbox]\n", "", 1),
+		"never cmdlet":   strings.Replace(manifest, "cmdlets: [Get-Mailbox]", "cmdlets: [Get-Mailbox, Invoke-Expression]", 1),
+		"not a cmdlet":   strings.Replace(manifest, "cmdlets: [Get-Mailbox]", "cmdlets: [\"Get-Mailbox; rm\"]", 1),
 	}
 	for name, m := range cases {
 		root := t.TempDir()
@@ -139,14 +150,14 @@ func TestLookAlikesKeyHijackEncodingAndDisable(t *testing.T) {
 	}
 
 	// A user key that claims the project key's id is ignored.
-	builtin := trustedKeys(nil)
+	builtin := trustedKeys(nil, nil)
 	var id [8]byte
 	for k := range builtin {
 		id = k
 	}
 	pub, _, _ := ed25519.GenerateKey(rand.Reader)
 	fake := base64.StdEncoding.EncodeToString(append(append([]byte("Ed"), id[:]...), pub...))
-	if keys := trustedKeys([]string{fake}); len(keys[id]) != 1 || keys[id][0].name != "SwissKnife project" {
+	if keys := trustedKeys([]string{fake}, nil); len(keys[id]) != 1 || keys[id][0].name != "SwissKnife project" {
 		t.Fatalf("project key shadowed: %+v", keys[id])
 	}
 

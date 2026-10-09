@@ -1256,6 +1256,20 @@ export namespace services {
 		    return a;
 		}
 	}
+	export class KeyInfo {
+	    key: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new KeyInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.name = source["name"];
+	    }
+	}
 	
 	export class MailboxCopyRequest {
 	    source: string;
@@ -1627,6 +1641,8 @@ export namespace services {
 	    page: string;
 	    danger: string;
 	    module: string;
+	    cmdlets: string[];
+	    sensitive: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new PackActionInfo(source);
@@ -1639,6 +1655,8 @@ export namespace services {
 	        this.page = source["page"];
 	        this.danger = source["danger"];
 	        this.module = source["module"];
+	        this.cmdlets = source["cmdlets"];
+	        this.sensitive = source["sensitive"];
 	    }
 	}
 	export class PackFlowInfo {
@@ -1671,6 +1689,7 @@ export namespace services {
 	    digest: string;
 	    actions: PackActionInfo[];
 	    workflows: PackFlowInfo[];
+	    permissions: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new PackInfo(source);
@@ -1689,6 +1708,7 @@ export namespace services {
 	        this.digest = source["digest"];
 	        this.actions = this.convertValues(source["actions"], PackActionInfo);
 	        this.workflows = this.convertValues(source["workflows"], PackFlowInfo);
+	        this.permissions = source["permissions"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

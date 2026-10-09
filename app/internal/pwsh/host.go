@@ -68,17 +68,26 @@ type Host struct {
 	nextID atomic.Int64
 }
 
-// encodedScript is the host script as -EncodedCommand wants it: base64 of
-// UTF-16LE. Passing it inline means no script file that a temp cleaner could
-// delete, and no file for an AllSigned execution policy to refuse.
-var encodedScript = func() string {
-	u := utf16.Encode([]rune(string(hostScript)))
+// bootstrap is the -EncodedCommand (base64 of UTF-16LE) that starts a host:
+// it makes the console UTF-8 — the code page (866 on Russian Windows, 437 in
+// the US) would garble every non-ASCII name — then reads the host script as
+// one base64 line from stdin and runs it. Inline, so there is no script file
+// that a temp cleaner could delete or an AllSigned policy refuse; on stdin,
+// because the whole script is longer than a Windows command line allows.
+var bootstrap = encodeCommand(`$u = [Text.UTF8Encoding]::new($false); [Console]::InputEncoding = $u; [Console]::OutputEncoding = $u; ` +
+	`. ([scriptblock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine()))))`)
+
+// hostLine is the host script as the bootstrap reads it.
+var hostLine = base64.StdEncoding.EncodeToString(hostScript) + "\n"
+
+func encodeCommand(script string) string {
+	u := utf16.Encode([]rune(script))
 	b := make([]byte, 2*len(u))
 	for i, c := range u {
 		binary.LittleEndian.PutUint16(b[2*i:], c)
 	}
 	return base64.StdEncoding.EncodeToString(b)
-}()
+}
 
 // startTimeout bounds process start plus the init handshake.
 const startTimeout = 30 * time.Second
@@ -87,10 +96,17 @@ const startTimeout = 30 * time.Second
 // cmdlet allow-list.
 func Start(exe string, allow []string) (*Host, error) { return StartWithScripts(exe, allow, nil) }
 
+// TrustedScript is a pack script the host may run, by the SHA-256 of its
+// text, and the commands its pack declared for it.
+type TrustedScript struct {
+	Hash    string   `json:"hash"`
+	Cmdlets []string `json:"cmdlets"`
+}
+
 // StartWithScripts also trusts scripts by the SHA-256 of their text (action
 // packs); the host refuses any other script.
-func StartWithScripts(exe string, allow, scripts []string) (*Host, error) {
-	cmd := exec.Command(exe, "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedScript)
+func StartWithScripts(exe string, allow []string, scripts []TrustedScript) (*Host, error) {
+	cmd := exec.Command(exe, "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", bootstrap)
 	cmd.WaitDelay = 2 * time.Second
 	hideWindow(cmd)
 	stdin, err := cmd.StdinPipe()
@@ -111,10 +127,14 @@ func StartWithScripts(exe string, allow, scripts []string) (*Host, error) {
 	// Wait closes the pipes, so it runs only once stdout is drained.
 	go func() { <-readDone; _ = cmd.Wait(); close(h.done) }()
 
+	if _, err := io.WriteString(stdin, hostLine); err != nil {
+		h.Close()
+		return nil, fmt.Errorf("start powershell: %w", err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
 	defer cancel()
 	if scripts == nil {
-		scripts = []string{}
+		scripts = []TrustedScript{}
 	}
 	if _, err := h.call(ctx, map[string]any{"op": "init", "allow": allow, "scripts": scripts}); err != nil {
 		h.Close()
