@@ -4,6 +4,7 @@ import { Moon, Sun, Lock, RefreshCw, Download, FolderOpen } from 'lucide-react'
 import { Page } from '../components/Layout'
 import { PowerShellCard } from '../components/PowerShellCard'
 import { PacksCard } from '../components/PacksCard'
+import { CapabilitiesCard } from '../components/CapabilitiesCard'
 import { WorkerCard } from '../components/WorkerCard'
 import { MenuCard } from '../components/MenuCard'
 import { SupportCard } from '../components/SupportCard'
@@ -233,6 +234,7 @@ export function SettingsPage() {
         <PowerShellCard />
         <WorkerCard />
         <PacksCard />
+        <CapabilitiesCard />
 
         <SupportCard />
 

@@ -14,6 +14,10 @@ export function CancelAcross() {
   return window['go']['services']['ActionsService']['CancelAcross']();
 }
 
+export function Capabilities() {
+  return window['go']['services']['ActionsService']['Capabilities']();
+}
+
 export function Catalog() {
   return window['go']['services']['ActionsService']['Catalog']();
 }

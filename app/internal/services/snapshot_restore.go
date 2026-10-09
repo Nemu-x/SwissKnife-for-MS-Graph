@@ -35,7 +35,7 @@ var restorableSections = map[string]restorable{
 func snapshotRestoreAction(s *session.Session) engine.Action {
 	return engine.Action{
 		Manifest: engine.Manifest{
-			ID: "config.restore", Page: "security", Danger: engine.Destructive,
+			ID: "config.restore", Capability: "config.snapshot.restore", Page: "security", Danger: engine.Destructive,
 			Fields: []engine.Field{
 				{Name: "snapshot", Kind: engine.FieldSnapshot, Required: true},
 				{Name: "section", Kind: engine.FieldChoice, Required: true, Options: []string{"conditionalAccessPolicies", "namedLocations"}, Default: "conditionalAccessPolicies"},

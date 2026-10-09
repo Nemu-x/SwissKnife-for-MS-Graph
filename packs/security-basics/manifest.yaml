@@ -20,22 +20,22 @@ workflows:
       - { name: resetMfa, kind: choice, options: ["yes", "no"], default: "yes", label: { en: Reset MFA, ru: Сбросить MFA } }
       - { name: cleanMailbox, kind: choice, options: ["yes", "no"], default: "yes", label: { en: Stop forwarding and suspicious rules, ru: Снять пересылку и подозрительные правила } }
     steps:
-      - action: user.signIn
+      - capability: entra.user.signIn
         with: { user: "{{user}}", state: blocked }
-      - action: user.revokeSessions
+      - capability: entra.user.revokeSessions
         with: { user: "{{user}}" }
-      - action: user.resetPassword
+      - capability: entra.user.resetPassword
         with: { user: "{{user}}" }
         when: { input: resetPassword, equals: "yes" }
-      - action: user.resetMfa
+      - capability: entra.user.resetMfa
         with: { user: "{{user}}" }
         when: { input: resetMfa, equals: "yes" }
         onError: continue   # a default phone method stays: report it, keep cleaning up
-      - action: mail.disableRules
+      - capability: exchange.inboxRule.disable
         with: { user: "{{user}}" }
         when: { input: cleanMailbox, equals: "yes" }
         onError: continue
-      - action: mailbox.forwarding
+      - capability: exchange.mailbox.forwarding
         with: { mailbox: "{{user}}", op: clear }
         when: { input: cleanMailbox, equals: "yes" }
         onError: continue
@@ -48,9 +48,9 @@ workflows:
       - { name: mailbox, kind: user, required: true, label: { en: Mailbox, ru: Ящик } }
       - { name: delegate, kind: user, required: true, label: { en: Who gets access, ru: Кому доступ } }
     steps:
-      - action: mailbox.type
+      - capability: exchange.mailbox.type
         with: { mailbox: "{{mailbox}}", type: shared }
-      - action: mailbox.fullAccess
+      - capability: exchange.mailbox.fullAccess
         with: { mailbox: "{{mailbox}}", user: "{{delegate}}", op: add }
 
   - id: quickOffboarding
@@ -62,13 +62,13 @@ workflows:
       - { name: user, kind: user, required: true, label: { en: Leaver, ru: Уходящий } }
       - { name: forwardTo, kind: user, required: true, label: { en: Forward mail to, ru: Пересылать почту } }
     steps:
-      - action: user.signIn
+      - capability: entra.user.signIn
         with: { user: "{{user}}", state: blocked }
-      - action: user.revokeSessions
+      - capability: entra.user.revokeSessions
         with: { user: "{{user}}" }
-      - action: mailbox.forwarding
+      - capability: exchange.mailbox.forwarding
         with: { mailbox: "{{user}}", op: set, forwardTo: "{{forwardTo}}", keepCopy: "yes" }
         onError: continue
-      - action: mailbox.type
+      - capability: exchange.mailbox.type
         with: { mailbox: "{{user}}", type: shared }
         onError: continue

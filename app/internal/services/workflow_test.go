@@ -23,7 +23,7 @@ workflows:
     steps:
       - action: user.signIn
         with: { user: "{{user}}", state: blocked }
-      - action: user.revokeSessions
+      - capability: entra.user.revokeSessions
         with: { user: "{{user}}" }
       - action: user.resetMfa
         with: { user: "{{user}}" }
@@ -73,6 +73,13 @@ func TestWorkflowPackRunsBuiltInActions(t *testing.T) {
 	if _, err := e.Apply(p.ID, "ann@contoso.com"); err != nil {
 		t.Fatal(err)
 	}
+	steps := map[string]bool{}
+	for _, ch := range p.Changes {
+		steps[ch.Step] = true
+	}
+	if !steps["user.revokeSessions"] {
+		t.Fatalf("a step named by capability plans as its action: %+v", p.Changes)
+	}
 	joined := strings.Join(calls, "\n")
 	if !strings.Contains(joined, "PATCH /users/u1") || !strings.Contains(joined, "revokeSignInSessions") {
 		t.Fatalf("calls:\n%s", joined)
@@ -85,11 +92,26 @@ func TestWorkflowWithAnUnknownActionMakesThePackInvalid(t *testing.T) {
 	sess.SetConfigDir(dir)
 	pack := filepath.Join(dir, "actions", "bad")
 	_ = os.MkdirAll(pack, 0o755)
-	bad := strings.Replace(compromisedWorkflow, "user.revokeSessions", "user.deleteEverything", 1)
+	bad := strings.Replace(compromisedWorkflow, "user.signIn", "user.deleteEverything", 1)
 	_ = os.WriteFile(filepath.Join(pack, packs.ManifestFile), []byte(bad), 0o644)
 	NewEngine(sess)
 	list, _ := NewPacksService(sess).List()
 	if len(list) != 1 || list[0].Status != packs.Invalid || !strings.Contains(list[0].Error, "no such action") {
+		t.Fatalf("list %+v", list)
+	}
+}
+
+func TestWorkflowWithAnUnknownCapabilityMakesThePackInvalid(t *testing.T) {
+	sess := harness(t, func(w http.ResponseWriter, r *http.Request) {})
+	dir := t.TempDir()
+	sess.SetConfigDir(dir)
+	pack := filepath.Join(dir, "actions", "bad")
+	_ = os.MkdirAll(pack, 0o755)
+	bad := strings.Replace(compromisedWorkflow, "entra.user.revokeSessions", "entra.user.vanish", 1)
+	_ = os.WriteFile(filepath.Join(pack, packs.ManifestFile), []byte(bad), 0o644)
+	NewEngine(sess)
+	list, _ := NewPacksService(sess).List()
+	if len(list) != 1 || list[0].Status != packs.Invalid || !strings.Contains(list[0].Error, "entra.user.vanish") {
 		t.Fatalf("list %+v", list)
 	}
 }

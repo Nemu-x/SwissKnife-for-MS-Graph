@@ -92,6 +92,9 @@ type Manifest struct {
 	Pack  string            `json:"pack,omitempty"`
 	// Workflow marks an action that chains other actions (from a pack).
 	Workflow bool `json:"workflow,omitempty"`
+	// Capability is the action's stable public name (defaults to its id);
+	// unique across the catalog.
+	Capability string `json:"capability,omitempty"`
 }
 
 // Inputs are the operator's field values, keyed by Field.Name.
@@ -240,6 +243,14 @@ func (e *Engine) Register(actions ...Action) {
 		if len(a.Impls) == 0 {
 			panic("engine: action without implementations " + a.ID)
 		}
+		if a.Capability == "" {
+			a.Capability = a.ID
+		}
+		for _, o := range e.actions {
+			if o.Capability == a.Capability {
+				panic("engine: duplicate capability " + a.Capability)
+			}
+		}
 		e.actions[a.ID] = a
 	}
 }
@@ -277,9 +288,10 @@ func (e *Engine) Catalog() []CatalogEntry {
 			entry.Fields = []Field{} // the UI maps over it: [] not null
 		}
 		impl, reason := e.resolve(a)
+		pr := e.policyReason(a)
 		switch {
-		case !onDirectory(a) && !dangerAllowed(effectiveDanger(a), e.s.Policy().MaxDanger):
-			entry.Reason = &Reason{Key: "policy"}
+		case pr != nil:
+			entry.Reason = pr
 		case impl != nil:
 			entry.Available, entry.Backend = true, impl.Backend()
 			entry.MissingPermissions = missingPermissions(a.Manifest, have)
@@ -306,6 +318,7 @@ func (e *Engine) SetPacks(actions []Action) {
 			continue
 		}
 		if _, dup := e.actions[a.ID]; !dup {
+			a.Capability = a.ID // packs do not claim built-in names
 			e.actions[a.ID] = a
 		}
 	}
