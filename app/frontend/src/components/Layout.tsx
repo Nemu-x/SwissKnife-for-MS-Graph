@@ -1,23 +1,27 @@
 import { useState, type ReactNode } from 'react'
+import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
+import { loadCompactNav, saveCompactNav } from '../lib/navprefs'
+import { TRIBUTE_URL } from '../lib/support'
 import { useTranslation } from 'react-i18next'
 import {
   Plug, LayoutDashboard, PlayCircle, Users, KeyRound, ShieldCheck, Boxes, MessagesSquare, MessageCircle, Mail,
   FolderOpen, UserMinus, Smartphone, MonitorSmartphone, AppWindow, BarChart3, Sparkles, HeartPulse,
   ScrollText, TerminalSquare, Settings, Lock, Layers, ShieldAlert, History, ChevronDown, Search, ShieldHalf, Compass, Server,
+  PanelLeftClose, PanelLeftOpen, Heart,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { pageEnabled } from '../lib/workspaces'
 import logo from '../assets/images/logo.png'
 import type { PageId } from '../pages/registry'
 
-type NavItem = { id: PageId; icon: ReactNode; key: string }
+export type NavItem = { id: PageId; icon: ReactNode; key: string }
 
 // Pages usable without a tenant connection — the single source of truth for
 // both the nav enablement here and the redirect guard in App.tsx.
 export const LOCAL_PAGES: PageId[] = ['connect', 'settings', 'history', 'onprem']
 
 // Pinned entries above the groups.
-const pinned: NavItem[] = [
+export const NAV_PINNED: NavItem[] = [
   { id: 'connect', icon: <Plug size={17} />, key: 'nav.connect' },
   { id: 'dashboard', icon: <LayoutDashboard size={17} />, key: 'nav.dashboard' },
   { id: 'explorer', icon: <Compass size={17} />, key: 'nav.explorer' },
@@ -25,7 +29,7 @@ const pinned: NavItem[] = [
 
 // Grouped navigation (nav-groups capability): collapsible sections, access
 // hiding stays per item, a section with no visible items hides entirely.
-const groups: { key: string; items: NavItem[] }[] = [
+export const NAV_GROUPS: { key: string; items: NavItem[] }[] = [
   {
     key: 'navGroups.identity',
     items: [
@@ -95,7 +99,19 @@ export function Layout({
   children: ReactNode
 }) {
   const { t } = useTranslation()
-  const { connected, status, readOnly, access, hideUnavailable, workspaces } = useStore()
+  const { connected, status, readOnly, access, hideUnavailable, workspaces, hiddenPages } = useStore()
+  // Icons only, names on hover: more room for the page.
+  const [compact, setCompact] = useState(loadCompactNav)
+  const toggleCompact = () => setCompact((c) => { saveCompactNav(!c); return !c })
+  // The hover label is drawn outside the scrolling nav, so it is never clipped.
+  const [tip, setTip] = useState<{ text: string; top: number } | null>(null)
+  const tipProps = (text: string) => compact ? {
+    onMouseEnter: (e: React.MouseEvent<HTMLElement>) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ text, top: r.top + r.height / 2 }) },
+    onMouseLeave: () => setTip(null),
+    onFocus: (e: React.FocusEvent<HTMLElement>) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ text, top: r.top + r.height / 2 }) },
+    onBlur: () => setTip(null),
+    'aria-label': text,
+  } : {}
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem('navCollapsed') || '{}') } catch { return {} }
@@ -108,7 +124,9 @@ export function Layout({
     })
   }
 
-  const itemVisible = (it: NavItem) => pageEnabled(it.id, workspaces) &&
+  // A hidden page still shows while it is open, so the menu never loses the
+  // operator's place.
+  const itemVisible = (it: NavItem) => pageEnabled(it.id, workspaces) && (!hiddenPages.includes(it.id) || it.id === page) &&
     (!hideUnavailable || !(it.id in access) || access[it.id] !== false)
 
   const renderItem = (it: NavItem) => {
@@ -119,24 +137,34 @@ export function Layout({
         key={it.id}
         disabled={disabled}
         onClick={() => onNavigate(it.id)}
-        className={`mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors
+        {...tipProps(t(it.key))}
+        className={`mb-0.5 flex w-full items-center rounded-lg py-2 text-sm transition-colors
+          ${compact ? 'justify-center px-0' : 'gap-2.5 px-3'}
           ${active ? 'bg-[var(--accent)] text-[var(--accent-fg)]' : 'text-[var(--text-dim)] hover:bg-[var(--bg-elev-2)] hover:text-[var(--text)]'}
           disabled:cursor-not-allowed disabled:opacity-35`}
       >
         {it.icon}
-        <span className="truncate">{t(it.key)}</span>
+        {!compact && <span className="truncate">{t(it.key)}</span>}
       </button>
     )
   }
 
   return (
     <div className="flex h-full">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-elev)]">
-        <div className="flex items-center gap-2.5 px-4 py-4">
+      <aside className={`flex shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-elev)] transition-[width] ${compact ? 'w-14' : 'w-56'}`}>
+        <div className={`flex items-center gap-2.5 py-4 ${compact ? 'justify-center px-0' : 'px-4'}`}>
           <img src={logo} alt="SwissKnife" className="h-7 w-7 rounded-md" />
-          <span className="text-sm font-semibold leading-tight">SwissKnife<br /><span className="text-xs font-normal text-[var(--text-faint)]">for MS Graph</span></span>
+          {!compact && <span className="text-sm font-semibold leading-tight">SwissKnife<br /><span className="text-xs font-normal text-[var(--text-faint)]">for MS Graph</span></span>}
         </div>
-        {onOpenPalette && (
+        {onOpenPalette && compact && (
+          <div className="px-2 pb-2">
+            <button onClick={onOpenPalette} {...tipProps(t('palette.open') + ' (Ctrl+K)')}
+              className="flex w-full justify-center rounded-lg border border-[var(--border)] bg-[var(--bg)] py-2 text-[var(--text-faint)] hover:border-[var(--accent)] hover:text-[var(--text-dim)]">
+              <Search size={16} />
+            </button>
+          </div>
+        )}
+        {onOpenPalette && !compact && (
           <div className="px-2 pb-2">
             <button
               onClick={onOpenPalette}
@@ -149,10 +177,14 @@ export function Layout({
           </div>
         )}
         <nav className="flex-1 overflow-y-auto px-2 py-1">
-          {pinned.filter(itemVisible).map(renderItem)}
-          {groups.map((g) => {
+          {NAV_PINNED.filter(itemVisible).map(renderItem)}
+          {NAV_GROUPS.map((g) => {
             const visible = g.items.filter(itemVisible)
             if (visible.length === 0) return null
+            // Icons only: sections become thin separators, every item shows.
+            if (compact) {
+              return <div key={g.key} className="mt-2 border-t border-[var(--border)] pt-2">{visible.map(renderItem)}</div>
+            }
             // The section holding the active page always shows its items.
             const isOpen = !collapsed[g.key] || visible.some((it) => it.id === page)
             return (
@@ -170,7 +202,16 @@ export function Layout({
             )
           })}
         </nav>
-        <div className="border-t border-[var(--border)] px-4 py-3 text-xs">
+        <div className={`border-t border-[var(--border)] py-3 text-xs ${compact ? 'flex flex-col items-center gap-2 px-0' : 'px-4'}`}>
+          {compact ? (
+            <>
+              {workspaces.cloud && (
+                <span {...tipProps(connected ? status?.profileName || '' : t('common.notConnected'))} tabIndex={0}
+                  className={`h-2.5 w-2.5 rounded-full ${connected ? 'bg-[var(--ok)]' : 'bg-[var(--text-faint)]'}`} />
+              )}
+              {readOnly && <span {...tipProps(t('safety.readOnly'))} tabIndex={0} className="text-[var(--warn)]"><Lock size={13} /></span>}
+            </>
+          ) : <>
           {workspaces.cloud && <div className="flex items-center gap-1.5">
             <span className={`h-2 w-2 rounded-full ${connected ? 'bg-[var(--ok)]' : 'bg-[var(--text-faint)]'}`} />
             <span className="truncate text-[var(--text-dim)]">
@@ -187,8 +228,25 @@ export function Layout({
               <ShieldHalf size={12} /> {t('connect.limits.badge')}
             </div>
           )}
+          </>}
+          <div className={`flex items-center ${compact ? 'flex-col gap-1' : 'mt-2 justify-between'}`}>
+            <button onClick={() => BrowserOpenURL(TRIBUTE_URL)} {...tipProps(t('support.short'))}
+              className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[var(--text-faint)] hover:bg-[var(--bg-elev-2)] hover:text-[var(--danger)]">
+              <Heart size={14} />{!compact && <span>{t('support.short')}</span>}
+            </button>
+            <button onClick={toggleCompact} {...tipProps(t(compact ? 'nav.expand' : 'nav.collapse'))} title={compact ? undefined : t('nav.collapse')}
+              className="rounded-md p-1 text-[var(--text-faint)] hover:bg-[var(--bg-elev-2)] hover:text-[var(--text)]">
+              {compact ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+            </button>
+          </div>
         </div>
       </aside>
+      {tip && (
+        <div role="tooltip" style={{ top: tip.top, left: 60 }}
+          className="pointer-events-none fixed z-50 -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--border)] bg-[var(--bg-elev-2)] px-2 py-1 text-xs text-[var(--text)] shadow-lg">
+          {tip.text}
+        </div>
+      )}
       <main className="min-w-0 flex-1 overflow-hidden bg-[var(--bg)]">{children}</main>
     </div>
   )

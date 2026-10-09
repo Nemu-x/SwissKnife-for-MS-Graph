@@ -344,3 +344,28 @@ test('every screen opens and every tile can be clicked without crashing', async 
   }
   expect(errors).toEqual([])
 })
+
+test('the menu folds to icons, hides pages, and support is one click away', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+
+  // Icons only: names come back as a hover label.
+  await page.getByRole('button', { name: 'Collapse the menu' }).click()
+  await expect(page.locator('nav').getByText('Licensing')).toHaveCount(0)
+  await page.locator('nav').getByRole('button', { name: 'Licensing' }).hover()
+  await expect(page.getByRole('tooltip')).toHaveText('Licensing')
+  await page.getByRole('button', { name: 'Expand the menu' }).click()
+  await expect(page.locator('nav').getByText('Licensing')).toBeVisible()
+
+  // Essentials only: rarely used pages leave the menu, Ctrl+K still finds them.
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Essentials only' }).click()
+  await expect(page.locator('nav').getByRole('button', { name: 'Raw Graph', exact: false })).toHaveCount(0)
+  await expect(page.locator('nav').getByRole('button', { name: 'Settings' })).toBeVisible()
+  await page.getByRole('button', { name: 'Show everything' }).click()
+
+  await expect(page.getByRole('button', { name: /Support on Tribute/ })).toBeVisible()
+  expect(errors).toEqual([])
+})

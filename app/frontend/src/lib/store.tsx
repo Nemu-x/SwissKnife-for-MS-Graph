@@ -3,6 +3,8 @@ import { api, errMessage, type Status } from './api'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import i18n from '../i18n'
 import { loadWorkspaces, saveWorkspaces, type Workspaces } from './workspaces'
+import { loadHiddenPages, saveHiddenPages } from './navprefs'
+import type { PageId } from '../pages/registry'
 import { applyAccent } from './color'
 import { humanBytes } from './format'
 
@@ -74,6 +76,9 @@ interface Store {
   // Microsoft 365, on-prem AD or both (see lib/workspaces).
   workspaces: Workspaces
   setWorkspaces: (ws: Workspaces) => void
+  // Pages hidden from the sidebar (lib/navprefs); Ctrl+K still finds them.
+  hiddenPages: PageId[]
+  setHiddenPages: (p: PageId[]) => void
 
   access: Record<string, boolean>
   hideUnavailable: boolean
@@ -123,6 +128,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>((localStorage.getItem('theme') as Theme) || 'dark')
   const [safeMode, setSafeModeState] = useState<boolean>(localStorage.getItem('safeMode') !== 'false')
   const [workspaces, setWorkspacesState] = useState<Workspaces>(loadWorkspaces)
+  const [hiddenPages, setHiddenPagesState] = useState<PageId[]>(loadHiddenPages)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [domains, setDomains] = useState<string[]>([])
   const [access, setAccess] = useState<Record<string, boolean>>(() => {
@@ -448,6 +454,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSafeMode: (v) => {
       setSafeModeState(v)
       localStorage.setItem('safeMode', String(v))
+    },
+    hiddenPages,
+    setHiddenPages: (p) => {
+      setHiddenPagesState(p)
+      saveHiddenPages(p)
     },
     workspaces,
     setWorkspaces: (ws) => {
