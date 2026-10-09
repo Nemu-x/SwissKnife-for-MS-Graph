@@ -105,6 +105,18 @@ func TestRealHostSandboxesPackScripts(t *testing.T) {
 		"${function:Get-Random}":                                     "cannot read",
 		"Get-Random -AsJob":                                          "cannot use -AsJob",
 		". { Get-Random }":                                           "",
+		"$global:x = 1":                                              "cannot use $global:x",
+		"$script:allow = 1":                                          "cannot use $script:allow",
+		"'a' | ForEach-Object GetType":                               "a script block",
+		"$n = 'GetType'; 'a' | % $n":                                 "a script block",
+		"'a' | ForEach-Object -MemberName GetType":                   "cannot use ForEach-Object -MemberName",
+		"@('a').ForEach('GetType')":                                  "give .ForEach() a script block",
+		"$m = 'ToString'; 'a'.$m()":                                  "must name the methods",
+		"1..3 | ForEach-Object -Process { $_ } -ErrorAction Stop":    "",
+		"1..3 | % { $_ } | Where-Object { $_ -gt 1 }":                "",
+		"function global:Reply { }":                                  "cannot define global:Reply",
+		// The host's state is out of reach (dynamic scoping would expose it).
+		"if ($null -ne $packSafe -or $null -ne $scripts) { throw 'host state visible' }": "",
 	}
 	var trusted []TrustedScript
 	for sc := range cases {

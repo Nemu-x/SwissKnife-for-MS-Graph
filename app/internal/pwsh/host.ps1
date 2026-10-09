@@ -1,5 +1,6 @@
-# SwissKnife PowerShell host (ADR-008). Started with -EncodedCommand, so no
-# script file exists to be cleaned up or blocked by an AllSigned policy. Reads one JSON request per line on
+# SwissKnife PowerShell host (ADR-008). A short -EncodedCommand bootstrap
+# reads this script from stdin, so no script file exists to be cleaned up or
+# blocked by an AllSigned policy. Reads one JSON request per line on
 # stdin, answers one line on stdout prefixed with a marker so module banners
 # and warnings that also reach stdout can never be mistaken for a reply.
 #
@@ -22,16 +23,17 @@
 # Parameters are splatted from the decoded object: input values are never
 # parsed as PowerShell.
 
-# The console code page (866 on Russian Windows, 437 in the US) would garble
-# every non-ASCII name in both directions: the protocol is UTF-8.
-$utf8 = [Text.UTF8Encoding]::new($false)
-[Console]::InputEncoding = $utf8
-[Console]::OutputEncoding = $utf8
+# The console is already UTF-8: the bootstrap (host.go) set it before it read
+# this script from stdin — setting it again would drop buffered input.
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $InformationPreference = 'SilentlyContinue'
 $WarningPreference = 'SilentlyContinue'
+# Everything below runs in a private scope, not the global one: a pack
+# script (bound to an empty module, see 'script') resolves names through that
+# module and the global scope only, so the host's state is out of its reach.
+& {
 $marker = [char]1 + 'SKG '
 $allow = @{}
 $scripts = @{}   # hash → { command name → $true } the script may call
@@ -51,6 +53,7 @@ foreach ($c in 'Invoke-Expression', 'iex', 'Invoke-Command', 'icm', 'Add-Type', 
     'Invoke-Item', 'Set-Variable', 'Get-Variable', 'Remove-Variable', 'Clear-Variable', 'Get-Command') { $packNever[$c] = $true }
 
 $langMode = [scriptblock].GetProperty('LanguageMode', [Reflection.BindingFlags]'NonPublic,Instance')
+$sandbox = New-Module -Name SkgPackSandbox -ScriptBlock { }
 
 # Test-PackScript refuses a script that calls anything it did not declare,
 # calls a command by a computed name, or reaches the engine behind the
@@ -60,7 +63,11 @@ function Test-PackScript([string]$text, [hashtable]$declared) {
     $ast = [Management.Automation.Language.Parser]::ParseInput($text, [ref]$tokens, [ref]$errors)
     if ($errors.Count -gt 0) { throw "the pack script does not parse: $($errors[0].Message)" }
     $defined = @{}
-    foreach ($f in $ast.FindAll({ $args[0] -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)) { $defined[$f.Name] = $true }
+    foreach ($f in $ast.FindAll({ $args[0] -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+        # A scoped name (global:...) would outlive the run or shadow the host.
+        if ($f.Name.Contains(':')) { throw "pack scripts cannot define $($f.Name)" }
+        $defined[$f.Name] = $true
+    }
     foreach ($n in $ast.FindAll({ $args[0] -is [Management.Automation.Language.UsingStatementAst] -or
                 $args[0] -is [Management.Automation.Language.ConfigurationDefinitionAst] -or
                 $args[0] -is [Management.Automation.Language.DynamicKeywordStatementAst] }, $true)) {
@@ -74,6 +81,25 @@ function Test-PackScript([string]$text, [hashtable]$declared) {
         if (-not ($declared.ContainsKey($name) -or $packSafe.ContainsKey($name) -or $defined.ContainsKey($name))) {
             throw "the pack did not declare the command $name"
         }
+        # ForEach-Object by member name invokes methods past the language
+        # mode: only script blocks.
+        if ($name -in 'ForEach-Object', '%', 'foreach') {
+            $args0 = @($c.CommandElements | Select-Object -Skip 1)
+            for ($i = 0; $i -lt $args0.Count; $i++) {
+                $e = $args0[$i]
+                if ($e -is [Management.Automation.Language.CommandParameterAst]) {
+                    $pn = $e.ParameterName.ToLower()
+                    if ($pn.StartsWith('m') -or $pn.StartsWith('ar')) { throw "pack scripts cannot use ForEach-Object -$($e.ParameterName)" }
+                    # The value after -InputObject or a common parameter is data.
+                    if ($null -eq $e.Argument -and $pn -in 'inputobject', 'erroraction', 'warningaction', 'informationaction',
+                        'errorvariable', 'warningvariable', 'informationvariable', 'outvariable', 'outbuffer', 'pipelinevariable') { $i++ }
+                    continue
+                }
+                if ($e -isnot [Management.Automation.Language.ScriptBlockExpressionAst]) {
+                    throw "pack scripts give ForEach-Object a script block (line $($e.Extent.StartLineNumber))"
+                }
+            }
+        }
         foreach ($e in $c.CommandElements) {
             # -Parallel and -AsJob run the block outside this language mode.
             if ($e -is [Management.Automation.Language.CommandParameterAst] -and
@@ -82,9 +108,20 @@ function Test-PackScript([string]$text, [hashtable]$declared) {
             }
         }
     }
+    foreach ($m in $ast.FindAll({ $args[0] -is [Management.Automation.Language.InvokeMemberExpressionAst] }, $true)) {
+        if ($m.Member -isnot [Management.Automation.Language.StringConstantExpressionAst]) {
+            throw "pack scripts must name the methods they call (line $($m.Extent.StartLineNumber))"
+        }
+        # .ForEach('Name') / .Where('Name') invoke members past the language mode.
+        if ($m.Member.Value -in 'ForEach', 'Where' -and ($m.Arguments.Count -eq 0 -or $m.Arguments[0] -isnot [Management.Automation.Language.ScriptBlockExpressionAst])) {
+            throw "pack scripts give .$($m.Member.Value)() a script block (line $($m.Extent.StartLineNumber))"
+        }
+    }
     foreach ($v in $ast.FindAll({ $args[0] -is [Management.Automation.Language.VariableExpressionAst] }, $true)) {
         $path = $v.VariablePath
         if ($path.IsDriveQualified -and $path.DriveName -ne 'env') { throw "pack scripts cannot read `$$($path.UserPath)" }
+        # Global and script variables would outlive the run.
+        if ($path.IsGlobal -or $path.IsScript) { throw "pack scripts cannot use `$$($path.UserPath)" }
         $bare = $path.UserPath -replace '^(?i)(global|local|script|private|using):', ''
         if ($bare -in 'ExecutionContext', 'Host') { throw "pack scripts cannot use `$$bare" }
     }
@@ -171,7 +208,7 @@ while ($true) {
                 if (-not $scripts.ContainsKey($hash)) { throw 'script not trusted' }
                 Test-PackScript $req.script $scripts[$hash]
                 if (-not $langMode) { throw 'this PowerShell cannot run pack scripts in ConstrainedLanguage' }
-                $sb = [scriptblock]::Create($req.script)
+                $sb = $sandbox.NewBoundScriptBlock([scriptblock]::Create($req.script))
                 $langMode.SetValue($sb, [Management.Automation.PSLanguageMode]::ConstrainedLanguage)
                 if ($langMode.GetValue($sb) -ne [Management.Automation.PSLanguageMode]::ConstrainedLanguage) {
                     throw 'this PowerShell cannot run pack scripts in ConstrainedLanguage'
@@ -189,3 +226,4 @@ while ($true) {
         Fail $id $_
     }
 }
+} # private scope
