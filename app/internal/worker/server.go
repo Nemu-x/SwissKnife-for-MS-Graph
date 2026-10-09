@@ -359,11 +359,6 @@ func (s *Server) handleUnpair(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) families() []string {
-	out, _ := s.familyState()
-	return out
-}
-
 // familyState splits the enabled families into those that run now and
 // those whose module is missing.
 func (s *Server) familyState() (ready, missing []string) {
