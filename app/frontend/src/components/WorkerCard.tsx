@@ -5,7 +5,19 @@ import { Card, Button, Field, Input, Badge } from './ui'
 import { useStore } from '../lib/store'
 import { api, errMessage } from '../lib/api'
 
-type Worker = { addr: string; fingerprint: string; name: string; pairedAt: string; families?: string[] }
+type Worker = {
+  addr: string; fingerprint: string; name: string; pairedAt: string; families?: string[]
+  unavailable?: string[]; version?: string; lastSeen?: string; online: boolean; lastError?: string
+}
+
+const familyName = (f: string) => (f === 'teams' ? 'Teams PS' : 'Exchange PS')
+
+// A Go zero time (never seen) comes back as year 1.
+const when = (iso?: string) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.getFullYear() < 2000 ? '' : d.toLocaleString()
+}
 
 // A paired Windows machine that runs PowerShell for this app when this one
 // cannot (no PowerShell, a module missing). Pairing pins both certificates.
@@ -18,8 +30,16 @@ export function WorkerCard() {
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const [checking, setChecking] = useState(false)
   useEffect(() => {
-    api.worker.status().then((x) => setW((x as Worker) ?? null)).catch(() => {})
+    api.worker.status().then((x) => {
+      setW((x as Worker) ?? null)
+      // Opening Settings checks a paired worker: online or not, right now.
+      if (x) {
+        setChecking(true)
+        api.worker.check().then((y) => setW((y as Worker) ?? null)).catch(() => {}).finally(() => setChecking(false))
+      }
+    }).catch(() => {})
     api.worker.clientFingerprint().then((f) => setMe(f || '')).catch(() => {})
   }, [])
   // PowerShell actions may become available (or not) through the worker.
@@ -45,14 +65,26 @@ export function WorkerCard() {
             <Server size={15} className="text-[var(--text-faint)]" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{w.name || w.addr}</div>
-              <div className="truncate text-xs text-[var(--text-faint)]">{w.addr}</div>
+              <div className="truncate text-xs text-[var(--text-faint)]">{w.addr}{w.version ? ` · ${w.version}` : ''}</div>
             </div>
-            {(w.families ?? []).map((f) => <Badge key={f} kind="neutral">{f === 'teams' ? 'Teams PS' : 'Exchange PS'}</Badge>)}
+            <span className="flex items-center gap-1.5 text-xs" data-worker-state>
+              <span className={`h-2 w-2 rounded-full ${checking ? 'bg-[var(--text-faint)]' : w.online ? 'bg-[var(--ok)]' : 'bg-[var(--danger)]'}`} />
+              {checking ? t('worker.checking') : w.online ? t('worker.online') : t('worker.offline')}
+            </span>
           </div>
+          <div className="flex flex-wrap gap-1">
+            {(w.families ?? []).map((f) => <Badge key={f} kind="ok">{familyName(f)}</Badge>)}
+            {(w.unavailable ?? []).map((f) => <Badge key={f} kind="warn">{familyName(f)} · {t('worker.notReady')}</Badge>)}
+          </div>
+          <p className="text-xs text-[var(--text-faint)]">
+            {when(w.lastSeen) && <>{t('worker.lastSeen', { when: when(w.lastSeen) })} · </>}
+            {t('worker.pairedAt', { when: when(w.pairedAt) })}
+          </p>
+          {!checking && !w.online && w.lastError && <p className="text-xs text-[var(--danger)]">{w.lastError}</p>}
           <p className="break-all font-mono text-[10px] text-[var(--text-faint)]">{t('worker.pinned')} {w.fingerprint}</p>
           {(w.families ?? []).length === 0 && <p className="text-xs text-[var(--warn)]">{t('worker.noFamilies')}</p>}
           <div className="flex gap-2">
-            <Button variant="subtle" disabled={busy} onClick={() => run(() => api.worker.check(), t('worker.reachable'))}><RefreshCw size={14} /> {t('worker.check')}</Button>
+            <Button variant="subtle" disabled={busy || checking} onClick={() => run(() => api.worker.check())}><RefreshCw size={14} /> {t('worker.check')}</Button>
             <Button variant="ghost" disabled={busy} onClick={() => run(async () => { await api.worker.unpair(); return null })}><Unlink size={14} /> {t('worker.unpair')}</Button>
           </div>
         </div>

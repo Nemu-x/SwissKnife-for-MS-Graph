@@ -453,3 +453,21 @@ test('a pack shows what its scripts may call and who signed the keys', async ({ 
   await expect(page.getByText('Contoso IT', { exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('the worker card says whether the worker answers and what it can run', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    const w = { addr: 'srv-ps01:8743', fingerprint: 'ab', name: 'SRV-PS01', pairedAt: '2026-10-01T10:00:00Z', families: ['exo'],
+      unavailable: ['teams'], version: '2.0.0', lastSeen: '2026-10-08T09:00:00Z', online: false }
+    ;(window as any).__stub = { Status: w, Check: { ...w, lastError: 'dial tcp: connection refused' } }
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  await expect(page.locator('[data-worker-state]')).toHaveText('Not answering')
+  await expect(page.getByText('dial tcp: connection refused')).toBeVisible()
+  await expect(page.getByText('Teams PS · module missing there')).toBeVisible()
+  await expect(page.getByText(/Last answered .* · paired /)).toBeVisible()
+  expect(errors).toEqual([])
+})
