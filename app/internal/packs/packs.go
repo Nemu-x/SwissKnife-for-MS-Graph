@@ -74,9 +74,12 @@ type WorkflowDef struct {
 	Steps        []StepDef         `yaml:"steps" json:"steps"`
 }
 
-// StepDef runs one built-in action; "{{input}}" in With takes a workflow input.
+// StepDef runs one built-in action, named by its id (Action) or by its
+// capability (Capability, the stable name); "{{input}}" in With takes a
+// workflow input.
 type StepDef struct {
-	Action  string            `yaml:"action" json:"action"`
+	Action     string            `yaml:"action" json:"action,omitempty"`
+	Capability string            `yaml:"capability" json:"capability,omitempty"`
 	With    map[string]string `yaml:"with" json:"with"`
 	When    map[string]string `yaml:"when" json:"when"` // {input: name, equals: value}
 	OnError string            `yaml:"onError" json:"onError"`
@@ -447,8 +450,8 @@ func validateWorkflows(m *Manifest) error {
 			return fmt.Errorf("%s: a workflow has 1 to 30 steps", w.ID)
 		}
 		for j, st := range w.Steps {
-			if st.Action == "" {
-				return fmt.Errorf("%s step %d: action is required", w.ID, j+1)
+			if (st.Action == "") == (st.Capability == "") {
+				return fmt.Errorf("%s step %d: name either an action or a capability", w.ID, j+1)
 			}
 			if len(st.When) > 0 && (st.When["input"] == "" || !names[st.When["input"]]) {
 				return fmt.Errorf("%s step %d: when.input must name a field of the workflow", w.ID, j+1)

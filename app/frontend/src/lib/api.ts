@@ -312,6 +312,7 @@ export const api = {
   actions: {
     // Go marshals an empty list as null: normalise here so no page has to.
     catalog: () => Actions.Catalog().then((v) => (v ?? []).map((e) => ({ ...e, fields: e.fields ?? [] }))) as Promise<engine.CatalogEntry[]>,
+    capabilities: () => Actions.Capabilities().then((v) => (v ?? []).map((c) => ({ ...c, impls: c.impls ?? [] }))) as Promise<engine.CapabilityView[]>,
     plan: (id: string, inputs: Record<string, string>) => Actions.Plan(id, inputs) as Promise<engine.Plan>,
     apply: (planId: string, confirm: string) => Actions.Apply(planId, confirm) as Promise<engine.Result>,
     run: (id: string, inputs: Record<string, string>) => Actions.Run(id, inputs) as Promise<engine.ReadResult>,

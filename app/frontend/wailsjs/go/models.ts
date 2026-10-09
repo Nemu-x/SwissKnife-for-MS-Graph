@@ -62,6 +62,86 @@ export namespace engine {
 	        this.params = source["params"];
 	    }
 	}
+	export class ImplStatus {
+	    backend: string;
+	    state: string;
+	    via?: string;
+	    reason?: Reason;
+	
+	    static createFrom(source: any = {}) {
+	        return new ImplStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.backend = source["backend"];
+	        this.state = source["state"];
+	        this.via = source["via"];
+	        this.reason = this.convertValues(source["reason"], Reason);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CapabilityView {
+	    capability: string;
+	    action: string;
+	    page: string;
+	    danger: string;
+	    pack?: string;
+	    label?: Record<string, string>;
+	    impls: ImplStatus[];
+	    reason?: Reason;
+	
+	    static createFrom(source: any = {}) {
+	        return new CapabilityView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.capability = source["capability"];
+	        this.action = source["action"];
+	        this.page = source["page"];
+	        this.danger = source["danger"];
+	        this.pack = source["pack"];
+	        this.label = source["label"];
+	        this.impls = this.convertValues(source["impls"], ImplStatus);
+	        this.reason = this.convertValues(source["reason"], Reason);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Field {
 	    name: string;
 	    kind: string;
@@ -95,6 +175,7 @@ export namespace engine {
 	    hint?: Record<string, string>;
 	    pack?: string;
 	    workflow?: boolean;
+	    capability?: string;
 	    available: boolean;
 	    backend?: string;
 	    reason?: Reason;
@@ -117,6 +198,7 @@ export namespace engine {
 	        this.hint = source["hint"];
 	        this.pack = source["pack"];
 	        this.workflow = source["workflow"];
+	        this.capability = source["capability"];
 	        this.available = source["available"];
 	        this.backend = source["backend"];
 	        this.reason = this.convertValues(source["reason"], Reason);
@@ -168,6 +250,7 @@ export namespace engine {
 	        this.stepNo = source["stepNo"];
 	    }
 	}
+	
 	export class Outcome {
 	    target: string;
 	    field: string;

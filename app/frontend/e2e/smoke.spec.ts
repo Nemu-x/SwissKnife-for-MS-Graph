@@ -369,3 +369,30 @@ test('the menu folds to icons, hides pages, and support is one click away', asyn
   await expect(page.getByRole('button', { name: /Support on Tribute/ })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('capabilities show what runs, the fallbacks and why the others cannot', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    ;(window as any).__stub = { Capabilities: [
+      { capability: 'exchange.mailbox.sendOnBehalf', action: 'mailbox.sendOnBehalf', page: 'mail', danger: 'write', impls: [
+        { backend: 'exo-api', state: 'unavailable', reason: { key: 'exoApiNotEnabled' } },
+        { backend: 'exo-ps', state: 'runs', via: 'worker' }] },
+      { capability: 'teams.policy.list', action: 'teams.policies', page: 'teams', danger: 'read', impls: [
+        { backend: 'teams-ps', state: 'unavailable', reason: { key: 'pwshMissing' } }] },
+      { capability: 'entra.user.signIn', action: 'user.signIn', page: 'users', danger: 'write', impls: null },
+    ] }
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Show capabilities' }).click()
+
+  const mail = page.locator('[data-capability="exchange.mailbox.sendOnBehalf"]')
+  await expect(mail.getByText('Exchange PS · via worker')).toBeVisible()
+  await expect(page.getByText('1 of 3 can run now')).toBeVisible()
+  await page.getByLabel('Only those that cannot run').check()
+  await expect(mail).toHaveCount(0)
+  await expect(page.locator('[data-capability="teams.policy.list"]').getByText(/Needs PowerShell 7/)).toBeVisible()
+  expect(errors).toEqual([])
+})

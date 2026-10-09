@@ -214,6 +214,10 @@ type ModuleStatus struct {
 // Catalog lists every action with its availability for the current session.
 func (a *ActionsService) Catalog() []engine.CatalogEntry { return a.e.Catalog() }
 
+// Capabilities lists what each capability runs through now, its fallbacks
+// and why the other implementations cannot run.
+func (a *ActionsService) Capabilities() []engine.CapabilityView { return a.e.Capabilities() }
+
 // Plan previews an action without writing.
 func (a *ActionsService) Plan(actionID string, inputs map[string]string) (*engine.Plan, error) {
 	p, err := a.e.Plan(actionID, inputs)

@@ -148,12 +148,24 @@ func workflowActions(e *engine.Engine, p packs.Pack, gate func() *engine.Reason)
 				Options: f.Options, Default: f.Default, Label: f.Label})
 		}
 		var steps []engine.WorkflowStep
-		for _, st := range w.Steps {
-			step := engine.WorkflowStep{Action: st.Action, With: st.With, OnError: st.OnError}
+		var capErr error
+		for i, st := range w.Steps {
+			id := st.Action
+			if st.Capability != "" {
+				var ok bool
+				if id, ok = e.CapabilityAction(st.Capability); !ok || strings.HasPrefix(id, "pack.") {
+					capErr = fmt.Errorf("step %d: no built-in action provides capability %q", i+1, st.Capability)
+					break
+				}
+			}
+			step := engine.WorkflowStep{Action: id, With: st.With, OnError: st.OnError}
 			if len(st.When) > 0 {
 				step.When = &engine.StepCondition{Input: st.When["input"], Equals: st.When["equals"]}
 			}
 			steps = append(steps, step)
+		}
+		if capErr != nil {
+			return nil, fmt.Errorf("%s: %w", w.ID, capErr)
 		}
 		danger, perms, err := e.ValidateWorkflow(fields, w.ConfirmField, steps)
 		if err != nil {

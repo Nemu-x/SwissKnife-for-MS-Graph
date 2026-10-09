@@ -60,18 +60,22 @@ workflows:
       - { name: user, kind: user, required: true }
       - { name: resetMfa, kind: choice, options: ["yes", "no"], default: "yes" }
     steps:
-      - action: user.signIn
+      - capability: entra.user.signIn
         with: { user: "{{user}}", state: blocked }
-      - action: user.resetMfa
+      - capability: entra.user.resetMfa
         with: { user: "{{user}}" }
         when: { input: resetMfa, equals: "yes" }   # optional step
-      - action: mail.disableRules
+      - capability: exchange.inboxRule.disable
         with: { user: "{{user}}" }
         onError: continue                          # default: stop
 ```
 
-- `action` is a built-in catalog action id (Settings → PowerShell lists the
-  backends; `SwissKnifeGraph action list` lists every action and its inputs).
+- A step names a built-in action by its **capability** — the stable public name
+  (`exchange.mailbox.fullAccess`), listed under Settings → Capabilities — or by
+  its catalog id with `action:` (`SwissKnifeGraph action list` lists every
+  action and its inputs). Prefer capabilities in packs you publish: they are
+  never renamed, and the app picks the implementation (Exchange REST,
+  PowerShell here, or the paired worker) at run time.
 - `with` gives the action's inputs; `{{name}}` takes a field of the workflow.
 - A step that fails stops the run unless it says `onError: continue`.
 - The workflow is as dangerous as its most dangerous step; a destructive one

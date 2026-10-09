@@ -11,6 +11,8 @@ export function Cancel(arg1:string):Promise<void>;
 
 export function CancelAcross():Promise<void>;
 
+export function Capabilities():Promise<Array<engine.CapabilityView>>;
+
 export function Catalog():Promise<Array<engine.CatalogEntry>>;
 
 export function FanOutProfiles():Promise<Array<secrets.Profile>>;

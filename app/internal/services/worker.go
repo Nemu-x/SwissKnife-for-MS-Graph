@@ -231,6 +231,17 @@ func (p workerAware) Status(s *session.Session) *engine.Reason {
 	return r
 }
 
+// Via tells the Capabilities view where the backend runs now.
+func (p workerAware) Via(s *session.Session) string {
+	if p.inner.Status(s) == nil {
+		return "local"
+	}
+	if _, w := remoteFor(s); hasFamily(w, p.family) {
+		return "worker"
+	}
+	return ""
+}
+
 // --- binding ---------------------------------------------------------------
 
 // WorkerService pairs this app with a worker.

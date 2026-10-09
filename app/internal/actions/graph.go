@@ -25,7 +25,7 @@ func Builtin() []engine.Action {
 	out = append(out, reportActions()...)
 	out = append(out, intuneActions()...)
 	out = append(out, incidentActions()...)
-	return append(out, adActions()...)
+	return withCapabilities(append(out, adActions()...))
 }
 
 func graphActions() []engine.Action {
