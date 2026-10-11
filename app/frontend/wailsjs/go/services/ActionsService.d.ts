@@ -21,7 +21,7 @@ export function InstallModule(arg1:string):Promise<services.PowerShellStatus>;
 
 export function InstallPowerShell():Promise<services.PowerShellStatus>;
 
-export function Plan(arg1:string,arg2:Record<string, string>):Promise<engine.Plan>;
+export function Plan(arg1:string,arg2:Record<string, string>,arg3:string):Promise<engine.Plan>;
 
 export function PowerShellInstallMethod():Promise<pwsh.InstallMethod>;
 

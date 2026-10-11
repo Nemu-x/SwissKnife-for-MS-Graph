@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Layout, LOCAL_PAGES } from './components/Layout'
 import { Toasts } from './components/Toasts'
+import { SessionExpiredBanner } from './components/SessionExpiredBanner'
 import { CommandPalette } from './components/CommandPalette'
 import { StoreProvider, useStore } from './lib/store'
 import { pages, type PageId } from './pages/registry'
@@ -58,6 +59,7 @@ function Shell() {
         <Current />
       </PageErrorBoundary>
       <Toasts />
+      <SessionExpiredBanner onSignIn={() => navigate('connect')} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onNavigate={navigate} />
     </Layout>
   )

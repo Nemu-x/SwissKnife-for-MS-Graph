@@ -1527,11 +1527,19 @@ const en = {
     installed: '{{name}} is installed.',
     recheck: 'Check again',
   },
+  session: {
+    expired: 'Your sign-in has expired or was revoked. Sign in again to continue.',
+    signInAgain: 'Sign in again',
+  },
   errors: {
     generic: 'Error',
     grantPermission: 'grant the {{p}} application permission in Entra and give admin consent.',
     missingPermission: 'the app registration is likely missing a Graph permission for this call. Add the required Application permission and grant admin consent.',
     engine: {
+      sessionExpired: 'Your sign-in has expired or was revoked — sign in again on the Connect page.',
+      connectBusy: 'An operation is still running on this connection — wait for it to finish or cancel it before switching.',
+      planTimeout: 'The preview took too long and was stopped — try again or narrow the input.',
+      planCanceled: 'The preview was cancelled.',
       planExpired: 'The preview has expired or was already applied — preview again.',
       missingInput: 'Fill in all required fields.',
       badInput: 'One of the fields has an invalid value.',

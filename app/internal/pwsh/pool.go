@@ -49,7 +49,12 @@ type Pool struct {
 	hosts  map[string]*entry
 	gen    uint64                    // bumped by Close: a host started before it is discarded
 	closed map[*graphapi.Client]bool // connections whose hosts were closed
-	start  func(exe string, allow []string, scripts []TrustedScript) (*Host, error)
+	// busy marks a key whose host is being started or signed in; the channel
+	// closes when that finishes. p.mu is not held meanwhile, so other keys
+	// (and Close/CloseFor) never wait on a slow start or sign-in.
+	busy    map[string]chan struct{}
+	packGen uint64 // bumped by ResetPacks: a pack host started before it is stale
+	start   func(exe string, allow []string, scripts []TrustedScript) (*Host, error)
 	// Scripts returns the trusted pack scripts; read when a host starts
 	// (Reset restarts hosts after the trust changed).
 	Scripts func() []TrustedScript
@@ -57,7 +62,7 @@ type Pool struct {
 }
 
 func NewPool(det *Detector, allow map[string][]string) *Pool {
-	return &Pool{det: det, allow: allow, hosts: map[string]*entry{}, closed: map[*graphapi.Client]bool{}, start: StartWithScripts, now: time.Now}
+	return &Pool{det: det, allow: allow, hosts: map[string]*entry{}, closed: map[*graphapi.Client]bool{}, busy: map[string]chan struct{}{}, start: StartWithScripts, now: time.Now}
 }
 
 // Invoke implements engine.PSRunner. An authentication failure (the token
@@ -118,25 +123,59 @@ const packSuffix = "/pack"
 func (p *Pool) host(env engine.Env, key string) (*Host, error) {
 	family := strings.TrimSuffix(key, packSuffix)
 	isPack := key != family
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	// A call from a connection that already ended must not touch the pool —
-	// the family's host may belong to a newer connection by now.
-	if p.closed[env.Graph] {
-		return nil, errors.New("disconnected")
+	for {
+		p.mu.Lock()
+		// A call from a connection that already ended must not touch the pool —
+		// the family's host may belong to a newer connection by now.
+		if p.closed[env.Graph] {
+			p.mu.Unlock()
+			return nil, errors.New("disconnected")
+		}
+		// Another caller is starting or signing in this key's host: wait for
+		// it, then look again (it may have failed, or be for another connection).
+		if wait := p.busy[key]; wait != nil {
+			p.mu.Unlock()
+			select {
+			case <-wait:
+				continue
+			case <-env.Ctx.Done():
+				return nil, env.Ctx.Err()
+			}
+		}
+		e := p.hosts[key]
+		if e != nil && (!e.host.Alive() || e.conn != env.Graph || e.stale) {
+			e.host.Close()
+			delete(p.hosts, key)
+			e = nil
+		}
+		if e != nil && !e.validUntil.IsZero() && !p.now().After(e.validUntil) {
+			p.mu.Unlock()
+			return e.host, nil
+		}
+		done := make(chan struct{})
+		p.busy[key] = done
+		gen, packGen := p.gen, p.packGen
+		p.mu.Unlock()
+
+		h, err := p.prepare(env, key, family, isPack, e, gen, packGen)
+
+		p.mu.Lock()
+		delete(p.busy, key)
+		close(done)
+		p.mu.Unlock()
+		return h, err
 	}
-	e := p.hosts[key]
-	if e != nil && (!e.host.Alive() || e.conn != env.Graph || e.stale) {
-		e.host.Close()
-		delete(p.hosts, key)
-		e = nil
-	}
+}
+
+// prepare starts (e == nil) and signs in the key's host without holding p.mu;
+// host has marked the key busy. A Close or CloseFor that lands meanwhile
+// wins: the host is discarded.
+func (p *Pool) prepare(env engine.Env, key, family string, isPack bool, e *entry, gen, packGen uint64) (*Host, error) {
 	if e == nil {
 		pe := p.det.Get(env.Ctx)
 		if !pe.PwshOK() {
 			return nil, errors.New("PowerShell 7.2 or later is not installed")
 		}
-		gen := p.gen
 		// Built-in hosts run allow-listed cmdlets only; pack hosts run trusted
 		// scripts only.
 		allow, scripts := p.allow[family], []TrustedScript(nil)
@@ -150,29 +189,36 @@ func (p *Pool) host(env engine.Env, key string) (*Host, error) {
 		if err != nil {
 			return nil, err
 		}
+		p.mu.Lock()
 		if gen != p.gen || p.closed[env.Graph] {
+			p.mu.Unlock()
 			h.Close()
 			return nil, errors.New("disconnected")
 		}
-		e = &entry{host: h, conn: env.Graph}
+		// The pack trust changed while this host started: replace it at next use.
+		e = &entry{host: h, conn: env.Graph, stale: isPack && packGen != p.packGen}
 		p.hosts[key] = e
+		p.mu.Unlock()
 	}
-	if e.validUntil.IsZero() || p.now().After(e.validUntil) {
-		params, err := connectParams(env, family)
-		if err != nil {
-			return nil, err
-		}
+	params, err := connectParams(env, family)
+	if err == nil {
 		ctx, cancel := context.WithTimeout(env.Ctx, connectTimeout)
 		err = e.host.Connect(ctx, family, params)
 		cancel()
-		if err != nil {
-			if !e.host.Alive() {
-				delete(p.hosts, key)
-			}
-			return nil, err
-		}
-		e.validUntil = signInValidUntil(params["token"], p.now())
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.hosts[key] != e {
+		// Closed (Close, CloseFor) or replaced while signing in.
+		return nil, errors.New("disconnected")
+	}
+	if err != nil {
+		if !e.host.Alive() {
+			delete(p.hosts, key)
+		}
+		return nil, err
+	}
+	e.validUntil = signInValidUntil(params["token"], p.now())
 	return e.host, nil
 }
 
@@ -244,6 +290,7 @@ func (p *Pool) RunScript(env engine.Env, family, script string, params map[strin
 func (p *Pool) ResetPacks() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.packGen++
 	for k, e := range p.hosts {
 		if strings.HasSuffix(k, packSuffix) {
 			e.stale = true

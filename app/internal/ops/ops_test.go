@@ -82,6 +82,60 @@ func TestFinishFreesSlotOnlyForSameOp(t *testing.T) {
 	r.Finish(op2)
 }
 
+func TestTrackedOpsShareTheirKind(t *testing.T) {
+	r := NewRegistry()
+	a, err := r.Track(context.Background(), KindPreview, "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := r.Track(context.Background(), KindPreview, "")
+	if err != nil {
+		t.Fatalf("tracked ops take no single-flight slot: %v", err)
+	}
+	if _, err := r.Track(context.Background(), KindPreview, "p1"); err == nil {
+		t.Fatal("a live id must be refused")
+	}
+	if r.Busy(KindPreview) != nil {
+		t.Fatal("tracked ops do not make a kind busy")
+	}
+	r.Cancel("p1")
+	if !a.Canceled() || b.Canceled() {
+		t.Fatal("Cancel(id) must cancel exactly the named tracked op")
+	}
+	r.CancelKind(KindPreview)
+	if !b.Canceled() {
+		t.Fatal("CancelKind must cancel tracked ops of the kind")
+	}
+	r.Finish(a)
+	r.Finish(b)
+	c, err := r.Track(context.Background(), KindPreview, "p1")
+	if err != nil {
+		t.Fatalf("a finished id is free again: %v", err)
+	}
+	r.Finish(a) // stale finish must not drop the newer op of that id
+	r.Cancel("p1")
+	if !c.Canceled() {
+		t.Fatal("the newer op must still be cancellable by id")
+	}
+}
+
+func TestBusyReportsLiveWriteKinds(t *testing.T) {
+	r := NewRegistry()
+	if r.Busy(WriteKinds...) != nil {
+		t.Fatal("nothing runs yet")
+	}
+	op, _ := r.Start(context.Background(), KindBulk)
+	if got := r.Busy(WriteKinds...); got != op {
+		t.Fatalf("Busy = %v, want the bulk op", got)
+	}
+	r.Finish(op)
+	fan, _ := r.Start(context.Background(), KindFanOut)
+	if r.Busy(WriteKinds...) != nil {
+		t.Fatal("a read fan-out is no write kind")
+	}
+	r.Finish(fan)
+}
+
 func TestIDsAreSortable(t *testing.T) {
 	a := newID()
 	time.Sleep(2 * time.Millisecond) // force a later millisecond prefix
