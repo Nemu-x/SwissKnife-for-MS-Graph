@@ -423,7 +423,7 @@ func LoadTrust(path string) Trust {
 	t := Trust{Pinned: map[string]string{}}
 	if b, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(b, &t); err != nil {
-			corrupt.Quarantine(path, err)
+			_ = corrupt.Quarantine(path, err)
 			t = Trust{}
 		}
 	}

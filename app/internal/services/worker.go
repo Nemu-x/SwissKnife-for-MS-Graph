@@ -58,7 +58,7 @@ func loadWorker(s *session.Session) *WorkerInfo {
 	var w WorkerInfo
 	if err := json.Unmarshal(b, &w); err != nil {
 		// Set aside, not overwritten by the next pairing; Status reports it.
-		corrupt.Quarantine(workerFile(s), err)
+		_ = corrupt.Quarantine(workerFile(s), err)
 		return nil
 	}
 	if w.Addr == "" || w.Fingerprint == "" {
