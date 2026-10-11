@@ -391,7 +391,7 @@ func (m *MailboxTransferService) emitFolder(op *ops.Operation, name, status, rea
 // passes its operation context so cancelling the playbook cancels the copy,
 // and may pass a preview it already took.
 func (m *MailboxTransferService) copyCtx(parent context.Context, req MailboxCopyRequest, prev *MailboxPreview) (res *MailboxCopyResult, err error) {
-	if err := m.s.GuardWrite(); err != nil {
+	if err := m.s.GuardWriteOn(session.User(req.Source), session.User(req.Target)); err != nil {
 		return nil, err
 	}
 	if req.Source == "" || req.Target == "" {

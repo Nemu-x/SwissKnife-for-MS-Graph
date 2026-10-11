@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Layout, LOCAL_PAGES } from './components/Layout'
 import { Toasts } from './components/Toasts'
+import { SessionExpiredBanner } from './components/SessionExpiredBanner'
 import { CommandPalette } from './components/CommandPalette'
 import { StoreProvider, useStore } from './lib/store'
 import { pages, type PageId } from './pages/registry'
+import { homePage, pageEnabled } from './lib/workspaces'
+import { PageErrorBoundary } from './components/PageErrorBoundary'
 
 function Shell() {
-  const [page, setPage] = useState<PageId>('connect')
+  const { connected, requestAction, setNavigator, workspaces } = useStore()
+  const [page, setPage] = useState<PageId>(() => homePage(workspaces))
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const { connected, requestAction, setNavigator } = useStore()
   const wasConnected = useRef(false)
 
   // Land on the dashboard right after a fresh connection.
@@ -43,15 +46,20 @@ function Shell() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // if disconnected while the page requires a connection, go back to connect
+  // A page of a part switched off, or one that needs the tenant while it is
+  // not connected, falls back to the home page of what is switched on.
   const requiresConn = !LOCAL_PAGES.includes(page)
-  const effective: PageId = requiresConn && !connected ? 'connect' : page
+  const effective: PageId = !pageEnabled(page, workspaces) ? homePage(workspaces)
+    : requiresConn && !connected ? (workspaces.cloud ? 'connect' : homePage(workspaces)) : page
   const Current = pages[effective]
 
   return (
     <Layout page={effective} onNavigate={navigate} onOpenPalette={() => setPaletteOpen(true)}>
-      <Current />
+      <PageErrorBoundary key={effective} onHome={() => navigate(homePage(workspaces))}>
+        <Current />
+      </PageErrorBoundary>
       <Toasts />
+      <SessionExpiredBanner onSignIn={() => navigate('connect')} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onNavigate={navigate} />
     </Layout>
   )

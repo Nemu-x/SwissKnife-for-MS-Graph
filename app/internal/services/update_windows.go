@@ -4,6 +4,7 @@ package services
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 
 	"golang.org/x/sys/windows"
@@ -38,5 +39,27 @@ func launchElevated(exe string) error {
 
 // revealInFolder opens Explorer with the given file selected.
 func revealInFolder(path string) error {
-	return exec.Command("explorer.exe", "/select,"+path).Start()
+	cmd := exec.Command("explorer.exe", "/select,"+path)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }() // reap the child
+	return nil
+}
+
+// openInstallerLocked opens the installer for reading with a share mode that
+// denies writers and rename/delete while the handle is open: Apply hashes the
+// file and launches it within this handle's lifetime, so nothing can swap the
+// verified bytes in between. Readers (the installer itself) still work.
+func openInstallerLocked(path string) (*os.File, error) {
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	h, err := windows.CreateFile(p, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil,
+		windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(h), path), nil
 }

@@ -1,0 +1,365 @@
+package pwsh
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"net/url"
+	"strings"
+	"sync"
+	"time"
+
+	"swissknife-app/internal/auth"
+	"swissknife-app/internal/engine"
+	"swissknife-app/internal/graphapi"
+)
+
+// Module families and the backends they serve.
+const (
+	FamilyExchange = "exo"
+	FamilyTeams    = "teams"
+
+	BackendExchangePS engine.Backend = "exo-ps"
+	BackendTeamsPS    engine.Backend = "teams-ps"
+)
+
+// Connect-* takes a fixed access token and cannot refresh it, so the host is
+// signed in again shortly before that token expires.
+const (
+	renewBefore    = 5 * time.Minute
+	fallbackTTL    = 45 * time.Minute // when the token's exp cannot be read
+	connectTimeout = 2 * time.Minute
+)
+
+type entry struct {
+	host       *Host
+	conn       *graphapi.Client // connection the host is signed in for
+	validUntil time.Time        // zero = not signed in
+	stale      bool             // replace at next use (pack trust changed)
+}
+
+// Pool keeps one signed-in host per module family for the current connection
+// and implements engine.PSRunner.
+type Pool struct {
+	det   *Detector
+	allow map[string][]string // family → cmdlets the host may run
+
+	mu     sync.Mutex
+	hosts  map[string]*entry
+	gen    uint64                    // bumped by Close: a host started before it is discarded
+	closed map[*graphapi.Client]bool // connections whose hosts were closed
+	// busy marks a key whose host is being started or signed in; the channel
+	// closes when that finishes. p.mu is not held meanwhile, so other keys
+	// (and Close/CloseFor) never wait on a slow start or sign-in.
+	busy    map[string]chan struct{}
+	packGen uint64 // bumped by ResetPacks: a pack host started before it is stale
+	start   func(exe string, allow []string, scripts []TrustedScript) (*Host, error)
+	// Scripts returns the trusted pack scripts; read when a host starts
+	// (Reset restarts hosts after the trust changed).
+	Scripts func() []TrustedScript
+	now     func() time.Time
+}
+
+func NewPool(det *Detector, allow map[string][]string) *Pool {
+	return &Pool{det: det, allow: allow, hosts: map[string]*entry{}, closed: map[*graphapi.Client]bool{}, busy: map[string]chan struct{}{}, start: StartWithScripts, now: time.Now}
+}
+
+// Invoke implements engine.PSRunner. An authentication failure (the token
+// was revoked or expired early) signs the host in again; a read (Get-*) is
+// then retried once, a write is not — repeating it could repeat a change.
+func (p *Pool) Invoke(env engine.Env, family, cmdlet string, params map[string]any, sel ...string) ([]json.RawMessage, error) {
+	for attempt := 0; ; attempt++ {
+		h, err := p.host(env, family)
+		if err != nil {
+			return nil, err
+		}
+		out, err := h.Invoke(env.Ctx, cmdlet, params, sel...)
+		if errors.Is(err, ErrHostExited) || !h.Alive() {
+			p.drop(family, h)
+		}
+		if isAuthError(err) {
+			p.expire(family, h)
+			if attempt == 0 && strings.HasPrefix(cmdlet, "Get-") {
+				continue
+			}
+		}
+		return out, err
+	}
+}
+
+func isAuthError(err error) bool {
+	var pe *Error
+	if !errors.As(err, &pe) {
+		return false
+	}
+	if strings.EqualFold(pe.Category, "AuthenticationError") {
+		return true
+	}
+	m := strings.ToLower(pe.Message)
+	for _, phrase := range []string{"401 unauthorized", "(401) unauthorized", "token has expired", "token is expired", "access token expired", "lifetime validation failed"} {
+		if strings.Contains(m, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// expire forces the next call to sign the host in again.
+func (p *Pool) expire(key string, h *Host) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if e := p.hosts[key]; e != nil && e.host == h {
+		e.validUntil = time.Time{}
+	}
+}
+
+// host returns a connected host, (re)starting or reconnecting as needed.
+// packSuffix keys the hosts that run action-pack scripts: a pack gets its own
+// process, so its code can never shadow a cmdlet or widen the allow-list of
+// the hosts built-in actions use.
+const packSuffix = "/pack"
+
+func (p *Pool) host(env engine.Env, key string) (*Host, error) {
+	family := strings.TrimSuffix(key, packSuffix)
+	isPack := key != family
+	for {
+		p.mu.Lock()
+		// A call from a connection that already ended must not touch the pool —
+		// the family's host may belong to a newer connection by now.
+		if p.closed[env.Graph] {
+			p.mu.Unlock()
+			return nil, errors.New("disconnected")
+		}
+		// Another caller is starting or signing in this key's host: wait for
+		// it, then look again (it may have failed, or be for another connection).
+		if wait := p.busy[key]; wait != nil {
+			p.mu.Unlock()
+			select {
+			case <-wait:
+				continue
+			case <-env.Ctx.Done():
+				return nil, env.Ctx.Err()
+			}
+		}
+		e := p.hosts[key]
+		if e != nil && (!e.host.Alive() || e.conn != env.Graph || e.stale) {
+			e.host.Close()
+			delete(p.hosts, key)
+			e = nil
+		}
+		if e != nil && !e.validUntil.IsZero() && !p.now().After(e.validUntil) {
+			p.mu.Unlock()
+			return e.host, nil
+		}
+		done := make(chan struct{})
+		p.busy[key] = done
+		gen, packGen := p.gen, p.packGen
+		p.mu.Unlock()
+
+		h, err := p.prepare(env, key, family, isPack, e, gen, packGen)
+
+		p.mu.Lock()
+		delete(p.busy, key)
+		close(done)
+		p.mu.Unlock()
+		return h, err
+	}
+}
+
+// prepare starts (e == nil) and signs in the key's host without holding p.mu;
+// host has marked the key busy. A Close or CloseFor that lands meanwhile
+// wins: the host is discarded.
+func (p *Pool) prepare(env engine.Env, key, family string, isPack bool, e *entry, gen, packGen uint64) (*Host, error) {
+	if e == nil {
+		pe := p.det.Get(env.Ctx)
+		if !pe.PwshOK() {
+			return nil, errors.New("PowerShell 7.2 or later is not installed")
+		}
+		// Built-in hosts run allow-listed cmdlets only; pack hosts run trusted
+		// scripts only.
+		allow, scripts := p.allow[family], []TrustedScript(nil)
+		if isPack {
+			allow = nil
+			if p.Scripts != nil {
+				scripts = p.Scripts()
+			}
+		}
+		h, err := p.start(pe.Exe, allow, scripts)
+		if err != nil {
+			return nil, err
+		}
+		p.mu.Lock()
+		if gen != p.gen || p.closed[env.Graph] {
+			p.mu.Unlock()
+			h.Close()
+			return nil, errors.New("disconnected")
+		}
+		// The pack trust changed while this host started: replace it at next use.
+		e = &entry{host: h, conn: env.Graph, stale: isPack && packGen != p.packGen}
+		p.hosts[key] = e
+		p.mu.Unlock()
+	}
+	params, err := connectParams(env, family)
+	if err == nil {
+		ctx, cancel := context.WithTimeout(env.Ctx, connectTimeout)
+		err = e.host.Connect(ctx, family, params)
+		cancel()
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.hosts[key] != e {
+		// Closed (Close, CloseFor) or replaced while signing in.
+		return nil, errors.New("disconnected")
+	}
+	if err != nil {
+		if !e.host.Alive() {
+			delete(p.hosts, key)
+		}
+		return nil, err
+	}
+	e.validUntil = signInValidUntil(params["token"], p.now())
+	return e.host, nil
+}
+
+// signInValidUntil reads the token's exp claim (no signature check: the
+// token is ours, only its lifetime matters) and backs off renewBefore.
+func signInValidUntil(token any, now time.Time) time.Time {
+	tok, _ := token.(string)
+	parts := strings.Split(tok, ".")
+	if len(parts) == 3 {
+		if raw, err := base64.RawURLEncoding.DecodeString(parts[1]); err == nil {
+			var claims struct {
+				Exp int64 `json:"exp"`
+			}
+			if json.Unmarshal(raw, &claims) == nil && claims.Exp > 0 {
+				return time.Unix(claims.Exp, 0).Add(-renewBefore)
+			}
+		}
+	}
+	return now.Add(fallbackTTL)
+}
+
+func (p *Pool) drop(key string, h *Host) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if e := p.hosts[key]; e != nil && e.host == h {
+		h.Close()
+		delete(p.hosts, key)
+	}
+}
+
+// CloseFor stops the hosts signed in for one connection (it ended). Hosts of
+// a newer connection stay; a start still in flight for conn is discarded.
+func (p *Pool) CloseFor(conn *graphapi.Client) {
+	if conn == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closed[conn] = true
+	for f, e := range p.hosts {
+		if e.conn == conn {
+			e.host.Close()
+			delete(p.hosts, f)
+		}
+	}
+}
+
+// RunScript implements engine.ScriptRunner: a trusted pack script in the
+// family's signed-in host. Not retried: it may write.
+func (p *Pool) RunScript(env engine.Env, family, script string, params map[string]any) ([]json.RawMessage, error) {
+	key := family + packSuffix
+	h, err := p.host(env, key)
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.RunScript(env.Ctx, script, params)
+	if errors.Is(err, ErrHostExited) || !h.Alive() {
+		p.drop(key, h)
+	}
+	if isAuthError(err) {
+		p.expire(key, h)
+	}
+	return out, err
+}
+
+// ResetPacks marks the pack hosts stale: each is replaced, with the current
+// trusted scripts, at its next use. Built-in hosts and running calls are
+// not touched.
+func (p *Pool) ResetPacks() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.packGen++
+	for k, e := range p.hosts {
+		if strings.HasSuffix(k, packSuffix) {
+			e.stale = true
+		}
+	}
+}
+
+// Close stops every host (shutdown).
+func (p *Pool) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.gen++
+	for f, e := range p.hosts {
+		e.host.Close()
+		delete(p.hosts, f)
+	}
+}
+
+// connectParams builds the Connect-* arguments: tokens from the broker, plus
+// the organization (app-only; Exchange wants the initial .onmicrosoft.com
+// domain) or the signed-in admin's UPN (delegated).
+func connectParams(env engine.Env, family string) (map[string]any, error) {
+	if env.Tokens == nil || env.Graph == nil {
+		return nil, errors.New("not connected")
+	}
+	switch family {
+	case FamilyTeams:
+		graphTok, err := env.Tokens.TokenFor(env.Ctx, auth.ResourceGraph)
+		if err != nil {
+			return nil, err
+		}
+		teamsTok, err := env.Tokens.TokenFor(env.Ctx, auth.ResourceTeams)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"graphToken": graphTok, "token": teamsTok}, nil
+	default:
+		tok, err := env.Tokens.TokenFor(env.Ctx, auth.ResourceExchange)
+		if err != nil {
+			return nil, err
+		}
+		params := map[string]any{"token": tok}
+		switch {
+		case env.AppOnly && env.ExchangeOrg != "":
+			params["organization"] = env.ExchangeOrg
+		case !env.AppOnly && env.DelegatedOrg == "" && env.ExchangeUPN != "":
+			params["upn"] = env.ExchangeUPN
+		case env.AppOnly:
+			org, err := graphapi.InitialDomain(env.Ctx, env.Graph)
+			if err != nil {
+				return nil, err
+			}
+			params["organization"] = org
+		case env.DelegatedOrg != "":
+			// GDAP: the partner's user is no object of the customer
+			// directory, so there is no /me. With -AccessToken the module
+			// takes exactly one of Organization, DelegatedOrganization or
+			// UserPrincipalName; partners use DelegatedOrganization with the
+			// customer's tenant id.
+			params["delegatedOrg"] = env.TenantID
+		default:
+			var me struct {
+				UPN string `json:"userPrincipalName"`
+			}
+			if err := env.Graph.Get(env.Ctx, "/me", url.Values{"$select": {"userPrincipalName"}}, &me); err != nil {
+				return nil, err
+			}
+			params["upn"] = me.UPN
+		}
+		return params, nil
+	}
+}

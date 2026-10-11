@@ -27,7 +27,11 @@ type StaticToken string
 func (s StaticToken) Token(ctx context.Context) (string, error) { return string(s), nil }
 
 type Client struct {
-	http    *http.Client
+	http *http.Client
+	// api is http for token-bearing API calls: it follows a redirect only to
+	// the base URL's scheme and host (file transfers use http, whose
+	// pre-authenticated download redirects leave the Graph host).
+	api     *http.Client
 	baseURL string
 	tokens  TokenSource
 
@@ -70,13 +74,27 @@ func New(tokens TokenSource, opts ...Option) *Client {
 	for _, o := range opts {
 		o(c)
 	}
+	api := *c.http
+	api.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("graph: too many redirects")
+		}
+		return c.checkSameOrigin(req.URL.String())
+	}
+	c.api = &api
 	return c
 }
 
 // Do performs a Graph request. path is relative ("/users") or an absolute URL
 // (e.g. @odata.nextLink). The response is decoded into out (if out != nil and a body exists).
 func (c *Client) Do(ctx context.Context, method, path string, params url.Values, body any, out any) error {
-	raw, _, err := c.doRaw(ctx, method, path, params, body)
+	return c.DoWithHeaders(ctx, method, path, params, nil, body, out)
+}
+
+// DoWithHeaders is Do with extra request headers — e.g. the X-AnchorMailbox
+// routing hint the Exchange Online Admin API needs on every call.
+func (c *Client) DoWithHeaders(ctx context.Context, method, path string, params url.Values, hdr http.Header, body any, out any) error {
+	raw, _, err := c.doRaw(ctx, method, path, params, hdr, body)
 	if err != nil {
 		return err
 	}
@@ -91,14 +109,19 @@ func (c *Client) Do(ctx context.Context, method, path string, params url.Values,
 // PostForLocation performs a POST and returns the Location header — Graph
 // replies 202 + a monitor URL for long-running operations (driveItem copy).
 func (c *Client) PostForLocation(ctx context.Context, path string, params url.Values, body any) (string, error) {
-	_, loc, err := c.doRaw(ctx, http.MethodPost, path, params, body)
+	return c.PostForLocationWithHeaders(ctx, path, params, nil, body)
+}
+
+// PostForLocationWithHeaders is PostForLocation with extra request headers.
+func (c *Client) PostForLocationWithHeaders(ctx context.Context, path string, params url.Values, hdr http.Header, body any) (string, error) {
+	_, loc, err := c.doRaw(ctx, http.MethodPost, path, params, hdr, body)
 	return loc, err
 }
 
-func (c *Client) doRaw(ctx context.Context, method, path string, params url.Values, body any) ([]byte, string, error) {
-	u := path
-	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
-		u = c.baseURL + "/" + strings.TrimLeft(path, "/")
+func (c *Client) doRaw(ctx context.Context, method, path string, params url.Values, hdr http.Header, body any) ([]byte, string, error) {
+	u, err := c.resolve(path)
+	if err != nil {
+		return nil, "", err
 	}
 	if len(params) > 0 {
 		sep := "?"
@@ -121,16 +144,50 @@ func (c *Client) doRaw(ctx context.Context, method, path string, params url.Valu
 
 	var raw []byte
 	var loc string
-	err := c.withRetry(ctx, method, func() (time.Duration, error) {
+	err = c.withRetry(ctx, method, func() (time.Duration, error) {
 		var retryAfter time.Duration
 		var err error
-		raw, loc, retryAfter, err = c.once(ctx, method, u, payload)
+		raw, loc, retryAfter, err = c.once(ctx, method, u, hdr, payload)
 		return retryAfter, err
 	})
 	if err != nil {
 		return nil, "", err
 	}
 	return raw, loc, nil
+}
+
+// resolve turns a request path into an absolute URL. Relative paths hang off
+// the base URL. Absolute URLs (@odata.nextLink, operation Location headers,
+// Beta) are accepted only when they point at the base URL's own scheme and
+// host: the request carries the bearer token, so a link taken from a response
+// must never carry it to another server.
+func (c *Client) resolve(path string) (string, error) {
+	lower := strings.ToLower(path)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		return c.baseURL + "/" + strings.TrimLeft(path, "/"), nil
+	}
+	if err := c.checkSameOrigin(path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// checkSameOrigin rejects an absolute URL whose scheme or host differs from
+// the base URL's (so an http:// link is refused against the https base).
+func (c *Client) checkSameOrigin(raw string) error {
+	target, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("graph: invalid URL: %w", err)
+	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil {
+		return fmt.Errorf("graph: invalid base URL: %w", err)
+	}
+	if target.User != nil || !strings.EqualFold(target.Scheme, base.Scheme) || !strings.EqualFold(target.Host, base.Host) {
+		return fmt.Errorf("graph: refusing to send the access token to %s://%s (only %s://%s is allowed)",
+			target.Scheme, target.Host, base.Scheme, base.Host)
+	}
+	return nil
 }
 
 // withRetry runs attempt until it succeeds or retries are exhausted, honoring
@@ -183,10 +240,15 @@ func retryable(method string, err error) bool {
 	return false
 }
 
-func (c *Client) once(ctx context.Context, method, u string, payload []byte) ([]byte, string, time.Duration, error) {
+func (c *Client) once(ctx context.Context, method, u string, hdr http.Header, payload []byte) ([]byte, string, time.Duration, error) {
 	var bodyReader io.Reader
 	if payload != nil {
 		bodyReader = bytes.NewReader(payload)
+	}
+	// Defense in depth: every caller resolves u first, but the bearer token
+	// is attached below, so re-check right where it is sent.
+	if err := c.checkSameOrigin(u); err != nil {
+		return nil, "", 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u, bodyReader)
 	if err != nil {
@@ -197,13 +259,16 @@ func (c *Client) once(ctx context.Context, method, u string, payload []byte) ([]
 	if err != nil {
 		return nil, "", 0, fmt.Errorf("graph: acquire token: %w", err)
 	}
+	for k, v := range hdr {
+		req.Header[k] = v
+	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.api.Do(req)
 	if err != nil {
 		return nil, "", 0, err
 	}
@@ -245,6 +310,7 @@ func parseGraphError(resp *http.Response, raw []byte) *GraphError {
 		StatusCode: resp.StatusCode,
 		Code:       http.StatusText(resp.StatusCode),
 		RequestID:  resp.Header.Get("request-id"),
+		RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After")),
 	}
 	if resp.Request != nil && resp.Request.URL != nil {
 		ge.Path = resp.Request.URL.Path

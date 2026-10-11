@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Search, CornerDownLeft, Lock } from 'lucide-react'
 import { LOCAL_PAGES } from './Layout'
 import { useStore } from '../lib/store'
+import { pageEnabled } from '../lib/workspaces'
 import { TASKS, TASK_GROUPS, type Task } from '../lib/tasks'
 import type { PageId } from '../pages/registry'
 
@@ -19,7 +20,7 @@ export function CommandPalette({
   onNavigate: (p: PageId) => void
 }) {
   const { t } = useTranslation()
-  const { connected, readOnly, access, hideUnavailable, requestAction } = useStore()
+  const { connected, readOnly, access, hideUnavailable, requestAction, workspaces } = useStore()
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -43,6 +44,7 @@ export function CommandPalette({
   }, [open])
 
   const available = (task: Task) => {
+    if (!pageEnabled(task.page, workspaces)) return false
     if (!connected && !LOCAL_PAGES.includes(task.page)) return false
     if (hideUnavailable && task.page in access && access[task.page] === false) return false
     return true
@@ -66,7 +68,7 @@ export function CommandPalette({
       .filter((x): x is { task: Task; rank: number } => x !== null)
       .sort((a, b) => b.rank - a.rank)
       .map((x) => x.task)
-  }, [q, t, connected, readOnly, access, hideUnavailable])
+  }, [q, t, connected, readOnly, access, hideUnavailable, workspaces])
 
   // Group headers only make sense while browsing the full list; once the
   // operator types, ranking beats grouping and the list stays flat.

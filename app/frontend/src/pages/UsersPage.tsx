@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  UserCog, Ban, KeyRound, LogOut, UserPlus, Trash2, UserSquare, ShieldAlert,
+  UserCog, KeyRound, UserPlus, Trash2, ShieldAlert,
   ListRestart, RotateCcw, Ticket, MailPlus, Copy, FileJson, Search, ArrowLeftRight, CopyPlus,
 } from 'lucide-react'
+import { catalogTile } from '../components/CatalogAction'
 import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input, Textarea, Spinner } from '../components/ui'
@@ -33,8 +34,6 @@ export function UsersPage() {
   const [pw, setPw] = useState('')
   const [force, setForce] = useState(true)
   const [create, setCreate] = useState({ name: '', upn: '', nick: '', pw: '', loc: '' })
-  const [mgr, setMgr] = useState('')
-  const [loc, setLoc] = useState('')
   const [restoreId, setRestoreId] = useState('')
   const [patch, setPatch] = useState('{\n  "jobTitle": "",\n  "department": ""\n}')
   // TAP is a one-time secret shown once — back it with the store cache so
@@ -256,35 +255,8 @@ export function UsersPage() {
         </TaskForm>
       ),
     },
-    {
-      id: 'block', label: t('users.tileBlock'), hint: t('users.hintBlock'), icon: <Ban size={16} />, write: true,
-      panel: (
-        <TaskForm>
-          {targetField}
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="primary" disabled={readOnly || !target} onClick={() => doWrite('block', () => api.users.block(target), t('users.block'))}>
-              <Ban size={15} /> {t('users.block')}
-            </Button>
-            <Button variant="subtle" disabled={readOnly || !target} onClick={() => doWrite('block', () => api.users.unblock(target), t('users.unblock'))}>
-              {t('users.unblock')}
-            </Button>
-          </div>
-        </TaskForm>
-      ),
-    },
-    {
-      id: 'sessions', label: t('users.tileSessions'), hint: t('users.hintSessions'), icon: <LogOut size={16} />, write: true,
-      note: <p>{t('users.noteSessions')}</p>,
-      panel: (
-        <TaskForm>
-          {targetField}
-          <Button variant="danger" disabled={readOnly || !target}
-            onClick={() => askConfirm(target, (c) => doWrite('sessions', () => api.users.revokeSessions(target, c), t('users.revokeSessions')))}>
-            <LogOut size={15} /> {t('users.revokeSessions')}
-          </Button>
-        </TaskForm>
-      ),
-    },
+    catalogTile('user.signIn'),
+    catalogTile('user.revokeSessions'),
     {
       id: 'password', label: t('users.tilePassword'), hint: t('users.hintPassword'), icon: <KeyRound size={16} />, write: true,
       panel: (
@@ -337,25 +309,8 @@ export function UsersPage() {
         </TaskForm>
       ),
     },
-    {
-      id: 'manager', label: t('users.tileManager'), hint: t('users.hintManager'), icon: <UserSquare size={16} />, write: true,
-      panel: (
-        <TaskForm>
-          {targetField}
-          <Button variant="subtle" disabled={!target} onClick={() => res.run(() => api.users.getManager(target))}>
-            <UserSquare size={15} /> {t('users.getManager')}
-          </Button>
-          <Field label={t('users.manager')}><UpnInput value={mgr} onChange={setMgr} placeholder="manager@contoso.com" /></Field>
-          <Button variant="primary" disabled={readOnly || !target || !mgr} onClick={() => doWrite('manager', () => api.users.setManager(target, mgr), t('users.setManager'))}>
-            {t('users.setManager')}
-          </Button>
-          <Field label={t('users.usageLocation')}><Input value={loc} onChange={(e) => setLoc(e.target.value)} placeholder="US" /></Field>
-          <Button variant="subtle" disabled={readOnly || !target || !loc} onClick={() => doWrite('manager', () => api.users.setUsageLocation(target, loc), t('users.setUsageLocation'))}>
-            {t('users.setUsageLocation')}
-          </Button>
-        </TaskForm>
-      ),
-    },
+    catalogTile('user.manager'),
+    catalogTile('user.usageLocation'),
     {
       id: 'patch', label: t('users.tilePatch'), hint: t('users.hintPatch'), icon: <FileJson size={16} />, write: true,
       note: <p>{t('users.notePatch')}</p>,

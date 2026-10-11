@@ -5,6 +5,14 @@ import { humanBytes } from './format'
 import { skuFriendly } from './skuNames'
 import type { Option } from '../components/MultiSelect'
 
+// Saved configuration snapshots, newest first.
+export const loadSnapshots = async (): Promise<Option[]> =>
+  (await api.snapshot.list()).map((m) => ({
+    value: m.id,
+    label: m.name,
+    sub: new Date(m.takenAt as unknown as string).toLocaleString(),
+  }))
+
 export const loadUsers = async (): Promise<Option[]> =>
   (await api.users.list('', 200)).map((u: GraphObject) => ({
     value: u.userPrincipalName || u.id,

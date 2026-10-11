@@ -44,7 +44,7 @@ func (g *GroupsService) Members(groupID string) ([]json.RawMessage, error) {
 }
 
 func (g *GroupsService) addRef(groupID, upn, kind string) error {
-	if err := g.s.GuardWrite(); err != nil {
+	if err := g.s.GuardWriteOn(session.Group(groupID), session.User(upn)); err != nil {
 		return err
 	}
 	c, err := g.s.Client()
@@ -62,10 +62,6 @@ func (g *GroupsService) addRef(groupID, upn, kind string) error {
 	err = c.Post(g.s.Ctx(), "/groups/"+url.PathEscape(groupID)+"/"+kind+"/$ref", body, nil)
 	g.s.Record("groups.add_"+kind, groupID, "user="+upn, err)
 	return err
-}
-
-func (g *GroupsService) AddOwner(groupID, upn string) error {
-	return g.addRef(groupID, upn, "owners")
 }
 
 func (g *GroupsService) AddMember(groupID, upn string) error {

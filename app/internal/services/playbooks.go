@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"swissknife-app/internal/actions"
+	"swissknife-app/internal/engine"
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/journal"
 	"swissknife-app/internal/ops"
@@ -44,35 +46,41 @@ type Step struct {
 // stepKeys maps step names to stable i18n keys; the English name stays in the
 // payload as the fallback for unknown keys.
 var stepKeys = map[string]string{
-	"Create user":               "steps.createUser",
-	"Assign licenses":           "steps.assignLicenses",
-	"Add to group":              "steps.addToGroup",
-	"Add to team":               "steps.addToTeam",
-	"Add to channel":            "steps.addToChannel",
-	"Add to role":               "steps.addToRole",
-	"Block sign-in":             "steps.blockSignIn",
-	"Revoke sessions":           "steps.revokeSessions",
-	"Set auto-reply (OOF)":      "steps.oof",
-	"Forward mail (inbox rule)": "steps.forward",
-	"Hide from address lists":   "steps.hideFromGal",
-	"Share calendar (read)":     "steps.shareCalendar",
-	"Scan OneDrive":             "steps.scanOneDrive",
-	"Backup OneDrive":           "steps.backupOneDrive",
-	"Backup Teams chats":        "steps.backupChats",
-	"Copy mailbox":              "steps.copyMailbox",
-	"Remove from groups":        "steps.removeFromGroups",
-	"Transfer ownership":        "steps.transferOwnership",
-	"Cancel future meetings":    "steps.cancelEvents",
-	"Remove from group":         "steps.removeFromGroup",
-	"Remove MFA method":         "steps.removeMfaMethod",
-	"Check mailbox type":        "steps.checkMailboxType",
-	"Remove licenses":           "steps.removeLicenses",
-	"Intune devices":            "steps.intuneDevices",
-	"Retire device":             "steps.retireDevice",
-	"Wipe device":               "steps.wipeDevice",
-	"Registered devices":        "steps.registeredDevices",
-	"Delete registered device":  "steps.deleteRegisteredDevice",
-	"Delete user":               "steps.deleteUser",
+	"Create user":                    "steps.createUser",
+	"Assign licenses":                "steps.assignLicenses",
+	"Add to group":                   "steps.addToGroup",
+	"Add to team":                    "steps.addToTeam",
+	"Add to channel":                 "steps.addToChannel",
+	"Add to role":                    "steps.addToRole",
+	"Block sign-in":                  "steps.blockSignIn",
+	"Revoke sessions":                "steps.revokeSessions",
+	"Set auto-reply (OOF)":           "steps.oof",
+	"Forward mail (inbox rule)":      "steps.forward",
+	"Hide from address lists":        "steps.hideFromGal",
+	"Share calendar (read)":          "steps.shareCalendar",
+	"Scan OneDrive":                  "steps.scanOneDrive",
+	"Backup OneDrive":                "steps.backupOneDrive",
+	"Backup Teams chats":             "steps.backupChats",
+	"Copy mailbox":                   "steps.copyMailbox",
+	"Remove from groups":             "steps.removeFromGroups",
+	"Transfer ownership":             "steps.transferOwnership",
+	"Cancel future meetings":         "steps.cancelEvents",
+	"Remove from group":              "steps.removeFromGroup",
+	"Remove MFA method":              "steps.removeMfaMethod",
+	"Check mailbox type":             "steps.checkMailboxType",
+	"Convert to shared mailbox":      "steps.convertToShared",
+	"Grant mailbox access":           "steps.grantMailboxAccess",
+	"Reset password":                 "steps.resetPassword",
+	"Reset MFA":                      "steps.resetMfa",
+	"Clear mailbox forwarding":       "steps.clearForwarding",
+	"Disable suspicious inbox rules": "steps.disableRules",
+	"Remove licenses":                "steps.removeLicenses",
+	"Intune devices":                 "steps.intuneDevices",
+	"Retire device":                  "steps.retireDevice",
+	"Wipe device":                    "steps.wipeDevice",
+	"Registered devices":             "steps.registeredDevices",
+	"Delete registered device":       "steps.deleteRegisteredDevice",
+	"Delete user":                    "steps.deleteUser",
 }
 
 // PlaybookResult is the outcome of a playbook run.
@@ -201,8 +209,25 @@ type OnboardRequest struct {
 // Onboard creates the user, then (best-effort) sets usage location, assigns
 // licenses, and adds the user to groups and teams.
 func (p *PlaybookService) Onboard(req OnboardRequest) (*PlaybookResult, error) {
-	if err := p.s.GuardWrite(); err != nil {
+	if err := p.s.GuardWriteChecked(); err != nil {
 		return nil, err
+	}
+	// A new user is not a member of anything yet: under a group scope the
+	// playbook must put them into allowed groups only, and into one at least.
+	if p.s.Policy().Scoped() {
+		if len(req.GroupIDs) == 0 {
+			return nil, &OpError{Code: "policyNeedsGroup", Message: "this connection profile may only create users in its allowed groups — pick one"}
+		}
+		groups := append([]string{}, req.GroupIDs...)
+		groups = append(groups, req.TeamIDs...)
+		for _, ch := range req.ChannelRefs {
+			groups = append(groups, ch.TeamID)
+		}
+		for _, g := range groups {
+			if err := targetInScope(p.s, engine.FieldGroup, g); err != nil {
+				return nil, err
+			}
+		}
 	}
 	c, err := p.s.Client()
 	if err != nil {
@@ -323,6 +348,11 @@ type OffboardRequest struct {
 	MailboxFolder          string `json:"mailboxFolder"`
 	MailboxIncludeContacts bool   `json:"mailboxIncludeContacts"`
 	MailboxIncludeCalendar bool   `json:"mailboxIncludeCalendar"`
+	// ConvertToShared turns the mailbox into a shared one (Exchange) before
+	// licenses go, so the mail outlives them; FullAccessTo opens it to a
+	// successor (usually the manager). Both run as catalog actions.
+	ConvertToShared bool   `json:"convertToShared"`
+	FullAccessTo    string `json:"fullAccessTo"`
 	// IntuneAction: "" (skip) | "retire" (remove company data, keep personal)
 	// | "wipe" (factory reset).
 	IntuneAction            string `json:"intuneAction"`
@@ -351,8 +381,14 @@ func alreadyExists(err error) bool {
 // Offboard runs the offboarding sequence. Destructive: requires typed confirm
 // on the UPN. Steps are best-effort and reported individually.
 func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error) {
-	if err := p.s.GuardDestructive(req.Upn, req.Confirm); err != nil {
+	if err := p.s.GuardDestructiveChecked(req.Upn, req.Confirm); err != nil {
 		return nil, err
+	}
+	// Every user the run names is checked before anything changes.
+	for _, u := range []string{req.Upn, req.ForwardTo, req.CalendarTo, req.BackupToUser, req.MailboxToUser, req.FullAccessTo, req.TransferOwnershipTo} {
+		if err := targetInScope(p.s, engine.FieldUser, u); err != nil {
+			return nil, err
+		}
 	}
 	c, err := p.s.Client()
 	if err != nil {
@@ -412,7 +448,7 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 				if json.Unmarshal(raw, &m) != nil {
 					continue
 				}
-				seg, deletable := methodTypeToSegment[m.Type]
+				seg, deletable := actions.AuthMethodSegments[m.Type]
 				if !deletable {
 					continue
 				}
@@ -733,7 +769,31 @@ func (p *PlaybookService) Offboard(req OffboardRequest) (*PlaybookResult, error)
 			}
 		}
 	}
-	if req.RemoveAllLicenses && !r.stop() {
+	converted := false
+	if req.ConvertToShared && !r.stop() {
+		err := r.doD("Convert to shared mailbox", req.Upn, func() (string, error) {
+			res, err := EngineFor(p.s).Execute(op.Ctx, "mailbox.type", engine.Inputs{"mailbox": req.Upn, "type": "shared"})
+			if err != nil {
+				return "", err
+			}
+			if res.Skipped > 0 {
+				return "already shared", nil
+			}
+			return "", nil
+		})
+		converted = err == nil
+	}
+	if req.FullAccessTo != "" && !r.stop() {
+		r.do("Grant mailbox access", req.Upn+" → "+req.FullAccessTo, func() error {
+			_, err := EngineFor(p.s).Execute(op.Ctx, "mailbox.fullAccess", engine.Inputs{"mailbox": req.Upn, "user": req.FullAccessTo})
+			return err
+		})
+	}
+	if req.RemoveAllLicenses && !r.stop() && converted {
+		// Graph reports the new mailbox type with a delay; the conversion
+		// above is the authoritative answer.
+		r.do("Check mailbox type", req.Upn, func() error { return nil })
+	} else if req.RemoveAllLicenses && !r.stop() {
 		// Pre-flight: without a license a USER mailbox is deleted ~30 days
 		// later. A shared mailbox survives — verify before pulling licenses.
 		r.doD("Check mailbox type", req.Upn, func() (string, error) {

@@ -228,10 +228,21 @@ func (l *Log) Get(opID string) (*Run, error) {
 	return run, nil
 }
 
-// Prune keeps the newest keep runs and deletes the rest (called at startup).
-// Live/open runs are never candidates, so a future mid-session caller cannot
-// delete a journal that is still being written.
+// InterruptedMaxAge is how long a run without an end record is kept: it may
+// be resumable (a cloud copy), so the count limit does not apply to it.
+const InterruptedMaxAge = 30 * 24 * time.Hour
+
+// Prune keeps the newest keep finished runs and deletes the rest (called at
+// startup). Interrupted runs — no end record, possibly resumable — do not
+// count and are kept until InterruptedMaxAge since their last write, so a
+// burst of short runs cannot delete a copy the operator still means to
+// resume. Live/open runs are never candidates, so a future mid-session
+// caller cannot delete a journal that is still being written.
 func (l *Log) Prune(keep int) {
+	l.prune(keep, time.Now())
+}
+
+func (l *Log) prune(keep int, now time.Time) {
 	entries, err := os.ReadDir(l.dir)
 	if err != nil {
 		return
@@ -247,9 +258,17 @@ func (l *Log) Prune(keep int) {
 	l.mu.Unlock()
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") && !active[strings.TrimSuffix(e.Name(), ".jsonl")] {
-			names = append(names, e.Name())
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") || active[strings.TrimSuffix(e.Name(), ".jsonl")] {
+			continue
 		}
+		path := filepath.Join(l.dir, e.Name())
+		if !hasEndRecord(path) {
+			if info, err := e.Info(); err == nil && now.Sub(info.ModTime()) > InterruptedMaxAge {
+				_ = os.Remove(path)
+			}
+			continue
+		}
+		names = append(names, e.Name())
 	}
 	if len(names) <= keep {
 		return
@@ -257,6 +276,39 @@ func (l *Log) Prune(keep int) {
 	sort.Strings(names) // oldest first
 	for _, name := range names[:len(names)-keep] {
 		_ = os.Remove(filepath.Join(l.dir, name))
+	}
+}
+
+// hasEndRecord reports whether a run's last line is its end record, reading
+// only the tail of the file (a copy journal can hold one line per file).
+func hasEndRecord(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	if st.Size() == 0 {
+		return false // an empty file is not a finished run
+	}
+	// Read a growing tail until it holds the whole last line: an end record
+	// with a large summary can be longer than the first window.
+	for tail := int64(64 << 10); ; tail *= 4 {
+		off := max(st.Size()-tail, 0)
+		buf := make([]byte, st.Size()-off)
+		if _, err := f.ReadAt(buf, off); err != nil {
+			return false
+		}
+		text := strings.TrimSpace(string(buf))
+		i := strings.LastIndexByte(text, '\n')
+		if i < 0 && off > 0 && tail < 16<<20 {
+			continue // the last line starts before this window
+		}
+		var end Entry
+		return json.Unmarshal([]byte(strings.TrimSpace(text[i+1:])), &end) == nil && end.Type == "end"
 	}
 }
 

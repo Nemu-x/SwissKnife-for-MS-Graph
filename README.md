@@ -3,156 +3,159 @@
 </h1>
 
 <p align="center">
-  <b>SwissKnife for MS Graph</b> — a clean, fast Microsoft Graph desktop client for IT admins<br />
-  <b>Wails · Go · React</b> · Windows · macOS · Linux
+  <b>Microsoft 365 administration as previewed, audited tasks</b><br />
+  Graph · Exchange &amp; Teams PowerShell · on-prem Active Directory · action packs<br />
+  Windows · macOS · Linux — free, MIT
 </p>
 
 <p align="center">
-  <a href="https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases">Releases</a> ·
-  <a href="https://nemu-x.github.io/SwissKnife-for-MS-Graph/">Downloads</a> ·
+  <a href="https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest">Download</a> ·
   <a href="https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki">Wiki</a> ·
-  <a href="#support-the-project">Support</a>
+  <a href="https://github.com/Nemu-x/SwissKnife-Action-Hub">Action Hub</a> ·
+  <a href="https://t.me/nemux_dev">Telegram</a> ·
+  <a href="#support">Support</a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Windows-Supported-00adef?logo=windows&logoColor=white" />
-  <img src="https://img.shields.io/badge/macOS-Supported-000000?logo=apple" />
-  <img src="https://img.shields.io/badge/Linux-Supported-fcc624?logo=linux&logoColor=black" />
-  <img src="https://img.shields.io/badge/License-MIT-blue.svg" />
+  <img src="docs/screenshots/workflow-preview.png" alt="A compromised-account workflow: every change previewed, grouped by step" width="880" />
 </p>
 
-<p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="SwissKnife dashboard" width="880" />
-</p>
+## Why
 
----
-
-## Overview
-
-SwissKnife is a lightweight cross-platform desktop client for the Microsoft Graph API — built for IT administrators who prefer clean UI actions over bulky PowerShell scripts. One window gives you Entra ID, Teams, Chats, mail, OneDrive, SharePoint, Intune, devices, app registrations, licensing, storage cleanup, audit logs, usage reports, guided on/offboarding runbooks, and a raw Graph playground.
-
-**The app is organised around tasks, not endpoints.** Every page opens as a grid of the jobs it can do — "add someone to a private channel", "why can this person not sign in?", "give the same access as another user" — each with a one-line explanation and the Graph caveats next to the form. Press **Ctrl+K** anywhere and describe the task in your own words instead of hunting for the right tab. Raw tables, JSON and tree views are still one click away; they are just no longer the first thing you see.
-
-Everything is pick-by-name: users, groups, teams, channels, sites, roles, devices, licenses and chats load into searchable pickers, so you rarely type a raw ID.
-
-Authentication is **app-only (client credentials)** or **delegated (device code)**. Secrets live only in the OS keychain, the access token never leaves the Go backend, and every write/destructive action is guarded by a typed confirmation and recorded in a local audit log.
-
-## Features
-
-- **Task palette (Ctrl+K)** — ~60 jobs described in plain language, in English and Russian, each landing on the exact form that performs it
-- **Access mirror** — "give Bell the same access Whitfield has": diffs two people across groups, teams, private channels, admin roles and licenses, then copies only what is missing (additive, typed confirmation, private channels bring their team along)
-- **Dashboard** — tenant overview: user/group/domain counts and license usage (paid vs free/trial, seats remaining); every number opens the list behind it
-- **Playbooks** — guided onboarding & offboarding runbooks that chain the individual actions into one reviewed flow, with reusable role profiles and live cancellable steps
-- **Users & Admin** — search, snapshot, create/update/delete, block/unblock, reset password, revoke sessions, manager, usage location, restore deleted users
-- **Security** — reset MFA & list authentication methods, admin (directory) role assignment; Conditional Access policies rendered as facts (who they hit, what they demand) instead of raw JSON, and enterprise app consents
-- **Licensing** — tenant SKUs, per-user licenses, assign/remove
-- **Teams / Groups / Chats** — channels, membership, Teamify, group & group-chat creation
-- **Mail** — send email as any user (typed confirmation, audit-logged)
-- **Files** — OneDrive & SharePoint browse, upload (large-file sessions), download, delete, sharing links
-- **Offboarding** — copy a departed employee's OneDrive to a target account or an auto-picked backup pool (by free space), with preview, a live cancellable copy log that survives navigation, and a full report
-- **Cleanup — reclaim space** — find duplicate files and version-history bloat across OneDrive & SharePoint (all document libraries), trim old versions or delete extras; optional per-site size scan sorts the biggest sites first
-- **Devices** — Entra devices (enable/disable/delete) + BitLocker recovery keys, plus Intune (wipe/retire/lock)
-- **App registrations** — inventory + expiring secret/certificate monitoring
-- **Audit** — "why can this person not sign in?": one user's failed sign-ins with the Entra error behind each, plus directory changes by actor and time window
-- **Reports** — Microsoft 365 usage reports (CSV) · **Service health** & message center
-- **Raw Graph** — GET/POST/PATCH/PUT/DELETE playground with history & favorites
-- **Everywhere** — searchable pickers instead of raw IDs, a per-page Actions / Both / Data view switch, results as master-detail / JSON / tree, CSV export, live progress on every long operation, dark & light themes, custom accent color, English + Russian, read-only mode, in-app update check
-
-## Command line
-
-The same binary runs headless when started with arguments — same Go services, same
-audit log and journal, no window. Handy for scripts and scheduled tasks:
-
-```powershell
-SwissKnifeGraph get '/users?$select=displayName,userPrincipalName' --all --json | ConvertFrom-Json
-SwissKnifeGraph signins alice@contoso.com --failed --days 3
-SwissKnifeGraph offboard alice@contoso.com --confirm alice@contoso.com --block --revoke --hide-gal
-```
-
-Connects with a profile saved in the GUI (`--profile <name>`, optional when there is
-only one); exit codes 0 / 1 / 2 = ok / failed / usage. See the
-[Command line](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki/CLI) wiki page.
+- **See every change before it happens.** Each action — a Graph call, an Exchange or Teams
+  cmdlet, an LDAP write — shows exactly what will change (before → after, per object), asks
+  for one confirmation (typed for anything destructive), then writes a run journal and an
+  audit log.
+- **Exchange and Teams PowerShell as buttons.** Mailbox permissions, shared mailboxes,
+  forwarding, transport rules, Teams policies. PowerShell 7 and the modules install from the
+  app; a paired Windows machine can run them for a Mac or Linux box.
+- **Tasks, not endpoints.** Every page is a grid of jobs ("give the same access as another
+  user", "why can this person not sign in?"). Press **Ctrl+K** and describe the task.
+- **Incident response and config as code.** Purge a phishing mail tenant-wide, kill
+  sessions and suspicious rules in one workflow; snapshot Conditional Access, Intune,
+  Exchange and Teams settings, diff them, watch for drift and restore.
+- **Extensible.** Install community workflows and reports from the
+  [Action Hub](https://github.com/Nemu-x/SwissKnife-Action-Hub), or write your own.
+- **One binary, GUI and CLI.** The same actions run headless for scripts and scheduled tasks.
 
 ## Screenshots
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/teams.png" alt="Teams" /><br /><sub><b>Action-first pages</b> — every capability visible, forms open in place with the Graph caveats beside them</sub></td>
+    <td width="50%"><img src="docs/screenshots/action-hub.png" alt="Action Hub" /><br /><sub><b>Action Hub</b> — community packs by category, signed, installed in one click</sub></td>
+    <td width="50%"><img src="docs/screenshots/capabilities.png" alt="Capabilities" /><br /><sub><b>Capabilities</b> — what each action runs through right now, and the fallbacks</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/teams.png" alt="Teams" /><br /><sub><b>Task pages</b> — Graph and PowerShell actions side by side</sub></td>
     <td width="50%"><img src="docs/screenshots/palette.png" alt="Task palette" /><br /><sub><b>Ctrl+K</b> — describe the task, land on the form that does it</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/access-mirror.png" alt="Access mirror" /><br /><sub><b>Access mirror</b> — diff two people, copy only what is missing</sub></td>
-    <td width="50%"><img src="docs/screenshots/audit.png" alt="Audit" /><br /><sub><b>Audit</b> — why a person cannot sign in, not just the last 50 events</sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/playbooks.png" alt="Playbooks" /><br /><sub><b>Playbooks</b> — onboarding with reusable role profiles, live steps, cancel</sub></td>
-    <td width="50%"><img src="docs/screenshots/security.png" alt="Security review" /><br /><sub><b>Conditional Access</b> — read as facts, with the raw JSON one click away</sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/dashboard.png" alt="Dashboard" /><br /><sub><b>Dashboard</b> — counts and license usage, each tile clickable</sub></td>
-    <td width="50%"><img src="docs/screenshots/raw.png" alt="Raw Graph" /><br /><sub><b>Raw Graph</b> — request playground with history</sub></td>
+    <td width="50%"><img src="docs/screenshots/dashboard.png" alt="Dashboard" /><br /><sub><b>Dashboard</b> — counts and license usage, each number opens its list</sub></td>
   </tr>
 </table>
 
-<sub>Screenshots are generated from the production bundle against stubbed bindings (`SHOTS=1 npx playwright test e2e/screenshots.spec.ts`) — no tenant data is shown.</sub>
+<sub>Generated from the production bundle with stubbed data — no tenant involved.</sub>
 
-## Downloads
-
-Latest release — direct links (always point to the newest version):
+## Install
 
 | Platform | Download |
 | --- | --- |
 | Windows x64 | [installer](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-amd64-installer.exe) · [portable](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-amd64-portable.exe) |
 | Windows ARM64 | [installer](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-arm64-installer.exe) · [portable](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-windows-arm64-portable.exe) |
-| macOS Apple Silicon | [SwissKnifeGraph-macos-arm64.dmg](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-macos-arm64.dmg) |
-| macOS Intel | [SwissKnifeGraph-macos-intel.dmg](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-macos-intel.dmg) |
+| macOS | [Apple Silicon](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-macos-arm64.dmg) · [Intel](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-macos-intel.dmg) |
 | Linux x64 | [AppImage](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-x86_64.AppImage) · [deb](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.deb) · [rpm](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.rpm) · [tar.gz](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.tar.gz) |
 | Linux ARM64 | [AppImage](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-aarch64.AppImage) · [deb](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.deb) · [rpm](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.rpm) · [tar.gz](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.tar.gz) |
 | Arch (AUR) | `yay -S swissknife-graph-bin` |
-| Windows (winget) | `winget install Nemu-x.SwissKnifeGraph` *(pending first submission)* |
-| Windows (Scoop) | `scoop bucket add nemu-x https://github.com/Nemu-x/scoop-bucket` · `scoop install swissknife-graph` *(pending first submission)* |
-| macOS (Homebrew) | `brew install --cask Nemu-x/tap/swissknife-graph` *(pending first submission)* |
+| winget | `winget install Nemu-x.SwissKnifeGraph` *(awaiting approval in winget-pkgs)* |
 
-Verify downloads against [`SHA256SUMS.txt`](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SHA256SUMS.txt), signed with minisign ([`.minisig`](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SHA256SUMS.txt.minisig), public key in [`minisign.pub`](minisign.pub)):
+- **Not code-signed yet.** Windows SmartScreen says *Unknown publisher* (More info → Run
+  anyway); on macOS run the bundled "Fix Quarantine.command" or
+  `sudo xattr -r -d com.apple.quarantine "/Applications/SwissKnifeGraph.app"`.
+- **Verify** with the signed checksums: `minisign -Vm SHA256SUMS.txt -P $(cat minisign.pub)`
+  then `sha256sum -c SHA256SUMS.txt` ([`minisign.pub`](minisign.pub)). The in-app updater
+  does this check itself.
+- **Linux:** deb/rpm/tar.gz need `webkit2gtk-4.1` and `gtk3`; the AppImage bundles them
+  (glibc 2.35+).
 
-```bash
-minisign -Vm SHA256SUMS.txt -P $(cat minisign.pub)
-sha256sum -c SHA256SUMS.txt
+## Quick start
+
+1. **Register an app** in Entra ID: Tenant ID, Client ID and either a client secret /
+   certificate (app-only) or device-code sign-in (delegated). Grant only the permissions
+   for what you use — the [Permissions](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki/Permissions)
+   page maps each feature to its permission.
+2. **Connect** and save the profile. Optionally make it read-only or limit it to members of
+   chosen groups.
+3. **Ctrl+K** and type what you need. For Exchange/Teams tasks, *Settings → PowerShell*
+   installs PowerShell 7 and the modules.
+
+## What it covers
+
+| Area | Highlights |
+| --- | --- |
+| Users & access | create, block, reset password and MFA, revoke sessions, manager, licenses, admin roles, restore; **access mirror** between two people |
+| Exchange | Full Access, Send As / on behalf, calendar and folder permissions, shared mailboxes, forwarding, addresses, rooms, distribution lists, transport rules, message trace |
+| Teams | channels, membership, Teamify, meeting / messaging / calling / app policies for people and groups |
+| Security | phishing purge, suspicious inbox rules, block senders, quarantine, compromised-account workflow; Conditional Access read as facts; app consents |
+| Intune & devices | what is assigned to whom, unassigned policies, conflicts, assign/unassign; wipe, retire, BitLocker keys |
+| Config as code | snapshots, git export, diff, drift alerts, restore of a section or everything since a snapshot |
+| Files | OneDrive/SharePoint browse, upload, sharing links; offboarding copy; duplicate and version-bloat cleanup |
+| Reports | inactive users, license waste, MFA status, guests, privileged roles, mailbox sizes and forwarding — across several tenants |
+| On-prem AD | find, disable/enable, unlock, reset passwords, group membership (LDAPS) |
+| Playbooks | onboarding with role profiles, offboarding, compromised account — live, cancellable |
+
+## Action packs and the Action Hub
+
+- **Workflows** chain built-in actions without code: one preview, one confirmation, every step
+  keeping its own permissions and limits.
+- **Script packs** add PowerShell actions, sandboxed: only the commands the pack declares, in
+  ConstrainedLanguage, never on the worker.
+- **[Action Hub](https://github.com/Nemu-x/SwissKnife-Action-Hub)** (*Settings → Action packs*):
+  phishing response, HR lifecycle, mailbox delegation, Teams governance, Intune rollout, Exchange
+  and Teams audit reports and more. Hub packs are signed with the project's pack key; anything
+  else runs only after you review and trust it. Contributions welcome.
+
+## Command line
+
+```powershell
+SwissKnifeGraph action list
+SwissKnifeGraph action mailbox.fullAccess mailbox=shared@contoso.com user=alice@contoso.com          # preview
+SwissKnifeGraph action mailbox.fullAccess mailbox=shared@contoso.com user=alice@contoso.com --apply  # apply
+SwissKnifeGraph signins alice@contoso.com --failed --days 3
+SwissKnifeGraph get '/users?$select=displayName,userPrincipalName' --all --json
 ```
 
-**Verified builds.** The checksum file above is the authoritative way to verify a download. Windows executables and macOS apps are **not yet code-signed**, so SmartScreen shows *Unknown publisher* (choose *More info → Run anyway*) and macOS may block the first launch. The release pipeline is already wired for Azure Trusted Signing (Windows) and Apple Developer ID + notarization (macOS) and switches on automatically once the certificates exist — see [`packaging/SIGNING.md`](packaging/SIGNING.md).
+Uses a profile saved in the GUI (`--profile <name>`); same engine, journal and audit log.
+See [Command line](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki/CLI).
 
-macOS is unsigned for now — the DMG ships install notes and a one-click "Fix Quarantine.command"; manually: `sudo xattr -r -d com.apple.quarantine "/Applications/SwissKnifeGraph.app"`. Linux deb/rpm/tar.gz need `webkit2gtk-4.1` + `gtk3` from your distro; the AppImage bundles both (GTK, WebKitGTK and its helper processes) and only needs glibc 2.35+ (Ubuntu 22.04, Debian 12 or newer). Windows ARM64 builds are best-effort.
+## Security model
+
+- Secrets live in the OS keychain; tokens stay in the Go backend and only go to Microsoft.
+- Every write is previewed; destructive ones need the target typed back; everything is
+  journaled and audited locally.
+- Read-only mode and per-profile limits (max danger, group scope) are enforced in the backend.
+- Updates and Action Hub packs are signature-checked; pack scripts are sandboxed.
+
+More in the [Security](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki/Security) wiki page.
 
 ## Build from source
 
-Prerequisites: **Go 1.26+**, **Node 22+**, and the [Wails CLI](https://wails.io) `v2.12`.
+Go 1.26+, Node 22+, [Wails CLI](https://wails.io) v2.12:
 
 ```bash
 cd app
-wails dev      # hot-reload development
-wails build    # production binary → app/build/bin/ (About shows e.g. 0.6.0-dev)
-
-# bake an exact version into About, like CI does:
-wails build -ldflags "-X main.version=$(git describe --tags --always)"
+wails dev      # hot reload
+wails build    # → app/build/bin/
 ```
 
-## Setup: Azure App Registration
+## Support
 
-You'll need a **Tenant ID**, **Client ID**, and (for app-only) a **Client Secret**, with Microsoft Graph **Application** permissions and admin consent — or use **device code** flow with delegated permissions. The full permission matrix per feature lives in the [Wiki](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki).
+SwissKnife is free and built in spare time. If it saves you hours, support it on
+**[Tribute](https://web.tribute.tg/d/REw)** (cards or Telegram, one-time or monthly) or
+leave a ⭐. News and releases: **[t.me/nemux_dev](https://t.me/nemux_dev)**.
 
-Minimal core-only set: `Directory.Read.All`, `User.Read.All`, `Group.ReadWrite.All`, `Team.ReadWrite.All`, `Files.ReadWrite.All`, `Sites.ReadWrite.All`, `AuditLog.Read.All`.
-
-## Security
-
-- Client secret is stored only in the OS keychain (Windows Credential Manager / macOS Keychain / Secret Service), never in plain text.
-- The access token lives only in the Go backend and is never exposed to the web frontend.
-- Destructive actions (wipe, retire, delete, reset password, send-as, remove role…) require a typed confirmation and are written to a local audit log.
-- A global **read-only mode** blocks every write while you explore.
-
-## Support the project
-
-SwissKnife is free and MIT-licensed. If it saves you time, a crypto donation helps keep development and releases going. Thank you! 🗡️
+<details>
+<summary>Crypto</summary>
 
 | Asset | Address |
 | --- | --- |
@@ -161,9 +164,10 @@ SwissKnife is free and MIT-licensed. If it saves you time, a crypto donation hel
 | BTC | `bc1qkkcgpqym967k2x73al6f7fpvkx52q4rzkut3we` |
 | ETH | `0xD9333e859Fb74D885d22E27568589de61E4433b5` |
 
-> Double-check the network before sending — wrong-network transfers are unrecoverable.
+Double-check the network before sending.
 
-## Author
+</details>
 
-Built by **Nemu** — [github.com/Nemu-x](https://github.com/Nemu-x)
-License: MIT
+---
+
+Built by **Nemu** — [github.com/Nemu-x](https://github.com/Nemu-x) · MIT License

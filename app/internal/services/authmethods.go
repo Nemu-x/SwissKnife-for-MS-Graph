@@ -1,10 +1,12 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"net/url"
 	"strconv"
 
+	"swissknife-app/internal/actions"
 	"swissknife-app/internal/session"
 )
 
@@ -15,31 +17,23 @@ type AuthMethodsService struct {
 
 func NewAuthMethodsService(s *session.Session) *AuthMethodsService { return &AuthMethodsService{s: s} }
 
-// methodTypeToSegment maps a method's @odata.type to its type-specific
-// collection segment used for deletion. Password methods are not deletable.
-var methodTypeToSegment = map[string]string{
-	"#microsoft.graph.phoneAuthenticationMethod":                   "phoneMethods",
-	"#microsoft.graph.microsoftAuthenticatorAuthenticationMethod":  "microsoftAuthenticatorMethods",
-	"#microsoft.graph.softwareOathAuthenticationMethod":            "softwareOathMethods",
-	"#microsoft.graph.fido2AuthenticationMethod":                   "fido2Methods",
-	"#microsoft.graph.windowsHelloForBusinessAuthenticationMethod": "windowsHelloForBusinessMethods",
-	"#microsoft.graph.emailAuthenticationMethod":                   "emailMethods",
-	"#microsoft.graph.temporaryAccessPassAuthenticationMethod":     "temporaryAccessPassMethods",
-}
-
 // List returns the user's registered authentication methods.
 func (a *AuthMethodsService) List(user string) ([]json.RawMessage, error) {
+	return a.list(a.s.Ctx(), user)
+}
+
+func (a *AuthMethodsService) list(ctx context.Context, user string) ([]json.RawMessage, error) {
 	c, err := a.s.Client()
 	if err != nil {
 		return nil, err
 	}
-	return c.ListAll(a.s.Ctx(), "/users/"+url.PathEscape(user)+"/authentication/methods", nil, 0)
+	return c.ListAll(ctx, "/users/"+url.PathEscape(user)+"/authentication/methods", nil, 0)
 }
 
 // CreateTAP issues a Temporary Access Pass so the user can sign in and register
 // MFA. The pass text is returned once and never stored anywhere.
 func (a *AuthMethodsService) CreateTAP(user string, lifetimeMinutes int, oneTime bool) (map[string]any, error) {
-	if err := a.s.GuardWrite(); err != nil {
+	if err := a.s.GuardWriteOn(session.User(user)); err != nil {
 		return nil, err
 	}
 	c, err := a.s.Client()
@@ -66,14 +60,20 @@ func (a *AuthMethodsService) CreateTAP(user string, lifetimeMinutes int, oneTime
 // ResetMFA removes all non-password authentication methods so the user must
 // re-register MFA. Destructive: requires typed confirm on the UPN.
 func (a *AuthMethodsService) ResetMFA(user, confirm string) (map[string]any, error) {
-	if err := a.s.GuardDestructive(user, confirm); err != nil {
+	if err := a.s.GuardDestructiveOn(user, confirm, session.User(user)); err != nil {
 		return nil, err
 	}
+	return a.resetMFA(a.s.Ctx(), user)
+}
+
+// resetMFA does the work on ctx, for callers that already passed the guards
+// and hold their own operation (the compromised-account playbook).
+func (a *AuthMethodsService) resetMFA(ctx context.Context, user string) (map[string]any, error) {
 	c, err := a.s.Client()
 	if err != nil {
 		return nil, err
 	}
-	methods, err := a.List(user)
+	methods, err := a.list(ctx, user)
 	if err != nil {
 		return nil, err
 	}
@@ -87,12 +87,12 @@ func (a *AuthMethodsService) ResetMFA(user, confirm string) (map[string]any, err
 		if json.Unmarshal(raw, &m) != nil {
 			continue
 		}
-		seg, ok := methodTypeToSegment[m.Type]
+		seg, ok := actions.AuthMethodSegments[m.Type]
 		if !ok {
 			continue // password or non-deletable
 		}
 		path := "/users/" + url.PathEscape(user) + "/authentication/" + seg + "/" + url.PathEscape(m.ID)
-		if derr := c.Delete(a.s.Ctx(), path); derr != nil {
+		if derr := c.Delete(ctx, path); derr != nil {
 			failures[m.Type] = derr.Error()
 			continue
 		}

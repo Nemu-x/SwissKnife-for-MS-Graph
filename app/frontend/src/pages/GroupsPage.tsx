@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, Users2, UserPlus, Plus } from 'lucide-react'
+import { Search, Users2, Plus } from 'lucide-react'
+import { catalogTile } from '../components/CatalogAction'
 import { TaskPage, TaskForm, type TaskAction } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input } from '../components/ui'
 import { EntityPicker } from '../components/EntityPicker'
-import { loadGroups, loadUsers } from '../lib/pickers'
+import { loadGroups } from '../lib/pickers'
 import { useAsync } from '../lib/useAsync'
 import { useTaskStatus } from '../lib/useTaskStatus'
 import { useStore } from '../lib/store'
@@ -17,7 +18,6 @@ export function GroupsPage() {
   const res = useAsync<GraphObject[] | GraphObject>()
   const [search, setSearch] = useState('')
   const [groupId, setGroupId] = useState('')
-  const [upn, setUpn] = useState('')
   const [create, setCreate] = useState({ name: '', desc: '', nick: '', owner: '' })
   const { status, busy: writing, doWrite } = useTaskStatus()
 
@@ -42,26 +42,7 @@ export function GroupsPage() {
         </TaskForm>
       ),
     },
-    {
-      id: 'add', label: t('groups.tileAdd'), hint: t('groups.hintAdd'), icon: <UserPlus size={16} />, variant: 'primary', write: true,
-      note: <p>{t('groups.noteAdd')}</p>,
-      panel: (
-        <TaskForm>
-          <Field label={t('common.user')}>
-            <EntityPicker value={upn} onChange={setUpn} load={loadUsers} placeholder={t('groups.pickUser')} />
-          </Field>
-          {groupField}
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="primary" disabled={readOnly || !groupId || !upn} onClick={() => doWrite('add', () => api.groups.addMember(groupId, upn), t('groups.addMember'))}>
-              <UserPlus size={15} /> {t('groups.addMember')}
-            </Button>
-            <Button variant="subtle" disabled={readOnly || !groupId || !upn} onClick={() => doWrite('add', () => api.groups.addOwner(groupId, upn), t('groups.addOwner'))}>
-              <UserPlus size={15} /> {t('groups.addOwner')}
-            </Button>
-          </div>
-        </TaskForm>
-      ),
-    },
+    catalogTile('group.membership'),
     {
       id: 'create', label: t('groups.tileCreate'), hint: t('groups.hintCreate'), icon: <Plus size={16} />, write: true,
       note: <p>{t('groups.noteCreate')}</p>,

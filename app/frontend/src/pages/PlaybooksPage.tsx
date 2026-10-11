@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { UserPlus, UserMinus, Play, CheckCircle2, XCircle, Loader2, X, Trash2, Save } from 'lucide-react'
+import { UserPlus, UserMinus, Play, CheckCircle2, XCircle, Loader2, X, Trash2, Save, ShieldAlert, Copy } from 'lucide-react'
 import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
 import { Button, Field, Input, Spinner, ErrorNote, Badge, Select } from '../components/ui'
 import { MultiSelect, type Option } from '../components/MultiSelect'
@@ -83,17 +83,19 @@ export function PlaybooksPage() {
     backupChats: false, intuneAction: '', removeMfaMethods: false, deleteRegisteredDevices: false,
     transferOwnershipTo: remembered('transferOwnershipTo'), cancelFutureEvents: false, delete: false,
     mailboxToUser: remembered('mailboxToUser'), mailboxFolder: '', mailboxIncludeContacts: false, mailboxIncludeCalendar: false,
+    convertToShared: false, fullAccessTo: remembered('fullAccessTo'),
   })
 
   type OffOptions = Omit<typeof off, 'upn'>
   const BUILTIN_PRESETS: Record<string, Partial<OffOptions>> = {
     __phase1: {
       block: true, revokeSessions: true, hideFromGal: true, removeFromGroups: true,
-      removeAllLicenses: false, delete: false,
+      // A remembered recipient must not ride along into a preset run.
+      removeAllLicenses: false, convertToShared: false, fullAccessTo: '', delete: false,
     },
     __phase2: {
       block: false, revokeSessions: false, oof: false, hideFromGal: false, removeFromGroups: false,
-      removeAllLicenses: true, delete: false, forwardTo: '', calendarTo: '', backupToUser: '', backupFolder: '', mailboxToUser: '',
+      removeAllLicenses: true, convertToShared: true, delete: false, forwardTo: '', calendarTo: '', backupToUser: '', backupFolder: '', mailboxToUser: '',
     },
   }
   const [presets, setPresets] = useState(() => loadStore<Partial<OffOptions>>('playbook.presets'))
@@ -199,11 +201,20 @@ export function PlaybooksPage() {
     })
   }
 
+  // Compromised account: lock out, then remove the attacker's leftovers.
+  const [comp, setComp] = useState({ upn: '', resetPassword: true, resetMfa: true, clearForwarding: true, disableRules: true })
+  const runCompromised = (confirm: string) => {
+    startPlaybook('compromised', comp.upn, () => api.playbooks.compromised({ ...comp, confirm })).then((r) => {
+      if (r) setStatus((s) => ({ ...s, compromised: { ok: !!r.ok, text: comp.upn, at: Date.now() } }))
+    })
+  }
+  const compResult = result as services.CompromisedResult | null
+
   const runOffboard = (confirm: string) => () => {
     startPlaybook('offboard', off.upn, () => api.playbooks.offboard({ ...off, confirm })).then((r) => {
       if (r) setStatus((s) => ({ ...s, offboard: { ok: !!r.ok, text: off.upn, at: Date.now() } }))
       if (!r || r.canceled) return // failed or canceled run: keep the previous defaults
-      for (const k of ['forwardTo', 'calendarTo', 'backupToUser', 'backupFolder', 'transferOwnershipTo', 'mailboxToUser'] as const) {
+      for (const k of ['forwardTo', 'calendarTo', 'backupToUser', 'backupFolder', 'transferOwnershipTo', 'mailboxToUser', 'fullAccessTo'] as const) {
         const key = 'defaults.offboard.' + k
         // An emptied field must not come back after a reload and send a later
         // run's mail or files to last time's destination.
@@ -224,6 +235,28 @@ export function PlaybooksPage() {
   )
 
   const actions: TaskAction[] = [
+    {
+      id: 'compromised', label: t('playbooks.tileCompromised'), hint: t('playbooks.hintCompromised'),
+      icon: <ShieldAlert size={16} />, variant: 'danger', write: true,
+      note: <p>{t('playbooks.noteCompromised')}</p>,
+      panel: (
+        <TaskForm>
+          <Field label={t('playbooks.upn')}><UpnInput value={comp.upn} onChange={(v) => setComp({ ...comp, upn: v })} /></Field>
+          <p className="text-xs text-[var(--text-dim)]">{t('playbooks.compromisedAlways')}</p>
+          {(['resetPassword', 'resetMfa', 'clearForwarding', 'disableRules'] as const).map((k) => (
+            <label key={k} className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+              <input type="checkbox" checked={comp[k]} onChange={(e) => setComp({ ...comp, [k]: e.target.checked })} />
+              {t(`playbooks.compromised_${k}`)}
+            </label>
+          ))}
+          <Button variant="danger" disabled={readOnly || busy || !comp.upn}
+            onClick={() => askConfirm(comp.upn, runCompromised)}>
+            <ShieldAlert size={15} /> {t('playbooks.runCompromised')}
+          </Button>
+          {cancelBar}
+        </TaskForm>
+      ),
+    },
     {
       id: 'onboard', label: t('playbooks.tileOnboard'), hint: t('playbooks.hintOnboard'),
       icon: <UserPlus size={16} />, variant: 'primary', write: true,
@@ -313,7 +346,7 @@ export function PlaybooksPage() {
       note: (
         <>
           <p>{t('playbooks.noteOffboard')}</p>
-          {off.removeAllLicenses && <p className="text-[var(--warn)]">{t('playbooks.removeLicensesWarn')}</p>}
+          {off.removeAllLicenses && !off.convertToShared && <p className="text-[var(--warn)]">{t('playbooks.removeLicensesWarn')}</p>}
           {off.intuneAction === 'wipe' && <p className="text-[var(--danger)]">{t('playbooks.intuneWipeWarn')}</p>}
           {off.delete && <p className="text-[var(--danger)]">{t('playbooks.deleteUserWarn')}</p>}
         </>
@@ -341,7 +374,7 @@ export function PlaybooksPage() {
           <div className="my-1 border-t border-[var(--border)]" />
           <Field label={t('playbooks.upn')}><UpnInput value={off.upn} onChange={(v) => setOff({ ...off, upn: v })} /></Field>
 
-          {([['block', 'block'], ['revokeSessions', 'revoke'], ['removeMfaMethods', 'removeMfa'], ['oof', 'oof'], ['hideFromGal', 'hideFromGal'], ['cancelFutureEvents', 'cancelEvents'], ['removeFromGroups', 'removeFromGroups'], ['deleteRegisteredDevices', 'deleteRegisteredDevices'], ['removeAllLicenses', 'removeLicenses'], ['delete', 'deleteUser']] as const).map(([k, label]) => (
+          {([['block', 'block'], ['revokeSessions', 'revoke'], ['removeMfaMethods', 'removeMfa'], ['oof', 'oof'], ['hideFromGal', 'hideFromGal'], ['cancelFutureEvents', 'cancelEvents'], ['removeFromGroups', 'removeFromGroups'], ['deleteRegisteredDevices', 'deleteRegisteredDevices'], ['convertToShared', 'convertToShared'], ['removeAllLicenses', 'removeLicenses'], ['delete', 'deleteUser']] as const).map(([k, label]) => (
             <label key={k} className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
               <input type="checkbox" checked={(off as any)[k]} onChange={(e) => setOff({ ...off, [k]: e.target.checked })} />
               <span className={k === 'delete' ? 'text-[var(--danger)]' : ''}>{t(`playbooks.${label}`)}</span>
@@ -365,6 +398,9 @@ export function PlaybooksPage() {
             <UpnInput value={off.transferOwnershipTo} onChange={(v) => setOff({ ...off, transferOwnershipTo: v })} placeholder="lead@contoso.com" />
           </Field>
           <Field label={t('playbooks.forwardTo')}><UpnInput value={off.forwardTo} onChange={(v) => setOff({ ...off, forwardTo: v })} placeholder="manager@contoso.com" /></Field>
+          <Field label={t('playbooks.fullAccessTo')} hint={t('playbooks.fullAccessHint')}>
+            <UpnInput value={off.fullAccessTo} onChange={(v) => setOff({ ...off, fullAccessTo: v })} placeholder="manager@contoso.com" />
+          </Field>
           <Field label={t('playbooks.calendarTo')}><UpnInput value={off.calendarTo} onChange={(v) => setOff({ ...off, calendarTo: v })} placeholder="manager@contoso.com" /></Field>
           <Field label={t('playbooks.backupTo')}><UpnInput value={off.backupToUser} onChange={(v) => setOff({ ...off, backupToUser: v })} placeholder="backup@contoso.com" /></Field>
           <Field label={t('playbooks.backupFolder')}><Input value={off.backupFolder} onChange={(e) => setOff({ ...off, backupFolder: e.target.value })} /></Field>
@@ -407,6 +443,18 @@ export function PlaybooksPage() {
         {steps.length === 0 && !busy && !job?.error && (
           <p className="text-sm text-[var(--text-faint)]">{t('playbooks.reportEmpty')}</p>
         )}
+        {compResult?.tempPassword && (
+          <div className="mb-3 rounded-lg border border-[var(--warn)]/40 bg-[var(--warn)]/10 p-3 text-sm">
+            <div className="mb-1 font-medium">{t('playbooks.tempPasswordTitle')}</div>
+            <div className="flex items-center gap-2">
+              <code className="select-all rounded bg-[var(--bg)] px-2 py-1 font-mono">{compResult.tempPassword}</code>
+              <Button variant="ghost" className="!px-2 !py-1" onClick={() => { navigator.clipboard.writeText(compResult.tempPassword || ''); toast('ok', t('users.tapCopied')) }}>
+                <Copy size={14} />
+              </Button>
+            </div>
+            <p className="mt-1 text-xs text-[var(--text-dim)]">{t('playbooks.tempPasswordNote')}</p>
+          </div>
+        )}
         <div className="flex flex-col gap-2">
           {steps.map((s, i) => (
             <div key={i} className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm">
@@ -430,6 +478,24 @@ export function PlaybooksPage() {
             </div>
           ))}
         </div>
+        {!!compResult?.signIns?.length && (
+          <div className="mt-3">
+            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--text-faint)]">{t('playbooks.recentSignIns')}</div>
+            <table className="w-full text-left text-xs">
+              <tbody>
+                {compResult.signIns.map((s, i) => (
+                  <tr key={i} className="border-t border-[var(--border)]">
+                    <td className="py-1 pr-2">{new Date(s.when).toLocaleString()}</td>
+                    <td className="py-1 pr-2">{s.app}</td>
+                    <td className="py-1 pr-2 font-mono">{s.ip}</td>
+                    <td className="py-1 pr-2">{s.location}</td>
+                    <td className={`py-1 ${s.result === 'ok' ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{s.result}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

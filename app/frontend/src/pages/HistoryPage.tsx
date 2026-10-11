@@ -79,7 +79,7 @@ export function HistoryPage() {
   }
 
   const kindLabel = (r: journal.RunSummary) =>
-    r.kind === 'playbook' ? t('nav.playbooks') : r.kind === 'transfer' ? t('offboarding.title') : r.kind
+    r.kind === 'playbook' ? t('nav.playbooks') : r.kind === 'transfer' ? t('offboarding.title') : r.kind === 'action' ? t('history.kindAction') : r.kind
 
   return (
     <Page title={t('history.title')} subtitle={t('history.subtitle')}>

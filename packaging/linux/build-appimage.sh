@@ -161,7 +161,11 @@ curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 -o "$TOOLS/appimagetool
   "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$ARCH.AppImage"
 chmod +x "$TOOLS/appimagetool"
 OUT="$OUT_DIR/SwissKnifeGraph-$ARCH.AppImage" # no "linux" in the name: every AppImage is for Linux
-ARCH="$ARCH" "$TOOLS/appimagetool" --no-appstream "$APPDIR" "$OUT"
+# Update information: AppImageUpdate (and the catalog) can then fetch deltas of
+# the newest release via the .zsync file that is published next to the AppImage.
+UPDATE_INFO="gh-releases-zsync|Nemu-x|SwissKnife-for-MS-Graph|latest|SwissKnifeGraph-$ARCH.AppImage.zsync"
+( cd "$OUT_DIR" && ARCH="$ARCH" "$TOOLS/appimagetool" --no-appstream -u "$UPDATE_INFO" "$APPDIR" "$(basename "$OUT")" )
 chmod +x "$OUT"
+[ -s "$OUT.zsync" ] || { echo "::error::appimagetool did not write $OUT.zsync"; exit 1; }
 echo "Built $OUT ($(du -h "$OUT" | cut -f1))"
 echo "appdir=$APPDIR" >> "${GITHUB_OUTPUT:-/dev/null}"

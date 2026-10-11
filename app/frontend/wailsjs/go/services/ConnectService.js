@@ -18,16 +18,32 @@ export function Domains() {
   return window['go']['services']['ConnectService']['Domains']();
 }
 
+export function GenerateCertificate(arg1) {
+  return window['go']['services']['ConnectService']['GenerateCertificate'](arg1);
+}
+
 export function GetStatus() {
   return window['go']['services']['ConnectService']['GetStatus']();
+}
+
+export function PickCertificate() {
+  return window['go']['services']['ConnectService']['PickCertificate']();
 }
 
 export function Profiles() {
   return window['go']['services']['ConnectService']['Profiles']();
 }
 
+export function RevealCertificate(arg1) {
+  return window['go']['services']['ConnectService']['RevealCertificate'](arg1);
+}
+
 export function SaveProfile(arg1, arg2) {
   return window['go']['services']['ConnectService']['SaveProfile'](arg1, arg2);
+}
+
+export function SetProfilePolicy(arg1, arg2) {
+  return window['go']['services']['ConnectService']['SetProfilePolicy'](arg1, arg2);
 }
 
 export function SetReadOnly(arg1) {

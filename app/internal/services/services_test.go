@@ -139,7 +139,7 @@ func TestReadOnlyBlocksWrite(t *testing.T) {
 	sess.SetReadOnly(true)
 	users := NewUsersService(sess)
 
-	err := users.Block("bob@contoso.com")
+	_, err := users.InviteGuest("bob@example.com", "", "", "", false)
 	if err != session.ErrReadOnly {
 		t.Fatalf("want ErrReadOnly, got %v", err)
 	}

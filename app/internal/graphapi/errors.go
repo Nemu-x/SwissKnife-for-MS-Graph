@@ -3,6 +3,7 @@ package graphapi
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // GraphError is a structured Microsoft Graph error.
@@ -13,6 +14,9 @@ type GraphError struct {
 	Message    string
 	RequestID  string
 	Path       string // request URL path — lets callers derive permission hints
+	// RetryAfter is the answer's Retry-After (0 = none), for callers that
+	// retry on their own (the Exchange Admin API's POSTs).
+	RetryAfter time.Duration
 }
 
 func (e *GraphError) Error() string {

@@ -22,6 +22,7 @@ import (
 	"text/tabwriter"
 
 	"swissknife-app/internal/auditlog"
+	"swissknife-app/internal/auth"
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/journal"
 	"swissknife-app/internal/secrets"
@@ -41,6 +42,8 @@ const binName = "SwissKnifeGraph"
 // real profile store and OS keychain; tests substitute fakes so the command
 // layer can be exercised against an httptest Graph without a keychain.
 type env struct {
+	// stdin supplies secret inputs (never taken from the command line).
+	stdin   io.Reader
 	stdout  io.Writer
 	stderr  io.Writer
 	version string
@@ -82,6 +85,7 @@ func Run(args []string, version string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	e := &env{
+		stdin:   os.Stdin,
 		stdout:  os.Stdout,
 		stderr:  os.Stderr,
 		version: version,
@@ -131,7 +135,11 @@ func connectProfile(ctx context.Context, p secrets.Profile, readOnly bool, stder
 	gc := graphapi.New(provider)
 	// Same self-test as the GUI Connect: bad credentials fail here, not on the
 	// first command, and the audit log never records a connect that did not work.
-	var org map[string]any
+	var org struct {
+		Value []struct {
+			ID string `json:"id"`
+		} `json:"value"`
+	}
 	if err := gc.Get(ctx, "/organization", url.Values{"$select": {"id"}}, &org); err != nil {
 		// A 403 means the token itself is fine and only Organization.Read.All is
 		// missing — commands that need other permissions must still work, so
@@ -146,7 +154,15 @@ func connectProfile(ctx context.Context, p secrets.Profile, readOnly bool, stder
 		}
 	}
 	// SetClient first: the audit entry carries the profile name from the session.
+	sess.SetPolicy(cr.ProfileID, cr.Policy)
 	sess.SetClient(gc, cr.Name)
+	sess.SetTokens(provider)
+	tenant := cr.TenantID
+	if len(org.Value) == 1 && org.Value[0].ID != "" {
+		tenant = org.Value[0].ID // the directory id, as in the GUI
+	}
+	sess.SetIdentity(tenant, cr.AuthMode != string(auth.ModeDeviceCode))
+	sess.SetDelegatedOrg(cr.DelegatedOrg)
 	sess.Record("session.connect", cr.TenantID, "mode="+cr.AuthMode+" via=cli", nil)
 	return sess, nil
 }
@@ -168,10 +184,14 @@ func init() {
 	commands = []command{
 		{name: "help", args: "[command]", summary: "show this help or one command's flags", setup: setupHelp},
 		{name: "version", summary: "print the application version", setup: setupVersion},
+		{name: "worker", args: "serve [--listen :8743] [--families exo,teams] [--pair] | clients | revoke <fp>", summary: "run this machine as a PowerShell worker for paired SwissKnife apps", setup: setupWorker},
+		{name: "pack", args: "digest <folder> | index <hub folder>", summary: "for pack authors: pack.digest to sign; for hub maintainers: index.json", setup: setupPack},
 		{name: "profiles", summary: "list saved connection profiles (id, name, tenant, mode)", setup: setupProfiles},
 		{name: "get", args: "<graph path> [--top N] [--all]", summary: "raw Graph GET; prints the JSON response (--all follows @odata.nextLink)", setup: setupGet},
 		{name: "user", args: "<upn>", summary: "user snapshot: profile, group membership, licenses", setup: setupUser},
 		{name: "signins", args: "<upn> [--days 7] [--failed] [--top 50]", summary: "sign-in log for one user", setup: setupSignins},
+		{name: "action", args: "list | <id> field=value... [--apply] [--confirm <target>]", summary: "catalog actions: list them, preview a change, apply it with --apply", setup: setupAction},
+		{name: "compromised", args: "<upn> --confirm <upn> [--reset-password] [--reset-mfa] [--clear-forwarding] [--disable-rules]", summary: "compromised-account response: block, revoke, then optional clean-up", setup: setupCompromised},
 		{name: "offboard", args: "<upn> --confirm <upn> [actions...]", summary: "run the offboarding playbook (destructive; --confirm must repeat the UPN)", setup: setupOffboard},
 	}
 }
@@ -587,6 +607,8 @@ func setupOffboard(fs *flag.FlagSet) func(*env, *globals, []string) int {
 	fs.BoolVar(&req.HideFromGal, "hide-gal", false, "hide from address lists")
 	fs.StringVar(&req.CalendarTo, "share-calendar", "", "share the calendar (read) with this UPN")
 	fs.BoolVar(&req.RemoveFromGroups, "remove-groups", false, "remove from all groups")
+	fs.BoolVar(&req.ConvertToShared, "convert-shared", false, "convert the mailbox to a shared mailbox (Exchange PowerShell) before licenses go")
+	fs.StringVar(&req.FullAccessTo, "full-access", "", "give this UPN full access to the mailbox")
 	fs.BoolVar(&req.RemoveAllLicenses, "remove-licenses", false, "remove all licenses")
 	fs.StringVar(&req.BackupToUser, "backup-to", "", "copy OneDrive to this user's drive (server-side)")
 	fs.StringVar(&req.BackupFolder, "backup-folder", "", "target folder for the backup (default: the leaver's UPN)")
@@ -620,7 +642,8 @@ func setupOffboard(fs *flag.FlagSet) func(*env, *globals, []string) int {
 		hasAction := req.Block || req.RevokeSessions || req.Oof || req.ForwardTo != "" || req.HideFromGal ||
 			req.CalendarTo != "" || req.RemoveFromGroups || req.RemoveAllLicenses || req.BackupToUser != "" ||
 			req.IntuneAction != "" || req.RemoveMfaMethods || req.DeleteRegisteredDevices ||
-			req.TransferOwnershipTo != "" || req.CancelFutureEvents || req.Delete
+			req.TransferOwnershipTo != "" || req.CancelFutureEvents || req.Delete ||
+			req.ConvertToShared || req.FullAccessTo != ""
 		if !hasAction {
 			return report(e, usagef("offboard: nothing to do — pass at least one action flag (see '%s help offboard')", binName))
 		}

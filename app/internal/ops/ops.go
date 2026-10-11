@@ -28,7 +28,15 @@ const (
 	KindBulk     Kind = "bulk"
 	KindUpdate   Kind = "update"
 	KindSnapshot Kind = "snapshot" // tenant configuration snapshot
+	KindDrift    Kind = "drift"    // background drift check against a baseline
+	KindFanOut   Kind = "fanout"   // read action across several tenants
+	KindAction   Kind = "action"   // catalog action apply (internal/engine)
+	KindPreview  Kind = "preview"  // catalog action preview (Plan); several may run
 )
+
+// WriteKinds are the operations that change a tenant or run long against
+// one; a connection switch is refused while one is live.
+var WriteKinds = []Kind{KindTransfer, KindMailbox, KindPlaybook, KindCleanup, KindMirror, KindBulk, KindSnapshot, KindAction}
 
 // AlreadyRunningError signals a single-flight violation the UI can explain.
 type AlreadyRunningError struct{ Kind Kind }
@@ -78,6 +86,38 @@ func (r *Registry) Start(parent context.Context, kind Kind) (*Operation, error) 
 	return op, nil
 }
 
+// Track registers a cancellable operation that does not take its kind's
+// single-flight slot (previews: several may run at once). id names it so the
+// caller can cancel it before the call returns ("" mints one); an id that is
+// already live is refused.
+func (r *Registry) Track(parent context.Context, kind Kind, id string) (*Operation, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if id == "" {
+		id = newID()
+	}
+	if _, dup := r.byID[id]; dup {
+		return nil, fmt.Errorf("operation %s is already running", id)
+	}
+	ctx, cancel := context.WithCancel(parent)
+	op := &Operation{ID: id, Kind: kind, Ctx: ctx, StartedAt: time.Now(), cancel: cancel}
+	r.byID[id] = op
+	return op, nil
+}
+
+// Busy returns a live operation of one of the kinds (single-flight ones
+// only), or nil.
+func (r *Registry) Busy(kinds ...Kind) *Operation {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, k := range kinds {
+		if op := r.live[k]; op != nil {
+			return op
+		}
+	}
+	return nil
+}
+
 // Finish cancels the operation's context and frees its single-flight slot.
 // Always call it (defer) when the run returns.
 func (r *Registry) Finish(op *Operation) {
@@ -90,7 +130,10 @@ func (r *Registry) Finish(op *Operation) {
 	if cur := r.live[op.Kind]; cur == op {
 		delete(r.live, op.Kind)
 	}
-	delete(r.byID, op.ID)
+	// A tracked id may be reused once finished: never drop a newer op.
+	if r.byID[op.ID] == op {
+		delete(r.byID, op.ID)
+	}
 }
 
 // Cancel cancels a live operation by id; an unknown id is a no-op.
@@ -103,12 +146,18 @@ func (r *Registry) Cancel(id string) {
 }
 
 // CancelKind cancels the live operation of the kind (legacy per-kind Cancel
-// buttons); a kind with no live operation is a no-op.
+// buttons) and every tracked one of the kind; a kind with no live operation
+// is a no-op.
 func (r *Registry) CancelKind(kind Kind) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if op, ok := r.live[kind]; ok {
 		op.cancel()
+	}
+	for _, op := range r.byID {
+		if op.Kind == kind {
+			op.cancel()
+		}
 	}
 }
 

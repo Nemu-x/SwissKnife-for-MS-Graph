@@ -12,7 +12,8 @@ export type ParsedError = {
   hint?: string // missing Graph application permission, when known
 }
 
-const GRAPH_RE = /^graph: (\d{3}) (\S+): ([\s\S]*?)(?: \(requestId=([^)]+)\))?$/
+const SESSION_EXPIRED = 'sessionExpired: '
+const GRAPH_RE =/^graph: (\d{3}) (\S+): ([\s\S]*?)(?: \(requestId=([^)]+)\))?$/
 
 export function parseErr(raw: string): ParsedError {
   if (raw.startsWith('operr:')) {
@@ -28,6 +29,10 @@ export function parseErr(raw: string): ParsedError {
     } catch {
       /* fall through to plain */
     }
+  }
+  // auth.ErrSessionExpired, wrapped in any context ("graph: acquire token: …").
+  if (raw.includes(SESSION_EXPIRED)) {
+    return { message: raw, code: 'sessionExpired' }
   }
   const m = GRAPH_RE.exec(raw)
   if (m) {

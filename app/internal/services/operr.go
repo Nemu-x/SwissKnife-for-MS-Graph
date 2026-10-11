@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"swissknife-app/internal/auth"
 	"swissknife-app/internal/graphapi"
 )
 
@@ -32,6 +33,10 @@ func (e *OpError) Error() string {
 func wrapOpErr(err error) error {
 	if err == nil {
 		return nil
+	}
+	// The delegated sign-in needs the user again: one code for every page.
+	if errors.Is(err, auth.ErrSessionExpired) {
+		return &OpError{Code: "sessionExpired", Message: auth.ErrSessionExpired.Error()}
 	}
 	var ge *graphapi.GraphError
 	if !errors.As(err, &ge) {

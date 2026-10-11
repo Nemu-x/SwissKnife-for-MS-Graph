@@ -265,7 +265,7 @@ func (cl *CleanupService) FindDuplicates(ownerType, ownerID string) ([]DupGroup,
 
 // DeleteItems removes drive items by their API ref. Destructive: confirm == "DELETE".
 func (cl *CleanupService) DeleteItems(refs []string, confirm string) (map[string]any, error) {
-	if err := cl.s.GuardWrite(); err != nil {
+	if err := cl.s.GuardDangerous(); err != nil {
 		return nil, err
 	}
 	if confirm != "DELETE" {
@@ -422,7 +422,7 @@ func (cl *CleanupService) trimOne(ctx context.Context, c *graphapi.Client, itemR
 // TrimVersions deletes old versions of an item, keeping the newest `keep`.
 // Destructive: confirm == "TRIM".
 func (cl *CleanupService) TrimVersions(itemRef string, keep int, confirm string) (map[string]any, error) {
-	if err := cl.s.GuardWrite(); err != nil {
+	if err := cl.s.GuardDangerous(); err != nil {
 		return nil, err
 	}
 	if confirm != "TRIM" {
@@ -454,7 +454,7 @@ type TrimResult struct {
 // streaming progress to the job console. Destructive: confirm == "TRIM".
 // Per-item failures are reported, not fatal; CancelScan aborts between items.
 func (cl *CleanupService) TrimVersionsMany(itemRefs []string, keep int, confirm string) ([]TrimResult, error) {
-	if err := cl.s.GuardWrite(); err != nil {
+	if err := cl.s.GuardDangerous(); err != nil {
 		return nil, err
 	}
 	if confirm != "TRIM" {

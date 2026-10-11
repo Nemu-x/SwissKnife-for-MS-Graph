@@ -31,7 +31,11 @@ import * as Update from '../../wailsjs/go/services/UpdateService'
 import * as Journal from '../../wailsjs/go/services/JournalService'
 import * as Notify from '../../wailsjs/go/services/NotifyService'
 import * as Snapshot from '../../wailsjs/go/services/SnapshotService'
-import type { journal, secrets, services } from '../../wailsjs/go/models'
+import * as OnPrem from '../../wailsjs/go/services/OnPremService'
+import * as Packs from '../../wailsjs/go/services/PacksService'
+import * as Worker from '../../wailsjs/go/services/WorkerService'
+import * as Actions from '../../wailsjs/go/services/ActionsService'
+import type { engine, journal, secrets, services } from '../../wailsjs/go/models'
 import { parseErr, type ParsedError } from './graphError'
 import i18n from '../i18n'
 
@@ -45,17 +49,53 @@ export type ConnectRequest = services.ConnectRequest
 const list = (p: Promise<any>) => p.then((v) => (v ?? []) as GraphObject[])
 const one = (p: Promise<any>) => p as Promise<GraphObject>
 
-export const api = {
+const rawApi = {
   connect: {
     profiles: () => Connect.Profiles() as Promise<Profile[]>,
     saveProfile: (p: Partial<Profile>, secret: string) =>
       Connect.SaveProfile(p as Profile, secret) as Promise<Profile>,
     deleteProfile: (id: string) => Connect.DeleteProfile(id),
+    setProfilePolicy: (id: string, p: { maxDanger: string; allowedGroups: string[]; groupLabels: Record<string, string> }) =>
+      Connect.SetProfilePolicy(id, p as any) as Promise<Profile>,
     connect: (req: Partial<ConnectRequest>) => Connect.Connect(req as ConnectRequest) as Promise<Status>,
     disconnect: () => Connect.Disconnect(),
     status: () => Connect.GetStatus() as Promise<Status>,
     setReadOnly: (v: boolean) => Connect.SetReadOnly(v) as Promise<Status>,
     domains: () => Connect.Domains() as Promise<string[]>,
+    generateCertificate: (name: string) => Connect.GenerateCertificate(name) as Promise<services.CertInfo>,
+    pickCertificate: () => Connect.PickCertificate() as Promise<string>,
+    revealCertificate: (path: string) => Connect.RevealCertificate(path),
+  },
+  worker: {
+    status: () => Worker.Status(),
+    pair: (addr: string, code: string) => Worker.Pair(addr, code),
+    check: () => Worker.Check(),
+    unpair: () => Worker.Unpair(),
+    clientFingerprint: () => Worker.ClientFingerprint() as Promise<string>,
+  },
+  packs: {
+    list: () => Packs.List(),
+    trustProblem: () => Packs.TrustProblem(),
+    trust: (name: string, digest: string) => Packs.Trust(name, digest),
+    untrust: (name: string) => Packs.Untrust(name),
+    disable: (name: string) => Packs.Disable(name),
+    enable: (name: string) => Packs.Enable(name),
+    keys: () => Packs.Keys().then((v) => v ?? []),
+    addKey: (k: string, name: string) => Packs.AddKey(k, name).then((v) => v ?? []),
+    removeKey: (k: string) => Packs.RemoveKey(k).then((v) => v ?? []),
+    openFolder: () => Packs.OpenFolder(),
+    hubCatalog: () => Packs.HubCatalog(),
+    hubInstall: (name: string, digest: string) => Packs.HubInstall(name, digest),
+    setHub: (url: string) => Packs.SetHub(url) as Promise<string>,
+  },
+  onprem: {
+    connections: () => OnPrem.Connections(),
+    save: (c: Record<string, unknown>, password: string) => OnPrem.SaveConnection(c as any, password),
+    remove: (id: string) => OnPrem.DeleteConnection(id),
+    connect: (id: string) => OnPrem.Connect(id),
+    disconnect: () => OnPrem.Disconnect(),
+    status: () => OnPrem.Status(),
+    pickCA: () => OnPrem.PickCAFile() as Promise<string>,
   },
   dashboard: {
     summary: () => Dashboard.Summary() as Promise<services.DashboardSummary>,
@@ -66,20 +106,14 @@ export const api = {
     memberOf: (u: string) => list(Users.MemberOf(u)),
     licenseDetails: (u: string) => list(Users.LicenseDetails(u)),
     snapshot: (u: string) => one(Users.Snapshot(u)),
-    block: (u: string) => Users.Block(u),
-    unblock: (u: string) => Users.Unblock(u),
     resetPassword: (u: string, pw: string, force: boolean, confirm: string) =>
       Users.ResetPassword(u, pw, force, confirm),
-    revokeSessions: (u: string, confirm: string) => Users.RevokeSessions(u, confirm),
     create: (name: string, upn: string, nick: string, pw: string, force: boolean, loc: string) =>
       one(Users.CreateUser(name, upn, nick, pw, force, loc)),
     inviteGuest: (email: string, name: string, redirectUrl: string, message: string, sendMail: boolean) =>
       Users.InviteGuest(email, name, redirectUrl, message, sendMail) as Promise<GraphObject>,
     update: (u: string, patchJSON: string) => Users.Update(u, patchJSON),
-    setUsageLocation: (u: string, loc: string) => Users.SetUsageLocation(u, loc),
     delete: (u: string, confirm: string) => Users.Delete(u, confirm),
-    getManager: (u: string) => one(Users.GetManager(u)),
-    setManager: (u: string, mgr: string) => Users.SetManager(u, mgr),
     listDeleted: (max: number) => list(Users.ListDeleted(max)),
     restoreDeleted: (id: string) => one(Users.RestoreDeleted(id)),
   },
@@ -103,7 +137,6 @@ export const api = {
     list: (search: string, max: number) => list(Groups.List(search, max)),
     get: (id: string) => one(Groups.Get(id)),
     members: (id: string) => list(Groups.Members(id)),
-    addOwner: (id: string, upn: string) => Groups.AddOwner(id, upn),
     addMember: (id: string, upn: string) => Groups.AddMember(id, upn),
     createM365: (name: string, desc: string, nick: string, owner: string) =>
       one(Groups.CreateM365(name, desc, nick, owner)),
@@ -165,6 +198,7 @@ export const api = {
   playbooks: {
     onboard: (req: any) => Playbook.Onboard(req) as Promise<services.PlaybookResult>,
     offboard: (req: any) => Playbook.Offboard(req) as Promise<services.PlaybookResult>,
+    compromised: (req: any) => Playbook.Compromised(req) as Promise<services.CompromisedResult>,
     cancel: () => Playbook.Cancel() as Promise<void>,
   },
   access: {
@@ -245,6 +279,10 @@ export const api = {
     diff: (a: string, b: string) => Snapshot.Diff(a, b) as Promise<services.SnapshotDiff>,
     diffLatest: () => Snapshot.DiffLatest() as Promise<services.SnapshotDiff>,
     cancel: () => Snapshot.Cancel(),
+    exportFolder: (id: string) => Snapshot.Export(id) as Promise<string>,
+    getDriftWatch: () => Snapshot.GetDriftWatch() as Promise<services.DriftWatch>,
+    setDriftWatch: (w: Partial<services.DriftWatch>) => Snapshot.SetDriftWatch(w as services.DriftWatch) as Promise<services.DriftWatch>,
+    checkDriftNow: () => Snapshot.CheckDriftNow() as Promise<services.DriftSummary>,
   },
   reports: {
     names: () => Reports.Names() as Promise<string[]>,
@@ -272,6 +310,25 @@ export const api = {
     apply: (installerPath: string) => Update.Apply(installerPath) as Promise<void>,
     revealInstaller: (installerPath: string) => Update.RevealInstaller(installerPath) as Promise<void>,
   },
+  actions: {
+    // Go marshals an empty list as null: normalise here so no page has to.
+    catalog: () => Actions.Catalog().then((v) => (v ?? []).map((e) => ({ ...e, fields: e.fields ?? [] }))) as Promise<engine.CatalogEntry[]>,
+    capabilities: () => Actions.Capabilities().then((v) => (v ?? []).map((c) => ({ ...c, impls: c.impls ?? [] }))) as Promise<engine.CapabilityView[]>,
+    // previewId lets cancel() stop the preview while it runs.
+    plan: (id: string, inputs: Record<string, string>, previewId = '') => Actions.Plan(id, inputs, previewId) as Promise<engine.Plan>,
+    cancel: (opOrPreviewId: string) => Actions.Cancel(opOrPreviewId),
+    apply: (planId: string, confirm: string) => Actions.Apply(planId, confirm) as Promise<engine.Result>,
+    run: (id: string, inputs: Record<string, string>) => Actions.Run(id, inputs) as Promise<engine.ReadResult>,
+    runAcross: (id: string, inputs: Record<string, string>, profileIds: string[]) =>
+      Actions.RunAcross(id, inputs, profileIds) as Promise<engine.ReadResult>,
+    fanOutProfiles: () => Actions.FanOutProfiles().then((v) => v ?? []) as Promise<Profile[]>,
+    cancelAcross: () => Actions.CancelAcross(),
+    powerShellStatus: () => Actions.PowerShellStatus() as Promise<services.PowerShellStatus>,
+    refreshPowerShell: () => Actions.RefreshPowerShell() as Promise<services.PowerShellStatus>,
+    installModule: (name: string) => Actions.InstallModule(name) as Promise<services.PowerShellStatus>,
+    powerShellInstallMethod: () => Actions.PowerShellInstallMethod() as Promise<{ auto: boolean; how: string; commands?: string[]; url: string }>,
+    installPowerShell: () => Actions.InstallPowerShell() as Promise<services.PowerShellStatus>,
+  },
   journal: {
     list: (limit = 100) => Journal.List(limit) as Promise<journal.RunSummary[]>,
     get: (opId: string) => Journal.Get(opId) as Promise<journal.Run>,
@@ -282,6 +339,38 @@ export const api = {
     test: () => Notify.Test() as Promise<void>,
   },
 }
+
+// An expired delegated sign-in can surface from any call; every page reports
+// it the same way (the store shows one "sign in again" banner).
+const expiredListeners = new Set<() => void>()
+export function onSessionExpired(fn: () => void): () => void {
+  expiredListeners.add(fn)
+  return () => { expiredListeners.delete(fn) }
+}
+export const isSessionExpired = (e: unknown) => errParsed(e).code === 'sessionExpired'
+
+function watchExpiry<T>(o: T): T {
+  const out: any = {}
+  for (const [k, v] of Object.entries(o as any)) {
+    if (typeof v === 'function') {
+      out[k] = (...args: any[]) => {
+        const r = (v as any)(...args)
+        if (!r || typeof r.then !== 'function') return r
+        return r.catch((e: unknown) => {
+          if (isSessionExpired(e)) expiredListeners.forEach((fn) => fn())
+          throw e
+        })
+      }
+    } else if (v && typeof v === 'object') {
+      out[k] = watchExpiry(v)
+    } else {
+      out[k] = v
+    }
+  }
+  return out
+}
+
+export const api = watchExpiry(rawApi)
 
 export function errParsed(e: unknown): ParsedError {
   let msg = ''
@@ -294,6 +383,8 @@ export function errParsed(e: unknown): ParsedError {
 
 export function errMessage(e: unknown): string {
   const p = errParsed(e)
+  // Engine refusals (no HTTP status) carry a code with a translation.
+  if (p.code && !p.status && i18n.exists(`errors.engine.${p.code}`)) return i18n.t(`errors.engine.${p.code}`)
   let msg = p.message
   if (p.code && p.status) msg = `${p.status} ${p.code}: ${msg}`
   if (p.hint) {

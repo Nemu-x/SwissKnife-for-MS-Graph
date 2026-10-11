@@ -1,7 +1,10 @@
 import { createContext, useContext, useEffect, useState, type ReactNode, useCallback, useRef } from 'react'
-import { api, errMessage, type Status } from './api'
+import { api, errMessage, onSessionExpired, type Status } from './api'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import i18n from '../i18n'
+import { loadWorkspaces, saveWorkspaces, type Workspaces } from './workspaces'
+import { loadHiddenPages, saveHiddenPages } from './navprefs'
+import type { PageId } from '../pages/registry'
 import { applyAccent } from './color'
 import { humanBytes } from './format'
 
@@ -70,6 +73,12 @@ interface Store {
 
   safeMode: boolean
   setSafeMode: (v: boolean) => void
+  // Microsoft 365, on-prem AD or both (see lib/workspaces).
+  workspaces: Workspaces
+  setWorkspaces: (ws: Workspaces) => void
+  // Pages hidden from the sidebar (lib/navprefs); Ctrl+K still finds them.
+  hiddenPages: PageId[]
+  setHiddenPages: (p: PageId[]) => void
 
   access: Record<string, boolean>
   hideUnavailable: boolean
@@ -85,7 +94,7 @@ interface Store {
   cancelCleanupScan: () => void
   startBulkRun: (items: BulkItem[]) => Promise<void>
   cancelBulkRun: () => void
-  startPlaybook: (kind: 'onboard' | 'offboard', target: string, call: () => Promise<any>) => Promise<any>
+  startPlaybook: (kind: 'onboard' | 'offboard' | 'compromised', target: string, call: () => Promise<any>) => Promise<any>
   cancelPlaybook: () => void
   clearJob: (key: string) => void
 
@@ -110,6 +119,14 @@ interface Store {
   toasts: Toast[]
   toast: (kind: Toast['kind'], text: string) => void
   dismiss: (id: number) => void
+
+  // The delegated sign-in expired (any call reported it); cleared by the
+  // next connection or by dismissing the banner.
+  sessionExpired: boolean
+  dismissSessionExpired: () => void
+  // Records a successful connect (also a same-profile reconnect): drops the
+  // previous connection's cached results and the expiry notice.
+  onConnected: (s: Status) => void
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -118,6 +135,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [theme, setTheme] = useState<Theme>((localStorage.getItem('theme') as Theme) || 'dark')
   const [safeMode, setSafeModeState] = useState<boolean>(localStorage.getItem('safeMode') !== 'false')
+  const [workspaces, setWorkspacesState] = useState<Workspaces>(loadWorkspaces)
+  const [hiddenPages, setHiddenPagesState] = useState<PageId[]>(loadHiddenPages)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [domains, setDomains] = useState<string[]>([])
   const [access, setAccess] = useState<Record<string, boolean>>(() => {
@@ -196,14 +215,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Clear cached domains and page results on disconnect; domain loading is
-  // opt-in (checkbox on Connect).
+  // An expired delegated sign-in reported by any call: one banner app-wide.
+  const [sessionExpired, setSessionExpired] = useState(false)
+  useEffect(() => onSessionExpired(() => setSessionExpired(true)), [])
+
+  // Every successful connect bumps the generation, so a reconnect with the
+  // same profile (signing in again) counts as a new connection too.
+  const [connGen, setConnGen] = useState(0)
+  const onConnected = useCallback((s: Status) => {
+    setStatus(s)
+    setConnGen((g) => g + 1)
+  }, [])
+
+  // Clear cached domains and page results on disconnect and on every new
+  // connection (results belong to the connection they came from); domain
+  // loading is opt-in (checkbox on Connect).
+  const connKey = status?.connected ? `${connGen}|${status.profileId ?? ''}|${status.profileName ?? ''}` : ''
+  const prevConnKey = useRef(connKey)
   useEffect(() => {
-    if (!status?.connected) {
-      setDomains([])
-      setCacheState({})
-    }
-  }, [status?.connected])
+    if (connKey === prevConnKey.current) return
+    const switched = prevConnKey.current !== '' && connKey !== ''
+    prevConnKey.current = connKey
+    // A fresh connection loaded its domains itself (Connect page): keep them.
+    if (!connKey || switched) setDomains([])
+    setCacheState({})
+    // Signed in (again): the expiry notice is answered.
+    if (connKey) setSessionExpired(false)
+  }, [connKey])
 
   // Stream backend progress into the jobs, mounted once at the app root so it
   // keeps flowing regardless of which page (if any) is currently shown.
@@ -268,6 +306,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
     })
     // Live playbook steps: "running" appends a pending row, "done" resolves it.
+    // Scheduled drift checks run in the background; their alert can come
+    // while the operator is on any page.
+    const offDrift = EventsOn('drift:detected', (d: any) => {
+      toast('info', i18n.t('snapshot.driftAlert', { added: d.added ?? 0, removed: d.removed ?? 0, changed: d.changed ?? 0 }))
+    })
     const offPB = EventsOn('playbook:step', (d: any) => {
       const key = keyOf(d, 'playbook')
       setJobs((all) => {
@@ -296,7 +339,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const offSN = EventsOn('snapshot:progress', (d: any) => {
       patchJob('snapshot', { progress: `${d?.section ?? ''}|${d?.done ?? 0}|${d?.total ?? 0}` })
     })
-    return () => { offOS(); offP(); offF(); offM(); offC(); offCL(); offO(); offPB(); offSN() }
+    return () => { offOS(); offP(); offF(); offM(); offC(); offCL(); offO(); offPB(); offSN(); offDrift() }
   }, [patchJob, jobLog])
 
   const startTransfer = useCallback(async (p: TransferParams) => {
@@ -398,7 +441,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Playbook runs live here so their step report survives navigation, and the
   // completion toast fires even if the operator has left the page.
-  const startPlaybook = useCallback(async (kind: 'onboard' | 'offboard', target: string, call: () => Promise<any>) => {
+  const startPlaybook = useCallback(async (kind: 'onboard' | 'offboard' | 'compromised', target: string, call: () => Promise<any>) => {
     patchJob('playbook', { ...emptyJob(), running: true, startedAt: Date.now(), progress: 'Starting…', steps: [] })
     jobLog('playbook', `▶ ${i18n.t(`playbooks.${kind}`)} — ${target}`)
     try {
@@ -439,6 +482,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSafeModeState(v)
       localStorage.setItem('safeMode', String(v))
     },
+    hiddenPages,
+    setHiddenPages: (p) => {
+      setHiddenPagesState(p)
+      saveHiddenPages(p)
+    },
+    workspaces,
+    setWorkspaces: (ws) => {
+      if (!ws.cloud && !ws.onprem) return // one part always stays on
+      setWorkspacesState(ws)
+      saveWorkspaces(ws)
+    },
     access,
     hideUnavailable,
     setHideUnavailable: (v) => {
@@ -475,6 +529,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     toasts,
     toast,
     dismiss: (id) => setToasts((t) => t.filter((x) => x.id !== id)),
+    sessionExpired,
+    dismissSessionExpired: () => setSessionExpired(false),
+    onConnected,
   }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

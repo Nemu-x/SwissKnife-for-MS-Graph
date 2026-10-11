@@ -6,6 +6,10 @@ export function Cancel() {
   return window['go']['services']['SnapshotService']['Cancel']();
 }
 
+export function CheckDriftNow() {
+  return window['go']['services']['SnapshotService']['CheckDriftNow']();
+}
+
 export function Delete(arg1) {
   return window['go']['services']['SnapshotService']['Delete'](arg1);
 }
@@ -18,12 +22,24 @@ export function DiffLatest() {
   return window['go']['services']['SnapshotService']['DiffLatest']();
 }
 
+export function Export(arg1) {
+  return window['go']['services']['SnapshotService']['Export'](arg1);
+}
+
 export function Get(arg1) {
   return window['go']['services']['SnapshotService']['Get'](arg1);
 }
 
+export function GetDriftWatch() {
+  return window['go']['services']['SnapshotService']['GetDriftWatch']();
+}
+
 export function List() {
   return window['go']['services']['SnapshotService']['List']();
+}
+
+export function SetDriftWatch(arg1) {
+  return window['go']['services']['SnapshotService']['SetDriftWatch'](arg1);
 }
 
 export function Take(arg1) {

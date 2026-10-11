@@ -33,7 +33,7 @@ func (c *Client) GetText(ctx context.Context, path string, params url.Values) (s
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := c.http.Do(req)
+	resp, err := c.api.Do(req)
 	if err != nil {
 		return "", err
 	}

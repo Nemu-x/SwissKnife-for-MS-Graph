@@ -38,4 +38,10 @@ describe('parseErr', () => {
     const raw = 'operr:{broken json'
     expect(parseErr(raw).message).toBe(raw)
   })
+
+  it('recognises an expired sign-in wherever it is wrapped', () => {
+    const raw = 'graph: acquire token: sessionExpired: the sign-in session expired or was revoked — sign in again (x)'
+    expect(parseErr(raw).code).toBe('sessionExpired')
+    expect(parseErr('operr:{"code":"sessionExpired","message":"m"}').code).toBe('sessionExpired')
+  })
 })

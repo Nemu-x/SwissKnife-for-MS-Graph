@@ -16,8 +16,40 @@ async function stubWails(page: Page, opts: { connected?: boolean } = {}) {
       List: [],                 // JournalService.List — empty run history
       SignIns: [{ id: 's1', userDisplayName: 'Alice Smith', status: 'success' }],
       SignInsFiltered: [{ id: 's1', userDisplayName: 'Alice Smith', errorCode: 50126 }],
+      // ActionsService (ADR-008): the built-in catalog, one preview, one apply.
+      Catalog: connected ? [
+        { id: 'user.signIn', page: 'users', danger: 'write', available: true, backend: 'graph', fields: [
+          { name: 'user', kind: 'user', required: true },
+          { name: 'state', kind: 'choice', required: true, options: ['blocked', 'allowed'], default: 'blocked' }] },
+        { id: 'user.revokeSessions', page: 'users', danger: 'destructive', confirmField: 'user', available: true, backend: 'graph',
+          fields: [{ name: 'user', kind: 'user', required: true }] },
+        { id: 'group.membership', page: 'groups', danger: 'write', available: true, backend: 'graph', fields: [
+          { name: 'user', kind: 'user', required: true }, { name: 'group', kind: 'group', required: true }] },
+        { id: 'license.assign', page: 'licensing', danger: 'write', available: true, backend: 'graph', fields: [
+          { name: 'user', kind: 'user', required: true }, { name: 'sku', kind: 'sku', required: true }] },
+        { id: 'teams.effectivePolicies', page: 'teams', danger: 'read', available: true, backend: 'teams-ps',
+          fields: [{ name: 'user', kind: 'user', required: true }] },
+        { id: 'mailbox.fullAccess', page: 'users', danger: 'write', available: false,
+          reason: { key: 'backendMissing', params: { backend: 'pwsh' } }, fields: null },
+        // Go marshals an action without inputs as fields: null.
+        { id: 'report.guests', page: 'reports', danger: 'read', available: true, backend: 'graph', fields: null, fanOut: true },
+        { id: 'pack.contoso.hold', page: 'users', danger: 'write', available: false, pack: 'contoso',
+          label: { en: 'Put a mailbox on hold' }, reason: { key: 'packUntrusted' }, fields: [] },
+      ] : [],
+      Plan: { id: 'p1', actionId: 'user.signIn', backend: 'graph', inputs: {}, changes: [
+        { target: 'ann@contoso.com', field: 'signIn', op: 'set', before: 'allowed', after: 'blocked' }] },
+      Run: { columns: ['policyType', 'policy'], backend: 'teams-ps', rows: [
+        { policyType: 'meeting', policy: 'NoRecording' }, { policyType: 'calling', policy: 'Global' }] },
+      Apply: { opId: 'o1', applied: 1, skipped: 0, failed: 0, canceled: false, outcomes: [
+        { target: 'ann@contoso.com', field: 'signIn', op: 'set', ok: true, skipped: false }] },
     }
-    const method = (name: string) => () => Promise.resolve(results[name] ?? null)
+    // A test can override single bindings through window.__stub, or make one
+    // fail (with Wails' plain string error) through window.__reject.
+    const method = (name: string) => () => {
+      const fail = (window as any).__reject?.[name]
+      if (fail) return Promise.reject(fail)
+      return Promise.resolve((window as any).__stub?.[name] ?? results[name] ?? null)
+    }
     const service = new Proxy({}, { get: (_t, m: string) => method(m) })
     const namespace = new Proxy({}, { get: () => service })
     ;(window as any).go = new Proxy({}, { get: () => namespace })
@@ -43,7 +75,7 @@ test('sidebar navigation works and data tabs are locked while disconnected', asy
   await page.goto('/')
 
   await page.getByRole('button', { name: 'Settings' }).click()
-  await expect(page.getByText('Language')).toBeVisible()
+  await expect(page.getByText('Language', { exact: true })).toBeVisible()
 
   // Data pages must be disabled until a tenant connection exists.
   await expect(page.getByRole('button', { name: 'Raw Graph' })).toBeDisabled()
@@ -125,7 +157,7 @@ test('every migrated page renders its action tiles', async ({ page }) => {
     ['Users & Admin', 'Everything about one user'],
     ['Licensing', 'Assign or remove a license'],
     ['Admin roles', 'Grant or revoke a role'],
-    ['Groups', 'Add someone to a group'],
+    ['Groups', 'Add or remove group members'],
     ['App registrations', 'Secrets about to expire'],
     ['Chats', 'Who is in a chat'],
     ['Mail & Calendar', 'Send mail as a user'],
@@ -179,6 +211,23 @@ test('a result can be cleared without leaving the page', async ({ page }) => {
   await expect(page.getByRole('button', { name: /Who changed what/ })).toBeVisible()
 })
 
+test('an expired sign-in on any page offers to sign in again', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    const expired = 'graph: acquire token: sessionExpired: the sign-in session expired or was revoked — sign in again'
+    ;(window as any).__reject = { SignIns: expired, SignInsFiltered: expired }
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Audit', exact: true }).click()
+  await page.getByRole('button', { name: /Sign-in logs \(whole tenant\)/ }).click()
+  await page.getByRole('button', { name: 'Run', exact: true }).click()
+
+  const banner = page.getByTestId('session-expired')
+  await expect(banner).toBeVisible()
+  await banner.getByRole('button', { name: 'Sign in again' }).click()
+  await expect(page.getByText('Connect to a tenant')).toBeVisible()
+})
+
 test('language switch to Russian localizes the UI', async ({ page }) => {
   await stubWails(page)
   await page.goto('/')
@@ -187,4 +236,277 @@ test('language switch to Russian localizes the UI', async ({ page }) => {
   // The language selector is the first <select> on the settings page.
   await page.locator('select').first().selectOption('ru')
   await expect(page.getByText('Настройки').first()).toBeVisible()
+})
+
+test('a catalog action previews its change before applying it', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Users & Admin' }).click()
+
+  // An action whose backend is missing stays visible and says why.
+  await expect(page.getByText('Needs the pwsh backend, which is not set up.')).toBeVisible()
+  // A community pack's action carries its own label and says why it is off.
+  await expect(page.getByText('Put a mailbox on hold')).toBeVisible()
+  await expect(page.getByText('not trusted yet', { exact: false })).toBeVisible()
+
+  await page.getByRole('button', { name: /Block or unblock sign-in/ }).click()
+  await page.getByRole('button', { name: 'User', exact: true }).click()
+  await page.getByPlaceholder('Search or paste', { exact: false }).fill('ann@contoso.com')
+  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Preview changes' }).click()
+
+  await expect(page.getByText('What will change')).toBeVisible()
+  await expect(page.getByText('allowed →', { exact: false })).toBeVisible()
+  await page.getByRole('button', { name: 'Apply', exact: true }).click()
+  await expect(page.getByText('Done: 1 changed, 0 already in place').first()).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('a read action shows its rows in the tile', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Teams', exact: true }).click()
+
+  const tile = page.getByRole('button', { name: /Which Teams policies apply to a person/ })
+  await expect(tile).toContainText('Teams PS') // backend badge
+  await tile.click()
+  await page.getByRole('button', { name: 'User', exact: true }).click()
+  await page.getByPlaceholder('Search or paste', { exact: false }).fill('bob@contoso.com')
+  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Show', exact: true }).click()
+  await expect(page.getByRole('cell', { name: 'NoRecording' })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'Meetings' })).toBeVisible() // translated value
+  expect(errors).toEqual([])
+})
+
+test('the explorer opens an action with the picked object filled in', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    ;(window as any).__stub = { List: [{ id: 'u1', displayName: 'Ann Lee', userPrincipalName: 'ann@contoso.com' }] }
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Explorer', exact: true }).click()
+  await page.getByRole('button', { name: /Ann Lee/ }).click()
+  await page.getByRole('button', { name: /Block or unblock sign-in/ }).click()
+
+  // The Users page opens with the action's panel and the user already chosen.
+  await expect(page.getByRole('button', { name: 'Preview changes' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Preview changes' }).click()
+  await expect(page.getByText('What will change')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('on-prem AD works without a tenant connection', async ({ page }) => {
+  await stubWails(page)
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  // Hidden until switched on: the connect page offers it.
+  await expect(page.getByRole('button', { name: 'On-prem AD', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Turn on On-prem AD' }).click()
+  await expect(page.getByRole('button', { name: 'On-prem AD', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /Directory connection/ }).click()
+  await expect(page.getByText('Not connected to a directory.')).toBeVisible()
+  await page.getByRole('combobox').selectOption('none')
+  await expect(page.getByText('crosses the network in clear text', { exact: false })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('an on-prem-only setup hides the Microsoft 365 pages and starts on AD', async ({ page }) => {
+  await stubWails(page)
+  await page.addInitScript(() => localStorage.setItem('workspaces', JSON.stringify({ cloud: false, onprem: true })))
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: /Directory connection/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Connect', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Users & Admin' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+// Every screen, every tile, connected and with both workspaces on: a page
+// that crashes (blank window) or throws shows up here.
+test('every screen opens and every tile can be clicked without crashing', async ({ page }) => {
+  test.setTimeout(180_000)
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => localStorage.setItem('workspaces', JSON.stringify({ cloud: true, onprem: true })))
+  // The production bundle ships a Content-Security-Policy: nothing on any
+  // screen may trip it (a blocked font, style or script would show here).
+  await page.addInitScript(() => {
+    (window as any).__csp = []
+    document.addEventListener('securitypolicyviolation', (e) => (window as any).__csp.push(`${e.violatedDirective} ${e.blockedURI}`))
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveCount(1)
+  const names = await page.locator('nav button').evaluateAll((els) =>
+    els.filter((e) => !e.hasAttribute('aria-expanded')).map((e) => (e.textContent || '').trim()))
+  expect(names.length).toBeGreaterThan(20)
+  expect(names).toContain('Usage reports')
+  const crashed = page.getByText('This page ran into a problem')
+  for (const name of names) {
+    // Catalog tiles arrive after the page: wait until they are in.
+    const open = async () => {
+      await page.locator('nav button').filter({ hasText: name }).first().click()
+      await expect(page.locator('main h1').first(), name).toBeVisible()
+      await expect(page.locator('main [data-catalog-ready="false"]'), name).toHaveCount(0)
+    }
+    await open()
+    await expect(crashed, name).toHaveCount(0)
+    const tiles = await page.locator('main [data-tile]').evaluateAll((els) =>
+      els.filter((e) => e.getAttribute('aria-disabled') !== 'true').map((e) => e.getAttribute('data-tile')))
+    for (const id of tiles) {
+      await page.locator(`main [data-tile="${id}"]`).first().click()
+      await expect(page.locator('main h1').first(), `${name} → ${id}`).toBeVisible()
+      await expect(crashed, `${name} → ${id}`).toHaveCount(0)
+      expect(errors, `${name} → ${id}`).toEqual([])
+      await open() // back to a clean page (a tile may navigate or open a panel)
+    }
+  }
+  expect(errors).toEqual([])
+  expect(await page.evaluate(() => (window as any).__csp)).toEqual([])
+})
+
+test('the menu folds to icons, hides pages, and support is one click away', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+
+  // Icons only: names come back as a hover label.
+  await page.getByRole('button', { name: 'Collapse the menu' }).click()
+  await expect(page.locator('nav').getByText('Licensing')).toHaveCount(0)
+  await page.locator('nav').getByRole('button', { name: 'Licensing' }).hover()
+  await expect(page.getByRole('tooltip')).toHaveText('Licensing')
+  await page.getByRole('button', { name: 'Expand the menu' }).click()
+  await expect(page.locator('nav').getByText('Licensing')).toBeVisible()
+
+  // Essentials only: rarely used pages leave the menu, Ctrl+K still finds them.
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Essentials only' }).click()
+  await expect(page.locator('nav').getByRole('button', { name: 'Raw Graph', exact: false })).toHaveCount(0)
+  await expect(page.locator('nav').getByRole('button', { name: 'Settings' })).toBeVisible()
+  await page.getByRole('button', { name: 'Show everything' }).click()
+
+  await expect(page.getByRole('button', { name: /Support on Tribute/ })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('capabilities show what runs, the fallbacks and why the others cannot', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    ;(window as any).__stub = { Capabilities: [
+      { capability: 'exchange.mailbox.sendOnBehalf', action: 'mailbox.sendOnBehalf', page: 'mail', danger: 'write', impls: [
+        { backend: 'exo-api', state: 'unavailable', reason: { key: 'exoApiNotEnabled' } },
+        { backend: 'exo-ps', state: 'runs', via: 'worker' }] },
+      { capability: 'teams.policy.list', action: 'teams.policies', page: 'teams', danger: 'read', impls: [
+        { backend: 'teams-ps', state: 'unavailable', reason: { key: 'pwshMissing' } }] },
+      { capability: 'entra.user.signIn', action: 'user.signIn', page: 'users', danger: 'write', impls: null },
+    ] }
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Show capabilities' }).click()
+
+  const mail = page.locator('[data-capability="exchange.mailbox.sendOnBehalf"]')
+  await expect(mail.getByText('Exchange PS · via worker')).toBeVisible()
+  await expect(mail.getByText(/Exchange: The Exchange Admin API is not available/)).toBeVisible()
+  await expect(page.getByText('1 of 3 can run now')).toBeVisible()
+  await page.getByLabel('Only those that cannot run').check()
+  await expect(mail).toHaveCount(0)
+  await expect(page.locator('[data-capability="teams.policy.list"]').getByText(/Needs PowerShell 7/)).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('restoring everything previews one group per section', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    ;(window as any).__stub = {
+      Catalog: [{ id: 'config.restore', page: 'security', danger: 'destructive', confirmField: 'snapshot', available: true, backend: 'graph', fields: [
+        { name: 'snapshot', kind: 'snapshot', required: true },
+        { name: 'section', kind: 'choice', required: true, default: 'conditionalAccessPolicies', options: ['namedLocations', 'conditionalAccessPolicies',
+          'intuneConfigurations', 'intuneCompliancePolicies', 'exchangeOrganizationConfig', 'transportRules', 'teamsMeetingPolicies', 'all'] },
+        { name: 'object', kind: 'text' }] }],
+      Plan: { id: 'p1', actionId: 'config.restore', backend: 'graph', inputs: {}, confirmTarget: 'restore 1', changes: [
+        { target: 'Win baseline', field: 'restoredObject', op: 'set', before: 'assignments', after: 'snapshot', step: 'snapshot.section.intuneConfigurations', stepNo: 1 },
+        { target: 'teamsMeetingPolicies', field: 'restoredSection', op: 'none', note: 'sectionSkipped', after: 'PowerShell backend not available (pwshMissing)',
+          step: 'snapshot.section.teamsMeetingPolicies', stepNo: 2 }] },
+    }
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.locator('nav').getByRole('button', { name: 'Security' }).click()
+  await page.getByRole('button', { name: /Restore from a snapshot/ }).click()
+  await page.getByRole('button', { name: 'Snapshot', exact: true }).click()
+  await page.getByPlaceholder('Search or paste', { exact: false }).fill('baseline')
+  await page.keyboard.press('Enter')
+  await page.getByRole('combobox', { name: 'What to restore' }).selectOption('all')
+  await page.getByRole('button', { name: 'Preview changes' }).click()
+
+  const preview = page.locator('li')
+  await expect(preview.getByText('Intune configuration profiles')).toBeVisible()
+  await expect(preview.getByText('Teams meeting policies')).toHaveCount(2) // the step and the skipped section
+  await expect(preview.getByText(/This section is left out: PowerShell backend not available/)).toHaveCount(1)
+  expect(errors).toEqual([])
+})
+
+test('a pack shows what its scripts may call and who signed the keys', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    ;(window as any).__stub = {
+      List: [{ name: 'contoso-tools', version: '1.0.0', author: 'Contoso', description: '', dir: 'C:\packs\contoso', status: 'untrusted', digest: 'ab',
+        permissions: ['Exchange: Recipient Management'], workflows: null,
+        actions: [{ id: 'hold', label: { en: 'Hold' }, page: 'users', danger: 'write', module: 'exo', cmdlets: ['Get-Mailbox', 'Export-Csv'], sensitive: ['Export-Csv'] }] }],
+      Keys: [{ key: 'RWQkey', name: 'Contoso IT' }],
+    }
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  const cmdlets = page.locator('[data-cmdlets]')
+  await expect(cmdlets.getByText('Get-Mailbox')).toBeVisible()
+  await expect(cmdlets.getByText('Export-Csv')).toHaveAttribute('title', 'Reaches the network or the disk')
+  await expect(page.getByText('Its scripts may reach the network or files: Export-Csv.')).toBeVisible()
+  await expect(page.getByText('Exchange: Recipient Management')).toBeVisible()
+  await expect(page.getByText('Contoso IT', { exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the worker card says whether the worker answers and what it can run', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    const w = { addr: 'srv-ps01:8743', fingerprint: 'ab', name: 'SRV-PS01', pairedAt: '2026-10-01T10:00:00Z', families: ['exo'],
+      unavailable: ['teams'], version: '2.0.0', lastSeen: '2026-10-08T09:00:00Z', online: false }
+    ;(window as any).__stub = { Status: w, Check: { ...w, lastError: 'dial tcp: connection refused' } }
+  })
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto('/')
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  await expect(page.locator('[data-worker-state]')).toHaveText('Not answering')
+  await expect(page.getByText('dial tcp: connection refused')).toBeVisible()
+  await expect(page.getByText('Teams PS · module missing there')).toBeVisible()
+  await expect(page.getByText(/Last answered .* · paired /)).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('Settings links to the author on GitHub and Telegram', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.goto('/')
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  const header = page.locator('header').filter({ hasText: 'Settings' })
+  await expect(header.getByRole('button', { name: 'GitHub — Nemu-x' })).toBeVisible()
+  await expect(header.getByRole('button', { name: 'Telegram channel — @nemux_dev' })).toBeVisible()
 })

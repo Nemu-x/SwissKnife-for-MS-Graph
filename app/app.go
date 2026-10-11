@@ -9,7 +9,7 @@ import (
 
 // baseVersion is the current release line. Bump it together with tagging a
 // release — the Release workflow fails if the tag and this constant disagree.
-const baseVersion = "1.1.0"
+const baseVersion = "2.0.0"
 
 // version is injected at build time via -ldflags "-X main.version=...".
 // Local builds (no ldflags) fall back to baseVersion with a -dev suffix
@@ -36,6 +36,8 @@ func NewApp(s *session.Session, update *services.UpdateService) *App {
 func (a *App) startup(ctx context.Context) {
 	a.session.SetAppContext(ctx)
 	a.update.SetAppContext(ctx)
+	// Scheduled configuration-drift checks run while the app is open.
+	services.StartDriftWatcher(ctx, a.session)
 }
 
 func (a *App) Version() string {

@@ -35,7 +35,7 @@ func (r *RolesService) Members(roleID string) ([]json.RawMessage, error) {
 // AddMember assigns a user (by UPN/id) to a directory role. Destructive-adjacent
 // (grants privilege) so it is write-guarded and audited.
 func (r *RolesService) AddMember(roleID, upn string) error {
-	if err := r.s.GuardWrite(); err != nil {
+	if err := r.s.GuardDangerous(); err != nil {
 		return err
 	}
 	c, err := r.s.Client()

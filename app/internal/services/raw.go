@@ -28,8 +28,11 @@ func (r *RawService) Send(method, path, body string) (json.RawMessage, error) {
 	if !allowedMethods[method] {
 		return nil, errors.New("method must be GET/POST/PATCH/PUT/DELETE")
 	}
+	// Any non-GET request may be destructive: POST reaches action endpoints
+	// (/wipe, /revokeSignInSessions) and /$batch can wrap DELETEs, so every
+	// write needs the destructive ceiling, not only DELETE.
 	if method != http.MethodGet {
-		if err := r.s.GuardWrite(); err != nil {
+		if err := r.s.GuardDangerous(); err != nil {
 			return nil, err
 		}
 	}

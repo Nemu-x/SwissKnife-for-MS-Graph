@@ -15,8 +15,10 @@ import (
 	"time"
 	"unicode"
 
+	"swissknife-app/internal/engine"
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/ops"
+	"swissknife-app/internal/pwsh"
 	"swissknife-app/internal/session"
 )
 
@@ -49,6 +51,9 @@ type SnapshotSection struct {
 	Count   int    `json:"count"`
 	Skipped bool   `json:"skipped,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// Truncated marks a paged section cut at its safety cap (Count objects):
+	// it is incomplete, so a diff treats it as not comparable.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // SnapshotMeta is what the UI lists: identity, when, what was captured.
@@ -56,7 +61,8 @@ type SnapshotMeta struct {
 	ID       string            `json:"id"`
 	Name     string            `json:"name"`
 	TakenAt  time.Time         `json:"takenAt"`
-	Tenant   string            `json:"tenant,omitempty"` // connection profile name
+	Tenant   string            `json:"tenant,omitempty"`   // connection profile name
+	TenantID string            `json:"tenantId,omitempty"` // directory id, to refuse cross-tenant restores
 	Sections []SnapshotSection `json:"sections"`
 }
 
@@ -86,7 +92,8 @@ type ObjectChange struct {
 // SectionDiff is the per-section result of comparing two snapshots.
 type SectionDiff struct {
 	Name      string         `json:"name"`
-	Skipped   bool           `json:"skipped,omitempty"` // missing or skipped on either side — not comparable
+	Skipped   bool           `json:"skipped,omitempty"`   // missing or skipped on either side — not comparable
+	Truncated bool           `json:"truncated,omitempty"` // capped on either side (also Skipped)
 	Note      string         `json:"note,omitempty"`
 	Added     []ObjectChange `json:"added"`
 	Removed   []ObjectChange `json:"removed"`
@@ -108,51 +115,115 @@ type SnapshotDiff struct {
 // huge tenant cannot turn a snapshot into a multi-minute crawl (ADR-003).
 const snapshotListCap = 5000
 
+// collectFunc reads one Graph section; truncated reports that a safety cap
+// cut the collection short.
+type collectFunc func(ctx context.Context, c *graphapi.Client) (objs []map[string]any, truncated bool, err error)
+
 type sectionCollector struct {
 	name    string
-	collect func(ctx context.Context, c *graphapi.Client) ([]map[string]any, error)
+	collect collectFunc
+	// ps marks a section read through PowerShell instead (Exchange, Teams);
+	// it is skipped, with the reason, when that backend is not available.
+	ps *psSection
+}
+
+// psSection is a PowerShell-backed snapshot section: one Get- cmdlet, the
+// properties worth versioning, and the one that identifies an object.
+type psSection struct {
+	backend engine.Backend
+	family  string
+	cmdlet  string
+	params  map[string]any
+	sel     []string
+	idProp  string
 }
 
 // snapshotSections is the fixed capture set, in the order they are collected
 // (also the order sections are reported in a diff).
 var snapshotSections = []sectionCollector{
-	{"conditionalAccessPolicies", listSection("/identity/conditionalAccess/policies", nil, 0)},
-	{"namedLocations", listSection("/identity/conditionalAccess/namedLocations", nil, 0)},
-	{"directoryRoles", collectDirectoryRoles},
-	{"authorizationPolicy", getSection("/policies/authorizationPolicy")},
-	{"authenticationMethodsPolicy", getSection("/policies/authenticationMethodsPolicy")},
+	{"conditionalAccessPolicies", listSection("/identity/conditionalAccess/policies", nil, 0), nil},
+	{"namedLocations", listSection("/identity/conditionalAccess/namedLocations", nil, 0), nil},
+	{"directoryRoles", uncapped(collectDirectoryRoles), nil},
+	{"authorizationPolicy", getSection("/policies/authorizationPolicy"), nil},
+	{"authenticationMethodsPolicy", getSection("/policies/authenticationMethodsPolicy"), nil},
 	{"subscribedSkus", listSection("/subscribedSkus", url.Values{
 		"$select": {"id,skuId,skuPartNumber,capabilityStatus,consumedUnits,prepaidUnits"},
-	}, 0)},
-	{"domains", listSection("/domains", nil, 0)},
+	}, 0), nil},
+	{"domains", listSection("/domains", nil, 0), nil},
 	{"groups", listSection("/groups", url.Values{
 		"$select": {"id,displayName,groupTypes,securityEnabled,mailEnabled,membershipRule"},
 		"$top":    {"999"},
-	}, snapshotListCap)},
+	}, snapshotListCap), nil},
 	{"applications", listSection("/applications", url.Values{
 		"$select": {"id,appId,displayName,passwordCredentials,keyCredentials"},
 		"$top":    {"999"},
-	}, snapshotListCap)},
-	{"servicePrincipals", collectServicePrincipalCount},
+	}, snapshotListCap), nil},
+	{"servicePrincipals", uncapped(collectServicePrincipalCount), nil},
+	{"intuneConfigurations", listSection("/deviceManagement/deviceConfigurations", url.Values{"$expand": {"assignments"}}, 0), nil},
+	{"intuneCompliancePolicies", uncapped(collectCompliancePolicies), nil},
+	{"exchangeOrganizationConfig", nil, &psSection{pwsh.BackendExchangePS, pwsh.FamilyExchange, "Get-OrganizationConfig", nil,
+		[]string{"Name", "AuditDisabled", "OAuth2ClientProfileEnabled", "CustomerLockBoxEnabled", "MailTipsExternalRecipientsTipsEnabled",
+			"DefaultAuthenticationPolicy", "FocusedInboxOn", "PublicFoldersEnabled"}, "Name"}},
+	{"transportRules", nil, &psSection{pwsh.BackendExchangePS, pwsh.FamilyExchange, "Get-TransportRule", nil,
+		[]string{"Guid", "Name", "State", "Mode", "Priority", "Description"}, "Guid"}},
+	{"teamsMeetingPolicies", nil, &psSection{pwsh.BackendTeamsPS, pwsh.FamilyTeams, "Get-CsTeamsMeetingPolicy", nil,
+		[]string{"Identity", "AllowCloudRecording", "AllowTranscription", "AllowAnonymousUsersToJoinMeeting", "AutoAdmittedUsers",
+			"AllowExternalParticipantGiveRequestControl", "AllowMeetNow"}, "Identity"}},
 }
 
-func listSection(path string, params url.Values, maxItems int) func(context.Context, *graphapi.Client) ([]map[string]any, error) {
-	return func(ctx context.Context, c *graphapi.Client) ([]map[string]any, error) {
-		raw, err := c.ListAll(ctx, path, params, maxItems)
-		if err != nil {
-			return nil, err
+// collectPS reads a PowerShell section through the session's engine.
+func (x *SnapshotService) collectPS(ctx context.Context, sec *psSection) ([]map[string]any, error) {
+	eng := EngineFor(x.s)
+	if r := eng.BackendStatus(sec.backend); r != nil {
+		return nil, fmt.Errorf("PowerShell backend not available (%s)", r.Key)
+	}
+	env := eng.Env(ctx)
+	if env.PS == nil {
+		return nil, errors.New("PowerShell backend not available")
+	}
+	rows, err := env.PS.Invoke(env, sec.family, sec.cmdlet, sec.params, sec.sel...)
+	if err != nil {
+		return nil, err
+	}
+	objs, err := decodeObjects(rows)
+	if err != nil {
+		return nil, err
+	}
+	// Objects need an "id" for diffs and restore keys.
+	for _, o := range objs {
+		if v, ok := o[sec.idProp]; ok && v != nil {
+			o["id"] = fmt.Sprint(v)
 		}
-		return decodeObjects(raw)
+	}
+	return objs, nil
+}
+
+func listSection(path string, params url.Values, maxItems int) collectFunc {
+	return func(ctx context.Context, c *graphapi.Client) ([]map[string]any, bool, error) {
+		raw, truncated, err := c.ListAllCapped(ctx, path, params, maxItems)
+		if err != nil {
+			return nil, false, err
+		}
+		objs, err := decodeObjects(raw)
+		return objs, truncated, err
 	}
 }
 
-func getSection(path string) func(context.Context, *graphapi.Client) ([]map[string]any, error) {
-	return func(ctx context.Context, c *graphapi.Client) ([]map[string]any, error) {
+// uncapped adapts a collector that always reads everything.
+func uncapped(f func(context.Context, *graphapi.Client) ([]map[string]any, error)) collectFunc {
+	return func(ctx context.Context, c *graphapi.Client) ([]map[string]any, bool, error) {
+		objs, err := f(ctx, c)
+		return objs, false, err
+	}
+}
+
+func getSection(path string) collectFunc {
+	return func(ctx context.Context, c *graphapi.Client) ([]map[string]any, bool, error) {
 		var obj map[string]any
 		if err := c.Get(ctx, path, nil, &obj); err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		return []map[string]any{obj}, nil
+		return []map[string]any{obj}, false, nil
 	}
 }
 
@@ -188,6 +259,32 @@ func collectDirectoryRoles(ctx context.Context, c *graphapi.Client) ([]map[strin
 		role["members"] = list
 	}
 	return roles, nil
+}
+
+// collectCompliancePolicies lists compliance policies with their assignments
+// and the actions taken on non-compliance (grace period, notifications): a
+// restore recreates a deleted policy with them. A policy whose actions cannot
+// be read is kept without them.
+func collectCompliancePolicies(ctx context.Context, c *graphapi.Client) ([]map[string]any, error) {
+	objs, _, err := listSection("/deviceManagement/deviceCompliancePolicies", url.Values{"$expand": {"assignments"}}, 0)(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range objs {
+		id, _ := o["id"].(string)
+		var res struct {
+			Value []map[string]any `json:"value"`
+		}
+		if id != "" && c.Get(ctx, "/deviceManagement/deviceCompliancePolicies/"+url.PathEscape(id)+"/scheduledActionsForRule",
+			url.Values{"$expand": {"scheduledActionConfigurations"}}, &res) == nil {
+			list := make([]any, 0, len(res.Value))
+			for _, r := range res.Value {
+				list = append(list, r)
+			}
+			o["scheduledActionsForRule"] = list
+		}
+	}
+	return objs, nil
 }
 
 // collectServicePrincipalCount records only how many enterprise apps exist —
@@ -236,17 +333,59 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 		name = "snapshot"
 	}
 
-	doc := snapshotFile{Sections: map[string][]map[string]any{}}
+	total := len(snapshotSections)
+	doc, skipped, err := x.collect(ctx, c, func(i int, section string) {
+		emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": section, "done": i, "total": total})
+	})
+	if err != nil {
+		return nil, err
+	}
+	emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": "", "done": total, "total": total})
+
+	now := x.nextStamp()
+	doc.Meta.Name = name
+	doc.Meta.TakenAt = now
+	doc.Meta.Tenant = x.s.ProfileName()
+	doc.Meta.TenantID = x.s.TenantID()
+	// The id is claimed by creating the file exclusively: two snapshots in the
+	// same second (or two app instances) can never overwrite each other.
+	// A cancel that arrived with the last progress event must not leave a file.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	id, err := writeSnapshotExclusive(ctx, dir, doc, now, name)
+	doc.Meta.ID = id
+	x.s.Record("snapshot.take", doc.Meta.ID, fmt.Sprintf("%d sections, %d skipped", total, skipped), err)
+	if err != nil {
+		return nil, err
+	}
+	return &doc.Meta, nil
+}
+
+// collect reads every section (best-effort: a section the app cannot read is
+// recorded as skipped). progress hears which section starts. It fails only
+// on cancel, or when nothing at all could be read.
+func (x *SnapshotService) collect(ctx context.Context, c *graphapi.Client, progress func(i int, section string)) (*snapshotFile, int, error) {
+	doc := &snapshotFile{Sections: map[string][]map[string]any{}}
 	total := len(snapshotSections)
 	skipped := 0
 	var firstErr error
 	for i, sec := range snapshotSections {
-		emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": sec.name, "done": i, "total": total})
+		if progress != nil {
+			progress(i, sec.name)
+		}
 		info := SnapshotSection{Name: sec.name}
-		objs, err := sec.collect(ctx, c)
+		var objs []map[string]any
+		var truncated bool
+		var err error
+		if sec.ps != nil {
+			objs, err = x.collectPS(ctx, sec.ps)
+		} else {
+			objs, truncated, err = sec.collect(ctx, c)
+		}
 		switch {
 		case err != nil && ctx.Err() != nil:
-			return nil, ctx.Err() // shutdown / cancel: nothing to save
+			return nil, 0, ctx.Err() // shutdown / cancel: nothing to save
 		case err != nil:
 			info.Skipped = true
 			info.Error = wrapOpErr(err).Error()
@@ -260,34 +399,17 @@ func (x *SnapshotService) Take(name string) (*SnapshotMeta, error) {
 			}
 			sortObjects(objs)
 			info.Count = len(objs)
+			info.Truncated = truncated
 			doc.Sections[sec.name] = objs
 		}
 		doc.Meta.Sections = append(doc.Meta.Sections, info)
 	}
-	emitOp(x.s.Ctx(), op, "snapshot:progress", map[string]any{"section": "", "done": total, "total": total})
 	if skipped == total {
 		// Nothing readable at all (expired token, no permissions): a snapshot
 		// of nothing would only produce a misleading "everything removed" diff.
-		return nil, fmt.Errorf("every section failed — first error: %w", firstErr)
+		return nil, 0, fmt.Errorf("every section failed — first error: %w", firstErr)
 	}
-
-	now := x.nextStamp()
-	doc.Meta.Name = name
-	doc.Meta.TakenAt = now
-	doc.Meta.Tenant = x.s.ProfileName()
-	// The id is claimed by creating the file exclusively: two snapshots in the
-	// same second (or two app instances) can never overwrite each other.
-	// A cancel that arrived with the last progress event must not leave a file.
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	id, err := writeSnapshotExclusive(ctx, dir, &doc, now, name)
-	doc.Meta.ID = id
-	x.s.Record("snapshot.take", doc.Meta.ID, fmt.Sprintf("%d sections, %d skipped", total, skipped), err)
-	if err != nil {
-		return nil, err
-	}
-	return &doc.Meta, nil
+	return doc, skipped, nil
 }
 
 // List returns the saved snapshots, newest first.
@@ -664,6 +786,15 @@ func diffSnapshots(a, b *snapshotFile) *SnapshotDiff {
 			if sd.Note == "" {
 				sd.Note = ib.Error
 			}
+		case ia.Truncated || ib.Truncated:
+			// A capped section holds an arbitrary first N objects: comparing
+			// it would report the objects beyond the cap as added/removed.
+			sd.Skipped, sd.Truncated = true, true
+			n := ia.Count
+			if !ia.Truncated {
+				n = ib.Count
+			}
+			sd.Note = fmt.Sprintf("truncated at %d objects — not comparable", n)
 		default:
 			diffObjects(a.Sections[name], b.Sections[name], &sd)
 		}

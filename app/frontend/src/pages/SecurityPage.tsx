@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ShieldAlert, AppWindow, Search, Lightbulb, Camera, GitCompare, Trash2, ExternalLink } from 'lucide-react'
+import { ShieldAlert, AppWindow, Search, Lightbulb, Camera, GitCompare, Trash2, ExternalLink, BellRing, FolderDown } from 'lucide-react'
 import { TaskPage, TaskForm, type TaskAction, type ActionStatus } from '../components/TaskPage'
 import { ResultView } from '../components/ResultView'
 import { Button, Field, Input, Select, Badge, Spinner } from '../components/ui'
 import { useStore } from '../lib/store'
 import { useConfirm } from '../lib/useConfirm'
 import { api, errMessage, type GraphObject } from '../lib/api'
+import { openExternal, safeHttpsUrl } from '../lib/links'
 import type { services } from '../../wailsjs/go/models'
 
 type Tab = 'ca' | 'consents' | 'recommendations' | 'snapshot' | 'drift'
@@ -200,6 +201,37 @@ export function SecurityPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-time rehydration only
   }, [])
 
+  // --- drift watch & export ---
+  const [exportId, setExportId] = useState('')
+  const [watch, setWatch] = useState<{ baselineId: string; everyHours: number; notifyTeams: boolean; lastCheck?: any; lastSummary?: any; lastError?: string }>(
+    { baselineId: '', everyHours: 0, notifyTeams: false })
+  const checkingDrift = !!jobs.driftCheck?.running
+  // Re-read on mount and whenever a check ends (it may end on another page).
+  // Settings come from disk once; later reloads take only the result, so
+  // edits made while a check ran are kept.
+  const watchLoaded = useRef(false)
+  useEffect(() => {
+    if (checkingDrift) return
+    api.snapshot.getDriftWatch().then((w: any) => {
+      if (!w) return
+      if (!watchLoaded.current) { watchLoaded.current = true; setWatch(w); return }
+      setWatch((cur) => ({ ...cur, lastCheck: w.lastCheck, lastSummary: w.lastSummary, lastError: w.lastError }))
+    }).catch(() => {})
+  }, [checkingDrift])
+  const saveWatch = () =>
+    api.snapshot.setDriftWatch(watch).then((w) => { setWatch(w as any); toast('ok', t('common.save')) }).catch((e) => toast('err', errMessage(e)))
+  const checkDrift = async () => {
+    if (jobs.driftCheck?.running) return
+    patchJob('driftCheck', { running: true, startedAt: Date.now() })
+    try {
+      setWatch(await api.snapshot.setDriftWatch(watch) as any)
+      const sum = await api.snapshot.checkDriftNow()
+      const total = (sum.added || 0) + (sum.removed || 0) + (sum.changed || 0)
+      if (total === 0) toast('ok', t('snapshot.noDrift'))
+      setWatch((w) => ({ ...w, lastSummary: sum, lastCheck: new Date().toISOString(), lastError: '' }))
+    } catch (e) { toast('err', errMessage(e)) } finally { patchJob('driftCheck', { running: false }) }
+  }
+
   // --- snapshots ---
   const loadSnaps = useCallback(async () => {
     try {
@@ -336,6 +368,54 @@ export function SecurityPage() {
           {snaps && snaps.length > 0 && (
             <p className="text-xs text-[var(--text-faint)]">{t('snapshot.existing')}: {snaps.length}</p>
           )}
+          {snaps && snaps.length > 0 && (
+            <div className="flex gap-2">
+              <Select value={exportId} onChange={(e) => setExportId(e.target.value)} className="min-w-0 flex-1">
+                <option value="">{t('snapshot.exportPick')}</option>
+                {snaps.map((m) => <option key={m.id} value={m.id}>{snapLabel(m)}</option>)}
+              </Select>
+              <Button variant="subtle" disabled={!exportId}
+                onClick={() => api.snapshot.exportFolder(exportId).then((dir) => dir && toast('ok', t('snapshot.exported', { dir }))).catch((e) => toast('err', errMessage(e)))}>
+                <FolderDown size={15} /> {t('snapshot.export')}
+              </Button>
+            </div>
+          )}
+        </TaskForm>
+      ),
+    },
+    {
+      id: 'driftWatch', label: t('snapshot.tileWatch'), hint: t('snapshot.hintWatch'), icon: <BellRing size={16} />,
+      note: <p>{t('snapshot.noteWatch')}</p>,
+      panel: (
+        <TaskForm>
+          <Field label={t('snapshot.baseline')}>
+            <Select value={watch.baselineId} onChange={(e) => setWatch({ ...watch, baselineId: e.target.value })} className="w-full">
+              <option value="">—</option>
+              {(snaps || []).map((m) => <option key={m.id} value={m.id}>{snapLabel(m)}</option>)}
+            </Select>
+          </Field>
+          <Field label={t('snapshot.every')}>
+            <Select value={String(watch.everyHours)} onChange={(e) => setWatch({ ...watch, everyHours: Number(e.target.value) })} className="w-full">
+              {[0, 1, 6, 24].map((h) => <option key={h} value={h}>{h === 0 ? t('snapshot.watchOff') : t('snapshot.everyHours', { n: h })}</option>)}
+            </Select>
+          </Field>
+          <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+            <input type="checkbox" checked={watch.notifyTeams} onChange={(e) => setWatch({ ...watch, notifyTeams: e.target.checked })} />
+            {t('snapshot.notifyTeams')}
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="primary" onClick={saveWatch}>{t('common.save')}</Button>
+            <Button variant="subtle" disabled={!watch.baselineId || checkingDrift} onClick={checkDrift}>
+              {checkingDrift ? <Spinner /> : <GitCompare size={15} />} {t('snapshot.checkNow')}
+            </Button>
+          </div>
+          {watch.lastCheck && !String(watch.lastCheck).startsWith('0001') && (
+            <p className="text-xs text-[var(--text-faint)]">
+              {t('snapshot.lastCheck', { when: new Date(watch.lastCheck as unknown as string).toLocaleString() })}
+              {watch.lastSummary ? ' · ' + t('snapshot.lastResult', watch.lastSummary) : ''}
+              {watch.lastError ? ' · ' + watch.lastError : ''}
+            </p>
+          )}
         </TaskForm>
       ),
     },
@@ -435,10 +515,10 @@ export function SecurityPage() {
             {steps.map((s, i) => (
               <li key={i} className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-xs">
                 <span className="whitespace-pre-wrap">{s.text}</span>
-                {s.actionUrl?.url && (
-                  <a href={s.actionUrl.url} target="_blank" rel="noreferrer" className="ml-2 inline-flex items-center gap-1 text-[var(--accent2)] hover:underline">
-                    {s.actionUrl.displayName || s.actionUrl.url} <ExternalLink size={11} />
-                  </a>
+                {safeHttpsUrl(s.actionUrl?.url) && (
+                  <button type="button" onClick={() => openExternal(s.actionUrl?.url)} className="ml-2 inline-flex items-center gap-1 text-[var(--accent2)] hover:underline">
+                    {s.actionUrl?.displayName || s.actionUrl?.url} <ExternalLink size={11} />
+                  </button>
                 )}
               </li>
             ))}
@@ -459,8 +539,8 @@ export function SecurityPage() {
                   <span className="min-w-0 flex-1 truncate">{x.displayName || x.subjectId}</span>
                   {x.resourceType && <span className="text-[var(--text-faint)]">{x.resourceType}</span>}
                   {x.status && <Badge kind={statusBadge(x.status)}>{t(`security.statusLabel.${x.status}`, { defaultValue: String(x.status) })}</Badge>}
-                  {x.portalUrl && (
-                    <a href={x.portalUrl} target="_blank" rel="noreferrer" className="text-[var(--accent2)]" aria-label={String(x.displayName || x.subjectId || t('security.openInPortal'))}><ExternalLink size={12} /></a>
+                  {safeHttpsUrl(x.portalUrl) && (
+                    <button type="button" onClick={() => openExternal(x.portalUrl)} className="text-[var(--accent2)]" aria-label={String(x.displayName || x.subjectId || t('security.openInPortal'))}><ExternalLink size={12} /></button>
                   )}
                 </div>
               ))}
@@ -506,7 +586,10 @@ export function SecurityPage() {
                 <span className="min-w-0 flex-1">{sectionName(s.name)}</span>
                 {s.skipped
                   ? <span className="flex items-center gap-2"><Badge kind="warn">{t('snapshot.skipped')}</Badge><span className="max-w-[320px] truncate text-[var(--text-faint)]" title={s.error ? errMessage(s.error) : ''}>{s.error ? errMessage(s.error) : ''}</span></span>
-                  : <span className="text-[var(--text-dim)]">{t('snapshot.objectsN', { n: s.count })}</span>}
+                  : <span className="flex items-center gap-2">
+                      {s.truncated && <span title={t('snapshot.truncatedHint', { n: s.count })}><Badge kind="warn">{t('snapshot.truncatedAt', { n: s.count })}</Badge></span>}
+                      <span className="text-[var(--text-dim)]">{t('snapshot.objectsN', { n: s.count })}</span>
+                    </span>}
               </div>
             ))}
           </div>
@@ -579,7 +662,7 @@ export function SecurityPage() {
           )}
         </summary>
         <div className="flex flex-col gap-1.5 border-t border-[var(--border)] p-2">
-          {s.skipped && <p className="text-xs text-[var(--text-faint)]">{s.note ? errMessage(s.note) : ''}</p>}
+          {s.skipped && <p className="text-xs text-[var(--text-faint)]">{s.truncated ? t('snapshot.truncatedNote') : s.note ? errMessage(s.note) : ''}</p>}
           {!s.skipped && n === 0 && <p className="text-xs text-[var(--text-faint)]">{t('snapshot.noChangesSection')}</p>}
           {(s.added || []).map((o) => objectRow(o, 'added'))}
           {(s.removed || []).map((o) => objectRow(o, 'removed'))}
