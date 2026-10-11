@@ -207,7 +207,7 @@ export function TaskPage({
                         <span className={`mt-0.5 shrink-0 ${a.variant === 'danger' ? 'text-[var(--danger)]' : 'text-[var(--accent)]'}`}>{a.icon}</span>
                         <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-[var(--text)]">{a.label}</span>
                         {a.badge && (
-                          <span className="shrink-0 rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-faint)]">
+                          <span title={a.badge} className="max-w-[45%] shrink-0 truncate rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-faint)]">
                             {a.badge}
                           </span>
                         )}

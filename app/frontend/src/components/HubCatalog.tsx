@@ -76,7 +76,7 @@ export function HubCatalog({ onInstalled }: { onInstalled: (list: unknown) => vo
               <span className="text-sm font-medium">{localized(p.title) || p.name}</span>
               <Badge kind="neutral">{t(`hub.kind.${p.kind}`)}</Badge>
               {/* The index is not authenticated: the signature is checked after install. */}
-              {p.signed && <Badge kind="neutral"><ShieldCheck size={11} /> {t('hub.signed')}</Badge>}
+              {p.signed && <span title={t('hub.signedHint')}><Badge kind="neutral"><ShieldCheck size={11} className="-mt-0.5 mr-1 inline" />{t('hub.signed')}</Badge></span>}
               <span className="text-xs text-[var(--text-faint)]">{p.version}{p.author ? ` · ${p.author}` : ''}</span>
             </div>
             {p.description && <p className="mt-0.5 text-xs text-[var(--text-dim)]">{localized(p.description)}</p>}
