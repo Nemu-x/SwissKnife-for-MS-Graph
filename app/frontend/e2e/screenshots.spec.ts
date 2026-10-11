@@ -16,12 +16,74 @@ const USERS = [
   { id: 'u3', displayName: 'Nadia Fisher', userPrincipalName: 'nadia@contoso.com', accountEnabled: false, jobTitle: 'Contractor' },
 ]
 
+const user = { name: 'user', kind: 'user', required: true }
+const yesNo = (name: string, label: string) => ({ name, kind: 'choice', options: ['yes', 'no'], default: 'yes', label: { en: label } })
+
+const CATALOG = [
+  { id: 'pack.security-basics.compromisedUser', page: 'security', danger: 'destructive', confirmField: 'user', available: true, backend: 'workflow',
+    pack: 'security-basics', workflow: true, capability: 'pack.security-basics.compromisedUser',
+    label: { en: 'Compromised account response' }, hint: { en: 'Block, sign out everywhere, then clean up what an attacker leaves behind.' },
+    fields: [{ ...user, label: { en: 'Account' } }, yesNo('resetPassword', 'Reset the password'), yesNo('resetMfa', 'Reset MFA'), yesNo('cleanMailbox', 'Stop forwarding and suspicious rules')] },
+  { id: 'teams.userPolicy', page: 'teams', danger: 'write', available: true, backend: 'teams-ps', fields: [user,
+    { name: 'policyType', kind: 'choice', required: true, options: ['meeting', 'messaging', 'calling', 'appSetup', 'appPermission'], default: 'meeting' },
+    { name: 'policy', kind: 'text', required: true, default: 'Global' }] },
+  { id: 'teams.groupPolicy', page: 'teams', danger: 'write', available: true, backend: 'teams-ps', fields: [{ name: 'group', kind: 'group', required: true },
+    { name: 'policyType', kind: 'choice', required: true, options: ['meeting', 'messaging', 'calling', 'appSetup', 'appPermission'], default: 'meeting' },
+    { name: 'policy', kind: 'text', required: true, default: 'Global' }] },
+  { id: 'teams.policies', page: 'teams', danger: 'read', available: true, backend: 'teams-ps', fields: [] },
+  { id: 'teams.effectivePolicies', page: 'teams', danger: 'read', available: true, backend: 'teams-ps', fields: [user] },
+]
+
+// What the compromised-account workflow would change, grouped by step.
+const PLAN = {
+  id: 'p1', actionId: 'pack.security-basics.compromisedUser', backend: 'workflow', inputs: {}, confirmTarget: 'nadia@contoso.com', changes: [
+    { target: 'nadia@contoso.com', field: 'signIn', op: 'set', before: 'allowed', after: 'blocked', step: 'user.signIn', stepNo: 1 },
+    { target: 'nadia@contoso.com', field: 'sessions', op: 'set', before: 'active', after: 'revoked', step: 'user.revokeSessions', stepNo: 2 },
+    { target: 'nadia@contoso.com', field: 'password', op: 'set', after: 'randomPassword', step: 'user.resetPassword', stepNo: 3 },
+    { target: 'nadia@contoso.com', field: 'authMethod', op: 'remove', before: 'Microsoft Authenticator (iPhone 15)', step: 'user.resetMfa', stepNo: 4 },
+    { target: 'nadia@contoso.com', field: 'authMethod', op: 'remove', before: 'phone +1 555 0100', step: 'user.resetMfa', stepNo: 4 },
+    { target: 'nadia@contoso.com', field: 'inboxRule', op: 'set', before: 'enabled', after: 'disabled', note: '', step: 'mail.disableRules', stepNo: 5 },
+    { target: 'nadia@contoso.com', field: 'forwarding', op: 'remove', before: 'smtp:billing@contoso-invoices.example', step: 'mailbox.forwarding', stepNo: 6 },
+  ],
+}
+
+const pack = (name: string, category: string, kind: string, title: string, description: string, installed = '') =>
+  ({ name, version: '1.0.0', category, kind, title: { en: title }, description: { en: description }, author: 'SwissKnife project',
+    signed: true, installed, update: false, digest: name })
+const HUB = {
+  url: 'https://raw.githubusercontent.com/Nemu-x/SwissKnife-Action-Hub/main/', custom: false, packs: [
+    pack('security-basics', 'security', 'workflow', 'Security basics', 'Compromised account response, shared-mailbox conversion and a quick offboarding — built-in actions only.', '1.1.0'),
+    pack('phishing-response', 'security', 'workflow', 'Phishing response', 'Block the sender, report the message to Microsoft and purge it from every mailbox — or undo a false positive.'),
+    pack('hr-lifecycle', 'hr', 'workflow', 'HR lifecycle', 'New joiner, team move, leave of absence and return from leave — built-in actions only.'),
+    pack('mailbox-delegation', 'exchange', 'workflow', 'Mailbox delegation', "Give or take back an assistant's access in one step, open a shared mailbox to a user, set up a room."),
+    pack('exchange-audit', 'reports', 'script', 'Exchange audit reports', 'Who can open each shared mailbox, mailboxes with auditing off, distribution lists nobody is in (PowerShell, read-only).'),
+    pack('teams-governance', 'teams', 'workflow', 'Teams governance', 'Give a department or a person its meeting, messaging and calling policies in one step.'),
+    pack('intune-rollout', 'intune', 'workflow', 'Intune rollout', 'Roll a configuration profile and a compliance policy out to a group together — or take both back.'),
+  ],
+}
+
+const impl = (backend: string, state: string, extra: object = {}) => ({ backend, state, ...extra })
+const CAPS = [
+  { capability: 'entra.user.revokeSessions', action: 'user.revokeSessions', page: 'users', danger: 'destructive', impls: [impl('graph', 'runs')] },
+  { capability: 'entra.user.signIn', action: 'user.signIn', page: 'users', danger: 'write', impls: [impl('graph', 'runs')] },
+  { capability: 'exchange.mailbox.folderPermission', action: 'mailbox.folderPermission', page: 'mail', danger: 'write',
+    impls: [impl('exo-api', 'runs'), impl('exo-ps', 'ready', { via: 'worker' })] },
+  { capability: 'exchange.mailbox.fullAccess', action: 'mailbox.fullAccess', page: 'mail', danger: 'write', impls: [impl('exo-ps', 'runs', { via: 'worker' })] },
+  { capability: 'exchange.mailbox.sendOnBehalf', action: 'mailbox.sendOnBehalf', page: 'mail', danger: 'write',
+    impls: [impl('exo-api', 'runs'), impl('exo-ps', 'ready', { via: 'worker' })] },
+  { capability: 'exchange.transportRule.state', action: 'transportRule.state', page: 'mail', danger: 'write', impls: [impl('exo-ps', 'runs', { via: 'worker' })] },
+  { capability: 'ad.user.unlock', action: 'ad.unlock', page: 'onprem', danger: 'write', impls: [impl('ldap', 'unavailable', { reason: { key: 'ldapNotConnected' } })] },
+  { capability: 'teams.policy.assignUser', action: 'teams.userPolicy', page: 'teams', danger: 'write', impls: [impl('teams-ps', 'runs', { via: 'local' })] },
+]
+
 async function stub(page: Page) {
-  await page.addInitScript(([users]: [unknown]) => {
+  await page.addInitScript(([users, catalog, plan, hub, caps]: unknown[]) => {
+    // Bindings are window.go.<package>.<Service>.<Method>: answers can be
+    // keyed "Service.Method" when two services share a method name.
     const results: Record<string, unknown> = {
       GetStatus: { connected: true, profileName: 'contoso', readOnly: false },
-      Profiles: [], Domains: ['contoso.com'], Version: '1.0.0', Probe: {},
-      Check: { currentVersion: '1.0.0', latestVersion: '1.0.0', updateAvailable: false, notes: '', url: '' },
+      Profiles: [], Domains: ['contoso.com'], Version: '2.0.0', Probe: {},
+      Check: { currentVersion: '2.0.0', latestVersion: '2.0.0', updateAvailable: false, notes: '', url: '' },
       Summary: {
         orgName: 'Contoso Ltd', users: 214, groups: 38, domains: 3, licensesUsed: 187,
         licenses: [
@@ -32,7 +94,14 @@ async function stub(page: Page) {
           { skuPartNumber: 'TEAMS_EXPLORATORY', consumed: 12, total: 100 },
         ],
       },
-      List: users,
+      'UsersService.List': users,
+      'PacksService.List': [],
+      'JournalService.List': [],
+      Catalog: catalog,
+      Plan: plan,
+      HubCatalog: hub,
+      Capabilities: caps,
+      Keys: [],
       Compare: [
         { kind: 'group', id: 'g1', name: 'Global Finance', status: 'missing', copyable: true },
         { kind: 'group', id: 'g2', name: 'IT_Helpdesk', status: 'missing', copyable: true },
@@ -46,62 +115,69 @@ async function stub(page: Page) {
         { id: 't1', displayName: 'HelpCenter', description: 'First line support' },
         { id: 't2', displayName: 'Intermark Team' },
       ],
-      CAPolicies: [
-        {
-          id: 'p1', displayName: 'Require MFA for all users', state: 'enabled',
-          conditions: {
-            users: { includeUsers: ['All'], excludeGroups: ['g-breakglass'] },
-            applications: { includeApplications: ['All'] },
-            clientAppTypes: ['browser', 'mobileAppsAndDesktopClients'],
-          },
-          grantControls: { operator: 'OR', builtInControls: ['mfa'] },
-        },
-        { id: 'p2', displayName: 'Block legacy authentication', state: 'enabled', conditions: { users: { includeUsers: ['All'] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['exchangeActiveSync', 'other'] }, grantControls: { operator: 'OR', builtInControls: ['block'] } },
-        { id: 'p3', displayName: 'Compliant device for admins', state: 'enabledForReportingButNotEnforced', conditions: { users: { includeRoles: ['r1', 'r2', 'r3'] }, applications: { includeApplications: ['All'] } }, grantControls: { operator: 'AND', builtInControls: ['mfa', 'compliantDevice'] } },
-      ],
-      Skus: [
-        { skuId: 'sku1', skuPartNumber: 'SPE_E3', consumedUnits: 120, prepaidUnits: { enabled: 150 } },
-        { skuId: 'sku2', skuPartNumber: 'ENTERPRISEPACK', consumedUnits: 52, prepaidUnits: { enabled: 55 } },
-      ],
-      SignInsFiltered: [
-        { id: 's1', userDisplayName: 'Nadia Fisher', userPrincipalName: 'nadia@contoso.com', appDisplayName: 'Office 365 Exchange Online', ipAddress: '203.0.113.24', createdDateTime: '2026-07-28T09:14:02Z', errorCode: 53003, failureReason: 'Blocked by Conditional Access' },
-        { id: 's2', userDisplayName: 'Nadia Fisher', userPrincipalName: 'nadia@contoso.com', appDisplayName: 'Microsoft Teams', ipAddress: '203.0.113.24', createdDateTime: '2026-07-28T09:11:47Z', errorCode: 50126, failureReason: 'Invalid username or password' },
-      ],
     }
-    const method = (name: string) => () => Promise.resolve(results[name] ?? null)
-    const service = new Proxy({}, { get: (_t, m: string) => method(m) })
-    const namespace = new Proxy({}, { get: () => service })
+    const service = (svc: string) => new Proxy({}, {
+      get: (_t, m: string) => () => Promise.resolve(results[`${svc}.${m}`] ?? results[m] ?? null),
+    })
+    const namespace = new Proxy({}, { get: (_t, svc: string) => service(svc) })
     ;(window as any).go = new Proxy({}, { get: () => namespace })
     ;(window as any).runtime = new Proxy({}, {
       get: (_t, k: string) => (k === 'EventsOnMultiple' || k === 'EventsOn' ? () => () => {} : () => {}),
     })
-  }, [USERS] as [unknown])
+  }, [USERS, CATALOG, PLAN, HUB, CAPS])
+}
+
+// shoot brings a card to the top of the viewport and captures the window.
+async function shoot(page: Page, file: string) {
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: `${OUT}/${file}` })
 }
 
 test('README screenshots', async ({ page }) => {
   await page.setViewportSize({ width: 1360, height: 900 })
   await stub(page)
   await page.goto('/')
-  await page.waitForTimeout(400)
-  await page.screenshot({ path: `${OUT}/dashboard.png` })
+  await shoot(page, 'dashboard.png')
 
   // The palette: how the app is meant to be entered.
   await page.getByRole('button', { name: /What do you need to do/ }).click()
   await page.getByPlaceholder('Describe the task', { exact: false }).fill('access')
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: `${OUT}/palette.png` })
+  await shoot(page, 'palette.png')
   await page.keyboard.press('Escape')
 
-  // Action-first page: every capability visible, no drawers.
-  await page.getByRole('button', { name: 'Teams', exact: true }).click()
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: `${OUT}/teams.png` })
+  // A workflow pack: one preview, grouped by step, one confirmation.
+  await page.locator('nav').getByRole('button', { name: /Security/ }).first().click()
+  await page.getByRole('button', { name: /Compromised account response/ }).click()
+  await page.getByRole('button', { name: 'Account', exact: true }).click()
+  await page.getByPlaceholder('Search or paste', { exact: false }).fill('nadia@contoso.com')
+  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Preview changes' }).click()
+  // Tall enough for every step of the plan.
+  await page.setViewportSize({ width: 1360, height: 1180 })
+  await page.getByText('What will change').evaluate((el) => el.closest('section, form, div')?.scrollIntoView({ block: 'center' }))
+  await shoot(page, 'workflow-preview.png')
+  await page.setViewportSize({ width: 1360, height: 900 })
 
-  await page.getByRole('button', { name: 'Users & Admin' }).click()
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: `${OUT}/users.png` })
+  // Exchange and Teams PowerShell as tiles.
+  await page.locator('nav').getByRole('button', { name: 'Teams', exact: true }).click()
+  await shoot(page, 'teams.png')
+
+  // Settings: the Action Hub catalog and the capabilities view.
+  await page.locator('nav').getByRole('button', { name: 'Settings' }).click()
+  const packs = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Action packs' }) })
+  await packs.getByRole('button', { name: 'Action Hub' }).click()
+  await packs.getByText('Phishing response').waitFor()
+  await packs.evaluate((el) => el.scrollIntoView({ block: 'start' }))
+  await shoot(page, 'action-hub.png')
+
+  const caps = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Capabilities' }) })
+  await caps.getByRole('button', { name: 'Show capabilities' }).click()
+  await caps.locator('[data-capability]').first().waitFor()
+  await caps.evaluate((el) => el.scrollIntoView({ block: 'start' }))
+  await shoot(page, 'capabilities.png')
 
   // Access mirror with a real-looking diff.
+  await page.locator('nav').getByRole('button', { name: 'Users & Admin' }).click()
   await page.getByRole('button', { name: /Give the same access as another user/ }).click()
   await page.getByRole('button', { name: 'Copy access from (source)' }).first().click()
   await page.getByPlaceholder('Search or paste an ID…').fill('alice@contoso.com')
@@ -110,36 +186,5 @@ test('README screenshots', async ({ page }) => {
   await page.getByPlaceholder('Search or paste an ID…').fill('marcus@contoso.com')
   await page.keyboard.press('Enter')
   await page.getByRole('button', { name: /Preview the difference/ }).click()
-  await page.waitForTimeout(500)
-  await page.screenshot({ path: `${OUT}/access-mirror.png` })
-
-  // Audit: the "why can this person not sign in" flow.
-  await page.getByRole('button', { name: 'Audit', exact: true }).click()
-  await page.getByRole('button', { name: /Why can this person not sign in/ }).click()
-  await page.getByRole('button', { name: 'User (UPN or ID)' }).first().click()
-  await page.getByPlaceholder('Search or paste an ID…').fill('nadia@contoso.com')
-  await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: /Failed sign-ins only/ }).first().click()
-  await page.waitForTimeout(500)
-  await page.screenshot({ path: `${OUT}/audit.png` })
-
-  // Playbooks: the onboarding run with its role profile.
-  await page.getByRole('button', { name: 'Playbooks' }).click()
-  await page.getByRole('button', { name: /Onboard a new employee/ }).click()
-  await page.waitForTimeout(400)
-  await page.screenshot({ path: `${OUT}/playbooks.png` })
-
-  // Conditional Access, read as facts instead of raw JSON.
-  await page.getByRole('button', { name: 'Security review' }).click()
-  await page.getByRole('button', { name: /Review Conditional Access/ }).click()
-  await page.getByRole('button', { name: /Load policies/ }).click()
-  await page.waitForTimeout(400)
-  await page.getByRole('button', { name: /Require MFA for all users/ }).click()
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: `${OUT}/security.png` })
-
-  // Raw Graph console stays part of the story for the API-minded.
-  await page.getByRole('button', { name: 'Raw Graph' }).click()
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: `${OUT}/raw.png` })
+  await shoot(page, 'access-mirror.png')
 })
