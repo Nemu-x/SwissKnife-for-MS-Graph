@@ -32,14 +32,16 @@ func installPlatform(ctx context.Context, progress InstallProgress) error {
 	if err := checkPkgSignatureOutput(string(out)); err != nil {
 		return fmt.Errorf("the installer's signature is not valid — not installing it: %w", err)
 	}
-	// The file sits in a folder this user can write: check it once more right
-	// before the elevated install (macOS has no share-mode lock to hold).
 	if err := hashFileMatches(path, sum); err != nil {
 		return err
 	}
 	progress("install", -1)
-	q :=strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(path)
-	script := `do shell script "/usr/sbin/installer -pkg " & quoted form of "` + q + `" & " -target /" with administrator privileges`
+	// The file sits in a folder this user can write and macOS has no
+	// share-mode lock to hold, so the elevated script installs a root-owned
+	// copy that it verifies again itself (elevatedPkgInstall).
+	as := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
+	script := `do shell script "/bin/sh -c " & quoted form of "` + as.Replace(elevatedPkgInstall(sum)) +
+		`" & " sh " & quoted form of "` + as.Replace(path) + `" with administrator privileges`
 	out, err = exec.CommandContext(ctx, "/usr/bin/osascript", "-e", script).CombinedOutput()
 	if err != nil {
 		if strings.Contains(string(out), "-128") || strings.Contains(strings.ToLower(string(out)), "cancel") {

@@ -139,7 +139,9 @@ Add-Type -AssemblyName System.Text.Json
 function ConvertFrom-JsonElement($e) {
     switch ($e.ValueKind) {
         'Object' {
-            $h = @{}
+            # Case-sensitive like ConvertFrom-Json -AsHashtable: "key" and
+            # "Key" stay two entries.
+            $h = [Collections.Hashtable]::new([StringComparer]::Ordinal)
             foreach ($p in $e.EnumerateObject()) { $h[$p.Name] = ConvertFrom-JsonElement $p.Value }
             return $h
         }
@@ -152,6 +154,12 @@ function ConvertFrom-JsonElement($e) {
         'Number' {
             $n = 0L
             if ($e.TryGetInt64([ref]$n)) { return $n }
+            # An integer beyond Int64 stays exact (BigInteger, as before);
+            # only fractions and exponents become doubles.
+            $raw = $e.GetRawText()
+            if ($raw -notmatch '[.eE]') {
+                return [Numerics.BigInteger]::Parse($raw, [Globalization.CultureInfo]::InvariantCulture)
+            }
             return $e.GetDouble()
         }
         'True' { return $true }

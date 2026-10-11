@@ -27,7 +27,11 @@ type StaticToken string
 func (s StaticToken) Token(ctx context.Context) (string, error) { return string(s), nil }
 
 type Client struct {
-	http    *http.Client
+	http *http.Client
+	// api is http for token-bearing API calls: it follows a redirect only to
+	// the base URL's scheme and host (file transfers use http, whose
+	// pre-authenticated download redirects leave the Graph host).
+	api     *http.Client
 	baseURL string
 	tokens  TokenSource
 
@@ -70,6 +74,14 @@ func New(tokens TokenSource, opts ...Option) *Client {
 	for _, o := range opts {
 		o(c)
 	}
+	api := *c.http
+	api.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("graph: too many redirects")
+		}
+		return c.checkSameOrigin(req.URL.String())
+	}
+	c.api = &api
 	return c
 }
 
@@ -256,7 +268,7 @@ func (c *Client) once(ctx context.Context, method, u string, hdr http.Header, pa
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.api.Do(req)
 	if err != nil {
 		return nil, "", 0, err
 	}

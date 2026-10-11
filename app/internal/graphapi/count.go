@@ -25,7 +25,7 @@ func (c *Client) Count(ctx context.Context, collection string) (int, error) {
 	req.Header.Set("Accept", "text/plain")
 	req.Header.Set("ConsistencyLevel", "eventual")
 
-	resp, err := c.http.Do(req)
+	resp, err := c.api.Do(req)
 	if err != nil {
 		return 0, err
 	}

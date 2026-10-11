@@ -87,3 +87,37 @@ func TestBetaSameHostAllowed(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A redirect is followed only to the base URL's scheme and host: the
+// redirected request would carry the token (same host) or the body.
+func TestRedirectToForeignHostRefused(t *testing.T) {
+	foreign, hits := newForeignServer(t)
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, foreign.URL+"/steal", http.StatusTemporaryRedirect)
+	}))
+	if err := c.Get(context.Background(), "/users", nil, nil); err == nil || !strings.Contains(err.Error(), "refusing") {
+		t.Fatalf("err = %v, want refusal", err)
+	}
+	if _, err := c.PostForLocation(context.Background(), "/x", nil, map[string]any{"a": 1}); err == nil {
+		t.Fatal("redirected POST accepted")
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("foreign server got %d requests", hits.Load())
+	}
+}
+
+func TestRedirectSameHostFollowed(t *testing.T) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/old" {
+			http.Redirect(w, r, "/new", http.StatusFound)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("auth = %q", r.Header.Get("Authorization"))
+		}
+		fmt.Fprint(w, `{}`)
+	}))
+	if err := c.Get(context.Background(), "/old", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}

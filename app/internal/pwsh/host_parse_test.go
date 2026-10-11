@@ -36,7 +36,9 @@ func TestRealHostDecodesNestedRequests(t *testing.T) {
 	in := map[string]any{
 		"s": "x", "i": 42, "big": 9007199254740993, "f": 1.5, "t": true, "n": nil,
 		"arr": []any{"a", 2, []any{}}, "one": []any{"only"}, "empty": []any{},
-		"obj": map[string]any{"k": map[string]any{"deep": "v"}},
+		"obj":  map[string]any{"k": map[string]any{"deep": "v"}},
+		"huge": json.Number("9223372036854775809"),
+		"case": map[string]any{"key": 1, "Key": 2},
 	}
 	out, err := h.Invoke(ctx, "Write-Output", map[string]any{"InputObject": in, "NoEnumerate": true})
 	if err != nil {
@@ -54,6 +56,7 @@ func TestRealHostDecodesNestedRequests(t *testing.T) {
 	checks := map[string]string{
 		"s": `"x"`, "i": `42`, "big": `9007199254740993`, "f": `1.5`, "t": `true`, "n": `null`,
 		"arr": `["a",2,[]]`, "one": `["only"]`, "empty": `[]`, "obj": `{"k":{"deep":"v"}}`,
+		"huge": `9223372036854775809`, "case": `{"Key":2,"key":1}`,
 	}
 	for k, want := range checks {
 		b, _ := json.Marshal(got[k])

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,6 +31,8 @@ func TestCheckPkgSignatureOutput(t *testing.T) {
 	}
 	bad := map[string]string{
 		"other signer":  strings.Replace(pkgutilMicrosoft, "Microsoft Corporation", "Evil Corp", 1),
+		"other team id": strings.Replace(pkgutilMicrosoft, "(UBF8T346G9)", "(ABCDE12345)", 1),
+		"name suffix":   strings.Replace(pkgutilMicrosoft, "Microsoft Corporation (UBF8T346G9)", "Microsoft Corporation Ltd (X)", 1),
 		"unsigned":      "Package \"x.pkg\":\n   Status: no signature\n",
 		"self-signed":   strings.Replace(pkgutilMicrosoft, "signed by a developer certificate issued by Apple for distribution", "signed by untrusted certificate", 1),
 		"no chain":      "   Status: signed by a developer certificate issued by Apple for distribution\n",
@@ -38,6 +41,26 @@ func TestCheckPkgSignatureOutput(t *testing.T) {
 	for name, out := range bad {
 		if err := checkPkgSignatureOutput(out); err == nil {
 			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// The elevated script installs a root-owned copy it verified itself.
+func TestElevatedPkgInstallScript(t *testing.T) {
+	sum := strings.Repeat("ab", 32)
+	s := elevatedPkgInstall(sum)
+	for _, want := range []string{"mktemp -d /private/var/tmp/", `/bin/cp "$1" "$d/pwsh.pkg"`, `"` + sum + `"`,
+		"--check-signature \"$d/pwsh.pkg\"", "1. " + microsoftInstallerCert, `installer -pkg "$d/pwsh.pkg"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("script lacks %q", want)
+		}
+	}
+	if strings.Contains(s, `-pkg "$1"`) {
+		t.Fatal("the user-writable original must never be installed")
+	}
+	if sh, err := exec.LookPath("sh"); err == nil {
+		if out, err := exec.Command(sh, "-n", "-c", s).CombinedOutput(); err != nil {
+			t.Fatalf("script does not parse: %v %s", err, out)
 		}
 	}
 }

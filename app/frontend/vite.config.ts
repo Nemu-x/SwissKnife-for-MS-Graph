@@ -6,14 +6,15 @@ import tailwindcss from '@tailwindcss/vite'
 // asset origin (http://wails.localhost on Windows, wails://wails elsewhere)
 // and the runtime scripts Wails injects from it (/wails/ipc.js, runtime.js).
 // Inline styles stay allowed (React style props, Tailwind); scripts may only
-// come from the bundle. ws:/localhost cover `wails dev` serving a build.
+// come from the bundle. No ws:/localhost allowance: `wails dev` runs on the
+// Vite dev server, which never gets this policy.
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
-  "connect-src 'self' ws: http://localhost:*",
+  "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'none'",

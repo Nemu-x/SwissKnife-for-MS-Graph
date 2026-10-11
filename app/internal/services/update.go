@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
@@ -109,7 +110,15 @@ func (u *UpdateService) Check() (*UpdateInfo, error) {
 		return info, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	client := &http.Client{Timeout: 15 * time.Second, Transport: updateHTTPClient.Transport}
+	client := &http.Client{Timeout: 15 * time.Second, Transport: updateHTTPClient.Transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// The API may redirect within itself (a renamed repository);
+			// anything else goes through the release-host rules.
+			if req.URL.Scheme == "https" && req.URL.Host == apiURLHost() && len(via) < 10 {
+				return nil
+			}
+			return checkAssetRedirect(req, via)
+		}}
 	resp, err := client.Do(req)
 	if err != nil {
 		return info, err
@@ -467,10 +476,18 @@ func (u *UpdateService) OpenReleasesPage(pageURL string) {
 	}
 }
 
+// apiURLHost is the host of releasesAPI.
+func apiURLHost() string {
+	if u, err := url.Parse(releasesAPI); err == nil {
+		return u.Host
+	}
+	return ""
+}
+
 func safeReleasesURL(pageURL string) string {
 	p, err := url.Parse(strings.TrimSpace(pageURL))
 	if err != nil || p.Scheme != "https" || p.User != nil || !strings.EqualFold(p.Host, "github.com") ||
-		!strings.HasPrefix(p.Path, "/Nemu-x/") || strings.Contains(p.Path, "/../") {
+		!strings.HasPrefix(path.Clean(p.Path), "/Nemu-x/") {
 		return releasesPage
 	}
 	return p.String()

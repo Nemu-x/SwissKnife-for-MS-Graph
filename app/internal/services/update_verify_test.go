@@ -263,13 +263,16 @@ func TestSafeReleasesURL(t *testing.T) {
 		"": releasesPage,
 		"https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/tag/v2.0.0":      "https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/tag/v2.0.0",
 		"https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki/Teams-Notifications": "https://github.com/Nemu-x/SwissKnife-for-MS-Graph/wiki/Teams-Notifications",
-		"http://github.com/Nemu-x/x":           releasesPage,
-		"https://github.com/evil/x":            releasesPage,
-		"https://github.com.evil.io/Nemu-x/x":  releasesPage,
-		"https://user@github.com/Nemu-x/x":     releasesPage,
-		"file:///C:/Windows/System32/calc.exe": releasesPage,
-		"javascript:alert(1)":                  releasesPage,
-		`C:\Windows\System32\cmd.exe`:          releasesPage,
+		"http://github.com/Nemu-x/x":             releasesPage,
+		"https://github.com/evil/x":              releasesPage,
+		"https://github.com.evil.io/Nemu-x/x":    releasesPage,
+		"https://user@github.com/Nemu-x/x":       releasesPage,
+		"file:///C:/Windows/System32/calc.exe":   releasesPage,
+		"javascript:alert(1)":                    releasesPage,
+		"https://github.com/Nemu-x/..":           releasesPage,
+		"https://github.com/Nemu-x/x/../../evil": releasesPage,
+		"https://github.com/Nemu-x/%2e%2e/evil":  releasesPage,
+		`C:\Windows\System32\cmd.exe`:            releasesPage,
 	}
 	for in, want := range cases {
 		if got := safeReleasesURL(in); got != want {
