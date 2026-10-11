@@ -29,9 +29,10 @@ const (
 	ManifestFile  = "manifest.yaml"
 )
 
-// BuiltinKey is the project's minisign public key (minisign.pub): packs it
-// signs are trusted without asking.
-const BuiltinKey = "RWSG5GttbIKtpCqGS1IxYmyO07AbVOztAbwaWSi22mlNsVzJTXHRLH+9"
+// BuiltinKey is the project's pack-signing key (pack.pub in the Action Hub,
+// key id 454C550D267A0654): packs it signs are trusted without asking. It is
+// not the release key (minisign.pub), which signs release checksums only.
+const BuiltinKey = "RWRUBnomDVVMRVWSDws/I+MaXG3enL0i4HR3//h+S2Ib9PWrRydj4UWX"
 
 // Manifest describes a pack.
 type Manifest struct {
