@@ -46,6 +46,10 @@ export function Trust(arg1, arg2) {
   return window['go']['services']['PacksService']['Trust'](arg1, arg2);
 }
 
+export function TrustProblem() {
+  return window['go']['services']['PacksService']['TrustProblem']();
+}
+
 export function Untrust(arg1) {
   return window['go']['services']['PacksService']['Untrust'](arg1);
 }

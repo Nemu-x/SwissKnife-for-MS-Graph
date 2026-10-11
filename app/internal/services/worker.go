@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"swissknife-app/internal/auth"
+	"swissknife-app/internal/corrupt"
 	"swissknife-app/internal/engine"
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/pwsh"
@@ -55,7 +56,12 @@ func loadWorker(s *session.Session) *WorkerInfo {
 		return nil
 	}
 	var w WorkerInfo
-	if json.Unmarshal(b, &w) != nil || w.Addr == "" || w.Fingerprint == "" {
+	if err := json.Unmarshal(b, &w); err != nil {
+		// Set aside, not overwritten by the next pairing; Status reports it.
+		_ = corrupt.Quarantine(workerFile(s), err)
+		return nil
+	}
+	if w.Addr == "" || w.Fingerprint == "" {
 		return nil
 	}
 	w.Online = false // known only from a check in this session
@@ -237,6 +243,11 @@ func (p workerAware) Status(s *session.Session) *engine.Reason {
 	if _, w := remoteFor(s); hasFamily(w, p.family) {
 		return nil
 	}
+	// The pairing was lost to an unreadable worker.json: say so wherever the
+	// backend shows as unavailable, not only on the Settings card.
+	if s.ConfigDir() != "" && corrupt.Peek(workerFile(s)) != nil {
+		return &engine.Reason{Key: "workerFileCorrupt"}
+	}
 	return r
 }
 
@@ -259,10 +270,19 @@ type WorkerService struct{ s *session.Session }
 func NewWorkerService(s *session.Session) *WorkerService { return &WorkerService{s: s} }
 
 // Status returns the paired worker (nil when none).
-func (x *WorkerService) Status() *WorkerInfo {
+func (x *WorkerService) Status() (*WorkerInfo, error) {
 	workerMu.Lock()
 	defer workerMu.Unlock()
-	return loadWorker(x.s)
+	w := loadWorker(x.s)
+	// An unreadable worker.json was set aside (now or by an earlier call):
+	// report it once — the worker has to be paired again.
+	if x.s.ConfigDir() != "" {
+		if err := corrupt.Take(workerFile(x.s)); err != nil {
+			x.s.Record("worker.fileCorrupt", "worker.json", "", err)
+			return nil, err
+		}
+	}
+	return w, nil
 }
 
 // Pair connects with the code the worker printed and pins it.

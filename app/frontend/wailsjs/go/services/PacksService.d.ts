@@ -24,4 +24,6 @@ export function SetHub(arg1:string):Promise<string>;
 
 export function Trust(arg1:string,arg2:string):Promise<Array<services.PackInfo>>;
 
+export function TrustProblem():Promise<void>;
+
 export function Untrust(arg1:string):Promise<Array<services.PackInfo>>;

@@ -18,6 +18,7 @@ import (
 
 	"swissknife-app/internal/auditlog"
 	"swissknife-app/internal/auth"
+	"swissknife-app/internal/corrupt"
 	"swissknife-app/internal/engine"
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/pwsh"
@@ -189,10 +190,19 @@ func (s *Server) loadLocked() {
 	defer s.dropUnpairedLocked(prev)
 	if b, err := os.ReadFile(s.clientsPath()); err == nil {
 		var list []PairedClient
-		if json.Unmarshal(b, &list) == nil {
-			for _, c := range list {
-				s.clients[c.Fingerprint] = c
-			}
+		if err := json.Unmarshal(b, &list); err != nil {
+			// Set the file aside so the next pairing does not overwrite it,
+			// and say so: every client has to pair again.
+			cerr := corrupt.SetAside(s.clientsPath(), err) // reported right here
+			if cerr.MovedTo != "" {
+				s.clientsAt = time.Time{} // gone: the missing-file case from now on
+			} // else keep its time: it is not re-read (and re-reported) until it changes
+			s.audit("worker.clientsCorrupt", filepath.Base(s.clientsPath()), cerr.MovedTo, cerr)
+			s.log("WARNING: %v", cerr)
+			return
+		}
+		for _, c := range list {
+			s.clients[c.Fingerprint] = c
 		}
 	}
 }
@@ -497,6 +507,11 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 
 // ServeListener serves on l (tests pass their own).
 func (s *Server) ServeListener(ctx context.Context, l net.Listener) error {
+	// Read the paired clients up front: an unreadable file is reported at
+	// start, not at the first client call.
+	s.mu.Lock()
+	s.loadLocked()
+	s.mu.Unlock()
 	// No write timeout: a cmdlet may run for minutes.
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: time.Minute,
 		IdleTimeout: 2 * time.Minute, TLSConfig: s.TLSConfig()}

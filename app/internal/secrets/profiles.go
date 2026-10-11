@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/zalando/go-keyring"
@@ -36,6 +37,9 @@ type Profile struct {
 	// DelegatedOrg is the customer tenant (id or domain) a partner signs in
 	// to through GDAP; delegated (device code) profiles only.
 	DelegatedOrg string `json:"delegatedOrg,omitempty"`
+	// CertNotAfter is a certificate profile's expiry, read from the PFX when
+	// profiles are listed. Never stored: the file can be replaced any time.
+	CertNotAfter *time.Time `json:"certNotAfter,omitempty"`
 	// Policy limits what this profile may do once connected.
 	Policy *session.Policy `json:"policy,omitempty"`
 }
@@ -82,6 +86,9 @@ func (s *Store) load() ([]Profile, error) {
 }
 
 func (s *Store) save(list []Profile) error {
+	for i := range list {
+		list[i].CertNotAfter = nil // derived on listing, not persisted
+	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 	data, err := json.MarshalIndent(list, "", "  ")
 	if err != nil {

@@ -13,8 +13,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +41,9 @@ const systemMailbox = "SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}"
 type Client struct {
 	g    *graphapi.Client
 	base string // https://<host>/adminapi/v2.0/<tenant>
+	// conn is the connection's Graph client: the key under which a removed
+	// or changed endpoint is remembered for the Provider.
+	conn *graphapi.Client
 }
 
 // exchangeTokens adapts the session broker to graphapi.TokenSource.
@@ -48,13 +53,112 @@ func (t exchangeTokens) Token(ctx context.Context) (string, error) {
 	return t.b.TokenFor(ctx, auth.ResourceExchange)
 }
 
-// FromEnv builds a client for the engine's current connection.
+// clientKey identifies one connection's Admin API client.
+type clientKey struct {
+	tokens session.TokenBroker
+	base   string
+}
+
+// clients caches one client (and so one HTTP transport and its connection
+// pool) per connection instead of building them for every call. Bounded:
+// a long-running app reconnects, a worker serves several tenants.
+var (
+	clientsMu sync.Mutex
+	clients   = map[clientKey]*cachedClient{}
+)
+
+type cachedClient struct {
+	c    *Client
+	used time.Time
+}
+
+const maxCachedClients = 16
+
+// FromEnv returns the client for the engine's current connection.
 func FromEnv(env engine.Env) (*Client, error) {
 	if env.Tokens == nil || env.TenantID == "" {
 		return nil, session.ErrNotConnected
 	}
 	base := strings.TrimRight(BaseURL, "/") + "/adminapi/v2.0/" + url.PathEscape(env.TenantID)
-	return &Client{g: graphapi.New(exchangeTokens{env.Tokens}, graphapi.WithBaseURL(base)), base: base}, nil
+	// A broker that cannot be a map key (never the case for the session's
+	// pointer types) simply gets a fresh client.
+	if !reflect.TypeOf(env.Tokens).Comparable() {
+		return newClient(env, base), nil
+	}
+	key := clientKey{env.Tokens, base}
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
+	if cc := clients[key]; cc != nil && cc.c.conn == env.Graph {
+		cc.used = time.Now()
+		return cc.c, nil
+	}
+	if _, replacing := clients[key]; !replacing && len(clients) >= maxCachedClients {
+		// Evict only the least recently used connection's client.
+		var oldest clientKey
+		var at time.Time
+		for k, cc := range clients {
+			if at.IsZero() || cc.used.Before(at) {
+				oldest, at = k, cc.used
+			}
+		}
+		delete(clients, oldest)
+	}
+	c := newClient(env, base)
+	clients[key] = &cachedClient{c: c, used: time.Now()}
+	return c, nil
+}
+
+func newClient(env engine.Env, base string) *Client {
+	return &Client{g: graphapi.New(exchangeTokens{env.Tokens}, graphapi.WithBaseURL(base)), base: base, conn: env.Graph}
+}
+
+// sleep waits between retries; tests swap it.
+var sleep = func(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// maxUnavailableRetries bounds the retries of a 503/504 answer.
+const maxUnavailableRetries = 3
+
+// post sends one Admin API request. Every call is a POST, which the Graph
+// client does not retry on 503/504 (a POST may create something twice);
+// here a POST invokes a Get- or Set- cmdlet with absolute values, which is
+// safe to send again, so a busy or timed-out gateway is retried with backoff.
+func (c *Client) post(ctx context.Context, path string, hdr http.Header, body any, out *json.RawMessage) error {
+	backoff := time.Second
+	for try := 0; ; try++ {
+		err := c.g.DoWithHeaders(ctx, http.MethodPost, path, nil, hdr, body, out)
+		var ge *graphapi.GraphError
+		if err == nil || try >= maxUnavailableRetries || !errors.As(err, &ge) || ge.StatusCode != 503 && ge.StatusCode != 504 {
+			return err
+		}
+		if serr := sleep(ctx, retryDelay(ge.RetryAfter, backoff)); serr != nil {
+			if ctx.Err() != nil {
+				return ctx.Err() // cancelled while waiting, not a gateway failure
+			}
+			return err
+		}
+		backoff *= 2
+	}
+}
+
+// maxRetryWait caps a server-requested wait, as the Graph client does.
+const maxRetryWait = 60 * time.Second
+
+// retryDelay honours Retry-After when the gateway sends one, else uses the
+// exponential backoff with up to 50% jitter so parallel callers spread out.
+func retryDelay(retryAfter, backoff time.Duration) time.Duration {
+	if retryAfter > 0 {
+		return min(retryAfter, maxRetryWait)
+	}
+	return backoff + time.Duration(rand.Int64N(int64(backoff)/2+1))
 }
 
 // MailboxAnchor is the routing hint for a call bound to one mailbox.
@@ -68,6 +172,20 @@ func OrgAnchor(domain string) string { return "APP:" + systemMailbox + "@" + dom
 // following @odata.nextLink pages (re-POSTing the same body, as the API
 // requires). Writes return no objects.
 func (c *Client) Invoke(ctx context.Context, endpoint, cmdlet string, params map[string]any, anchor string) ([]json.RawMessage, error) {
+	out, err := c.invoke(ctx, endpoint, cmdlet, params, anchor)
+	if err != nil && endpointGone(err) {
+		// The endpoint moved or was retired (the API is in Preview): stop
+		// routing this connection here so the resolver picks the PowerShell
+		// implementation from now on.
+		markGone(c.conn)
+		return nil, &EndpointChangedError{Endpoint: endpoint, Err: err}
+	}
+	return out, err
+}
+
+// invoke is Invoke without the endpoint-changed fallback (the availability
+// probe classifies those answers itself).
+func (c *Client) invoke(ctx context.Context, endpoint, cmdlet string, params map[string]any, anchor string) ([]json.RawMessage, error) {
 	input := map[string]any{"CmdletName": cmdlet}
 	if len(params) > 0 {
 		input["Parameters"] = params
@@ -89,7 +207,7 @@ func (c *Client) Invoke(ctx context.Context, endpoint, cmdlet string, params map
 			return nil, errors.New("exchange admin api: continuation link points to another host")
 		}
 		var raw json.RawMessage
-		if err := c.g.DoWithHeaders(ctx, http.MethodPost, next, nil, hdr, body, &raw); err != nil {
+		if err := c.post(ctx, next, hdr, body, &raw); err != nil {
 			return nil, err
 		}
 		items, link, err := decode(raw)
@@ -126,6 +244,75 @@ func decode(raw json.RawMessage) ([]json.RawMessage, string, error) {
 	return []json.RawMessage{raw}, "", nil
 }
 
+// EndpointChangedError: the Admin API no longer serves an endpoint the way
+// this app calls it. The connection falls back to PowerShell; the action has
+// to be run again to use it. No Unwrap on purpose: the caller's Graph error
+// formatting would replace this message with the bare HTTP error.
+type EndpointChangedError struct {
+	Endpoint string
+	Err      error
+}
+
+func (e *EndpointChangedError) Error() string {
+	return fmt.Sprintf("the Exchange Admin API did not accept the %s call (%v) — it may have changed while in Preview. "+
+		"This connection now uses Exchange PowerShell for it: run the action again", e.Endpoint, e.Err)
+}
+
+// endpointGone tells an API-level refusal (endpoint missing, changed or not
+// implemented) from a cmdlet failure: the latter carries the Exchange
+// exception ("…|Microsoft.Exchange…Exception|…") and must not switch the
+// backend (a mailbox that does not exist is the operator's input, not the API).
+func endpointGone(err error) bool {
+	var ge *graphapi.GraphError
+	if !errors.As(err, &ge) {
+		return false
+	}
+	switch ge.StatusCode {
+	case 501:
+		return true
+	case 400, 404:
+		return !strings.Contains(ge.Message, "Exception") && !strings.Contains(ge.Message, "Microsoft.Exchange")
+	}
+	return false
+}
+
+// gone holds the connections (their Graph client) whose Admin API answered
+// with endpointGone; the Provider reports them unavailable.
+var (
+	goneMu sync.Mutex
+	gone   = map[*graphapi.Client]time.Time{} // → when it was marked
+)
+
+// maxGone bounds the marked connections; past it only the oldest mark is
+// dropped (a long-gone connection), never the others'.
+const maxGone = 64
+
+func markGone(conn *graphapi.Client) {
+	if conn == nil {
+		return
+	}
+	goneMu.Lock()
+	defer goneMu.Unlock()
+	if _, ok := gone[conn]; !ok && len(gone) >= maxGone {
+		var oldest *graphapi.Client
+		var at time.Time
+		for k, t := range gone {
+			if oldest == nil || t.Before(at) {
+				oldest, at = k, t
+			}
+		}
+		delete(gone, oldest)
+	}
+	gone[conn] = time.Now()
+}
+
+func isGone(conn *graphapi.Client) bool {
+	goneMu.Lock()
+	defer goneMu.Unlock()
+	_, ok := gone[conn]
+	return ok
+}
+
 // Provider reports whether the Admin API answers for the connected tenant.
 // The API is in Preview and not enabled everywhere, so the first status
 // check after a connect probes it once (Get-Mailbox for one mailbox); the
@@ -156,6 +343,13 @@ func (p *Provider) Status(s *session.Session) *engine.Reason {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// A call on this connection found an endpoint gone: that overrides the
+	// probe (which only tried Get-Mailbox) for the rest of the connection.
+	if isGone(c) {
+		p.client, p.probedAt = c, p.now()
+		p.verdict = &engine.Reason{Key: "exoApiChanged"}
+		return p.verdict
+	}
 	if p.client == c && !p.probedAt.IsZero() &&
 		(p.verdict == nil || p.verdict.Key != "exoUnreachable" || p.now().Sub(p.probedAt) < retryTransient) {
 		return p.verdict
@@ -192,7 +386,7 @@ func defaultProbe(ctx context.Context, env engine.Env) error {
 		}
 		anchor = MailboxAnchor(me.UPN)
 	}
-	_, err = c.Invoke(ctx, "Mailbox", "Get-Mailbox", map[string]any{"ResultSize": 1}, anchor)
+	_, err = c.invoke(ctx, "Mailbox", "Get-Mailbox", map[string]any{"ResultSize": 1}, anchor)
 	return err
 }
 

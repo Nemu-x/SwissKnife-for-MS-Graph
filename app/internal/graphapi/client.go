@@ -259,6 +259,7 @@ func parseGraphError(resp *http.Response, raw []byte) *GraphError {
 		StatusCode: resp.StatusCode,
 		Code:       http.StatusText(resp.StatusCode),
 		RequestID:  resp.Header.Get("request-id"),
+		RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After")),
 	}
 	if resp.Request != nil && resp.Request.URL != nil {
 		ge.Path = resp.Request.URL.Path

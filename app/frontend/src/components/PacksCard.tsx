@@ -37,6 +37,8 @@ export function PacksCard() {
 
   const load = () => {
     api.packs.list().then(changed).catch((e) => toast('err', errMessage(e)))
+      // An unreadable packs.json set aside while loading is reported once.
+      .then(() => api.packs.trustProblem()).catch((e) => toast('err', errMessage(e)))
     api.packs.keys().then((k) => setKeys((k ?? []) as Key[])).catch(() => {})
   }
   useEffect(load, [])

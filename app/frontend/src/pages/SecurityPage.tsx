@@ -585,7 +585,10 @@ export function SecurityPage() {
                 <span className="min-w-0 flex-1">{sectionName(s.name)}</span>
                 {s.skipped
                   ? <span className="flex items-center gap-2"><Badge kind="warn">{t('snapshot.skipped')}</Badge><span className="max-w-[320px] truncate text-[var(--text-faint)]" title={s.error ? errMessage(s.error) : ''}>{s.error ? errMessage(s.error) : ''}</span></span>
-                  : <span className="text-[var(--text-dim)]">{t('snapshot.objectsN', { n: s.count })}</span>}
+                  : <span className="flex items-center gap-2">
+                      {s.truncated && <span title={t('snapshot.truncatedHint', { n: s.count })}><Badge kind="warn">{t('snapshot.truncatedAt', { n: s.count })}</Badge></span>}
+                      <span className="text-[var(--text-dim)]">{t('snapshot.objectsN', { n: s.count })}</span>
+                    </span>}
               </div>
             ))}
           </div>
@@ -658,7 +661,7 @@ export function SecurityPage() {
           )}
         </summary>
         <div className="flex flex-col gap-1.5 border-t border-[var(--border)] p-2">
-          {s.skipped && <p className="text-xs text-[var(--text-faint)]">{s.note ? errMessage(s.note) : ''}</p>}
+          {s.skipped && <p className="text-xs text-[var(--text-faint)]">{s.truncated ? t('snapshot.truncatedNote') : s.note ? errMessage(s.note) : ''}</p>}
           {!s.skipped && n === 0 && <p className="text-xs text-[var(--text-faint)]">{t('snapshot.noChangesSection')}</p>}
           {(s.added || []).map((o) => objectRow(o, 'added'))}
           {(s.removed || []).map((o) => objectRow(o, 'removed'))}
