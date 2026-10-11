@@ -4,10 +4,13 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jedisct1/go-minisign"
 )
 
 const manifest = `name: contoso-tools
@@ -175,5 +178,20 @@ func TestLookAlikesKeyHijackEncodingAndDisable(t *testing.T) {
 	key := sign(t, d)
 	if p := Load(root, Trust{Keys: []string{key}, Disabled: []string{"contoso-tools"}})[0]; p.Status != Disabled || p.Usable() {
 		t.Fatalf("disabled pack: %+v", p)
+	}
+}
+
+// The built-in key is the Action Hub's pack key, not the release key.
+func TestBuiltinKeyIsThePackKey(t *testing.T) {
+	pk, err := minisign.NewPublicKey(BuiltinKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := pk.KeyId
+	for i, j := 0, len(id)-1; i < j; i, j = i+1, j-1 { // minisign shows it little-endian
+		id[i], id[j] = id[j], id[i]
+	}
+	if got := fmt.Sprintf("%X", id); got != "454C550D267A0654" {
+		t.Fatalf("key id %s", got)
 	}
 }
