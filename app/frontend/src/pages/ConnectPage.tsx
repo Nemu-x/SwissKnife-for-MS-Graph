@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plug, Trash2, LogOut, FolderOpen, KeyRound, FileCheck, ShieldHalf } from 'lucide-react'
 import { ProfileLimits } from '../components/ProfileLimits'
+import { CertExpiryBadge } from '../components/CertExpiryBadge'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { Page } from '../components/Layout'
 import { Button, Card, Field, Input, Select, Badge, ErrorNote, Spinner } from '../components/ui'
@@ -118,6 +119,7 @@ export function ConnectPage() {
                   <div className="truncate text-xs text-[var(--text-faint)]">{p.tenantId}</div>
                 </div>
                 <Badge kind="neutral">{p.authMode === 'device_code' ? 'device' : p.authMode === 'client_certificate' ? 'cert' : 'app'}</Badge>
+                <CertExpiryBadge notAfter={(p as any).certNotAfter} />
                 <Button variant="primary" onClick={() => connectProfile(p)} disabled={busy} className="!px-2 !py-1">
                   <Plug size={14} />
                 </Button>

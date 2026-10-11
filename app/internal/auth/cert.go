@@ -27,6 +27,11 @@ func NewClientCertificate(tenantID, clientID string, pfx []byte, password string
 	if err != nil {
 		return nil, fmt.Errorf("read certificate: %w", err)
 	}
+	if len(certs) > 0 && certs[0] != nil {
+		if err := checkNotExpired(certs[0].NotAfter, time.Now()); err != nil {
+			return nil, err
+		}
+	}
 	cred, err := azidentity.NewClientCertificateCredential(tenantID, clientID, certs, key, nil)
 	if err != nil {
 		return nil, err

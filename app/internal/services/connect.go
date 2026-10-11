@@ -31,6 +31,7 @@ func (c *ConnectService) Profiles() ([]secrets.Profile, error) {
 	if list == nil {
 		list = []secrets.Profile{}
 	}
+	annotateCertExpiry(c.store, list)
 	return list, err
 }
 

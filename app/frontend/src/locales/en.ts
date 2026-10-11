@@ -309,6 +309,10 @@ const en = {
     drift: 'See what changed since the last snapshot',
   },
   connect: {
+    certExpired: 'cert expired',
+    certExpiredHint: 'The certificate expired on {{date}}. Generate a new one in the connection form, upload its .cer to the app registration in Entra (Certificates & secrets) and save the profile.',
+    certExpiresIn: 'cert: {{n}} d left',
+    certExpiringHint: 'The certificate expires on {{date}}. Generate a new one in the connection form, upload its .cer to the app registration in Entra and save the profile before then.',
     delegatedOrg: 'Customer tenant (GDAP, preview)',
     delegatedOrgHint: 'Partners: the customer tenant id or domain you manage through granular delegated admin (GDAP). Sign-in, Graph and Exchange then work in that tenant. The app registration must be multi-tenant and consented in the customer tenant. Save the profile to use it.',
     limits: {
