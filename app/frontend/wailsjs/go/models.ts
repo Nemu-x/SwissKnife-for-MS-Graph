@@ -637,6 +637,8 @@ export namespace secrets {
 	    certPath?: string;
 	    hasSecret: boolean;
 	    delegatedOrg?: string;
+	    // Go type: time
+	    certNotAfter?: any;
 	    policy?: session.Policy;
 	
 	    static createFrom(source: any = {}) {
@@ -653,6 +655,7 @@ export namespace secrets {
 	        this.certPath = source["certPath"];
 	        this.hasSecret = source["hasSecret"];
 	        this.delegatedOrg = source["delegatedOrg"];
+	        this.certNotAfter = this.convertValues(source["certNotAfter"], null);
 	        this.policy = this.convertValues(source["policy"], session.Policy);
 	    }
 	
@@ -1802,6 +1805,7 @@ export namespace services {
 	export class SectionDiff {
 	    name: string;
 	    skipped?: boolean;
+	    truncated?: boolean;
 	    note?: string;
 	    added: ObjectChange[];
 	    removed: ObjectChange[];
@@ -1816,6 +1820,7 @@ export namespace services {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.skipped = source["skipped"];
+	        this.truncated = source["truncated"];
 	        this.note = source["note"];
 	        this.added = this.convertValues(source["added"], ObjectChange);
 	        this.removed = this.convertValues(source["removed"], ObjectChange);
@@ -1883,6 +1888,7 @@ export namespace services {
 	    count: number;
 	    skipped?: boolean;
 	    error?: string;
+	    truncated?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SnapshotSection(source);
@@ -1894,6 +1900,7 @@ export namespace services {
 	        this.count = source["count"];
 	        this.skipped = source["skipped"];
 	        this.error = source["error"];
+	        this.truncated = source["truncated"];
 	    }
 	}
 	export class SnapshotMeta {

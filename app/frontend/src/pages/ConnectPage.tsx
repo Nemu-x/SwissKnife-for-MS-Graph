@@ -119,7 +119,7 @@ export function ConnectPage() {
                   <div className="truncate text-xs text-[var(--text-faint)]">{p.tenantId}</div>
                 </div>
                 <Badge kind="neutral">{p.authMode === 'device_code' ? 'device' : p.authMode === 'client_certificate' ? 'cert' : 'app'}</Badge>
-                <CertExpiryBadge notAfter={(p as any).certNotAfter} />
+                <CertExpiryBadge notAfter={p.certNotAfter} />
                 <Button variant="primary" onClick={() => connectProfile(p)} disabled={busy} className="!px-2 !py-1">
                   <Plug size={14} />
                 </Button>
