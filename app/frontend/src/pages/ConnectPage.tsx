@@ -10,7 +10,7 @@ import { api, errMessage, type Profile } from '../lib/api'
 
 export function ConnectPage() {
   const { t } = useTranslation()
-  const { status, setStatus, refreshStatus, connected, toast, loadDomains, workspaces, setWorkspaces, goTo } = useStore()
+  const { status, onConnected, refreshStatus, connected, toast, loadDomains, workspaces, setWorkspaces, goTo } = useStore()
 
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [limitsFor, setLimitsFor] = useState<string | null>(null)
@@ -42,7 +42,7 @@ export function ConnectPage() {
     setBusy(true); setError(null); setDevice(null)
     try {
       const s = await api.connect.connect({ profileId: p.id })
-      setStatus(s); toast('ok', t('common.connectedAs', { name: s.profileName }))
+      onConnected(s); toast('ok', t('common.connectedAs', { name: s.profileName }))
       if (wantDomains) loadDomains()
     } catch (e) { setError(errMessage(e)) } finally { setBusy(false); setDevice(null) }
   }
@@ -54,7 +54,7 @@ export function ConnectPage() {
         tenantId: form.tenantId, clientId: form.clientId, secret: form.secret,
         authMode: form.authMode, certPath: form.certPath, rememberAs: form.remember ? form.name : '',
       })
-      setStatus(s); toast('ok', t('common.connectedAs', { name: s.profileName })); loadProfiles()
+      onConnected(s); toast('ok', t('common.connectedAs', { name: s.profileName })); loadProfiles()
       if (wantDomains) loadDomains()
     } catch (e) { setError(errMessage(e)) } finally { setBusy(false); setDevice(null) }
   }

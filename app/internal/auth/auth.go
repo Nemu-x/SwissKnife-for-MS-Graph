@@ -58,8 +58,10 @@ type TokenProvider struct {
 	// user fails with ErrSessionExpired instead of silently starting a new
 	// device-code flow nobody sees.
 	interactive interactiveCredential
-	signInMu    sync.Mutex // serialises the first sign-in only
-	signedIn    bool
+	// signInSem (one slot) serialises the first sign-in only; a channel, not
+	// a mutex, so a caller waiting behind it stops when its context ends.
+	signInSem chan struct{}
+	signedIn  bool // guarded by signInSem
 
 	mu     sync.Mutex // guards tokens; never held across a token request
 	tokens map[string]azcore.AccessToken
@@ -89,7 +91,11 @@ func NewDeviceCode(tenantID, clientID string, prompt DeviceCodePrompt) (*TokenPr
 	if err != nil {
 		return nil, err
 	}
-	return &TokenProvider{cred: cred, interactive: cred, tokens: map[string]azcore.AccessToken{}}, nil
+	return newDelegated(cred), nil
+}
+
+func newDelegated(cred interactiveCredential) *TokenProvider {
+	return &TokenProvider{cred: cred, interactive: cred, signInSem: make(chan struct{}, 1), tokens: map[string]azcore.AccessToken{}}
 }
 
 // Token implements graphapi.TokenSource (Microsoft Graph).
@@ -128,8 +134,12 @@ func (p *TokenProvider) signIn(ctx context.Context, opts policy.TokenRequestOpti
 	if p.interactive == nil {
 		return nil
 	}
-	p.signInMu.Lock()
-	defer p.signInMu.Unlock()
+	select {
+	case p.signInSem <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-p.signInSem }()
 	if p.signedIn {
 		return nil
 	}

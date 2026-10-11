@@ -124,6 +124,9 @@ interface Store {
   // next connection or by dismissing the banner.
   sessionExpired: boolean
   dismissSessionExpired: () => void
+  // Records a successful connect (also a same-profile reconnect): drops the
+  // previous connection's cached results and the expiry notice.
+  onConnected: (s: Status) => void
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -216,10 +219,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [sessionExpired, setSessionExpired] = useState(false)
   useEffect(() => onSessionExpired(() => setSessionExpired(true)), [])
 
-  // Clear cached domains and page results on disconnect and on a switch to
-  // another profile (results belong to the tenant they came from); domain
+  // Every successful connect bumps the generation, so a reconnect with the
+  // same profile (signing in again) counts as a new connection too.
+  const [connGen, setConnGen] = useState(0)
+  const onConnected = useCallback((s: Status) => {
+    setStatus(s)
+    setConnGen((g) => g + 1)
+  }, [])
+
+  // Clear cached domains and page results on disconnect and on every new
+  // connection (results belong to the connection they came from); domain
   // loading is opt-in (checkbox on Connect).
-  const connKey = status?.connected ? `${status.profileId ?? ''}|${status.profileName ?? ''}` : ''
+  const connKey = status?.connected ? `${connGen}|${status.profileId ?? ''}|${status.profileName ?? ''}` : ''
   const prevConnKey = useRef(connKey)
   useEffect(() => {
     if (connKey === prevConnKey.current) return
@@ -520,6 +531,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     dismiss: (id) => setToasts((t) => t.filter((x) => x.id !== id)),
     sessionExpired,
     dismissSessionExpired: () => setSessionExpired(false),
+    onConnected,
   }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
