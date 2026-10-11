@@ -13,7 +13,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf16"
 )
@@ -48,6 +51,10 @@ var (
 	// No overall timeout: a slow package download is fine while it moves;
 	// the small metadata requests get their own deadline.
 	httpClient = &http.Client{}
+	// packageIdleTimeout aborts the package download when no bytes arrive
+	// for this long (a stall, not slowness — each chunk resets it), so a dead
+	// connection ends the install instead of hanging it.
+	packageIdleTimeout = 60 * time.Second
 )
 
 const maxPackage = 400 << 20
@@ -67,10 +74,24 @@ func latestVersion(ctx context.Context) (string, error) {
 	var info struct {
 		ReleaseTag string `json:"ReleaseTag"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&info); err != nil || !strings.HasPrefix(info.ReleaseTag, "v7.") {
-		return "", fmt.Errorf("release information: unexpected answer (%v)", err)
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&info); err != nil || !stableTag(info.ReleaseTag) {
+		return "", fmt.Errorf("release information: unexpected answer %q (%v)", info.ReleaseTag, err)
 	}
 	return strings.TrimPrefix(info.ReleaseTag, "v"), nil
+}
+
+// stableTagRe is a stable release tag (no preview/rc suffix). The version
+// also becomes part of the download URL, so nothing else is accepted.
+var stableTagRe = regexp.MustCompile(`^v([0-9]{1,3})\.[0-9]{1,3}\.[0-9]{1,3}$`)
+
+// stableTag accepts PowerShell 7 or any later major version.
+func stableTag(tag string) bool {
+	m := stableTagRe.FindStringSubmatch(tag)
+	if m == nil {
+		return false
+	}
+	major, err := strconv.Atoi(m[1])
+	return err == nil && major >= 7
 }
 
 // decodeText reads the hashes file, which is published as UTF-16.
@@ -138,7 +159,17 @@ func fetch(ctx context.Context, name func(version string) string, progress Insta
 			_ = os.RemoveAll(dir)
 		}
 	}()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, downloadBase+"v"+version+"/"+file, nil)
+	dctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var stalled atomic.Bool
+	watchdog := time.AfterFunc(packageIdleTimeout, func() { stalled.Store(true); cancel() })
+	defer watchdog.Stop()
+	defer func() {
+		if err != nil && stalled.Load() {
+			err = fmt.Errorf("download: no data received for %s — the connection stalled", packageIdleTimeout)
+		}
+	}()
+	req, _ := http.NewRequestWithContext(dctx, http.MethodGet, downloadBase+"v"+version+"/"+file, nil)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", "", fmt.Errorf("download: %w", err)
@@ -152,7 +183,8 @@ func fetch(ctx context.Context, name func(version string) string, progress Insta
 		return "", "", err
 	}
 	h := sha256.New()
-	pr := &progressReader{r: io.LimitReader(resp.Body, maxPackage+1), total: resp.ContentLength, report: func(p int) { progress("download", p) }}
+	pr := &progressReader{r: io.LimitReader(resp.Body, maxPackage+1), total: resp.ContentLength, report: func(p int) { progress("download", p) },
+		onData: func() { watchdog.Reset(packageIdleTimeout) }}
 	n, err := io.Copy(io.MultiWriter(out, h), pr)
 	if err == nil && n > maxPackage {
 		err = fmt.Errorf("the package is larger than %d MB — not installing it", maxPackage>>20)
@@ -176,10 +208,14 @@ type progressReader struct {
 	total  int64
 	last   int
 	report func(int)
+	onData func() // called whenever bytes arrive (resets the idle watchdog)
 }
 
 func (p *progressReader) Read(b []byte) (int, error) {
 	n, err := p.r.Read(b)
+	if n > 0 && p.onData != nil {
+		p.onData()
+	}
 	p.n += int64(n)
 	if p.total > 0 {
 		if pct := int(p.n * 100 / p.total); pct != p.last {

@@ -3,10 +3,13 @@
 // pwsh process per module family keeps the slow Connect-* step to once per
 // session. Requests and replies are single JSON lines; the host script runs
 // only allow-listed cmdlets and splats their parameters, and tokens travel
-// only over stdin — never on the command line or in the environment. (A
-// Module Logging policy, if the tenant's machines enable one, still records
-// cmdlet parameters — Connect-ExchangeOnline's token included — in the
-// PowerShell event log; that is the organization's own audit trail.)
+// only over stdin — never on the command line or in the environment. The host
+// parses request lines with .NET, not ConvertFrom-Json, so a Module Logging
+// policy never sees a token as a parsing cmdlet's input. (Such a policy, if
+// the tenant's machines enable one for the Exchange or Teams modules, still
+// records Connect-ExchangeOnline's / Connect-MicrosoftTeams' token parameter
+// in the PowerShell event log; that is the organization's own audit trail
+// and cannot be avoided from here.)
 package pwsh
 
 import (

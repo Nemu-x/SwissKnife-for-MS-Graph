@@ -4,6 +4,7 @@ package services
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -27,3 +28,7 @@ func revealInFolder(path string) error {
 	go func() { _ = cmd.Wait() }() // reap the child
 	return nil
 }
+
+// openInstallerLocked opens the installer for hashing. Apply refuses to run
+// outside Windows anyway (checkInstallerPath), so no locking is needed here.
+func openInstallerLocked(path string) (*os.File, error) { return os.Open(path) }

@@ -337,9 +337,16 @@ test('every screen opens and every tile can be clicked without crashing', async 
   test.setTimeout(180_000)
   await stubWails(page, { connected: true })
   await page.addInitScript(() => localStorage.setItem('workspaces', JSON.stringify({ cloud: true, onprem: true })))
+  // The production bundle ships a Content-Security-Policy: nothing on any
+  // screen may trip it (a blocked font, style or script would show here).
+  await page.addInitScript(() => {
+    (window as any).__csp = []
+    document.addEventListener('securitypolicyviolation', (e) => (window as any).__csp.push(`${e.violatedDirective} ${e.blockedURI}`))
+  })
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(String(e)))
   await page.goto('/')
+  await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveCount(1)
   const names = await page.locator('nav button').evaluateAll((els) =>
     els.filter((e) => !e.hasAttribute('aria-expanded')).map((e) => (e.textContent || '').trim()))
   expect(names.length).toBeGreaterThan(20)
@@ -365,6 +372,7 @@ test('every screen opens and every tile can be clicked without crashing', async 
     }
   }
   expect(errors).toEqual([])
+  expect(await page.evaluate(() => (window as any).__csp)).toEqual([])
 })
 
 test('the menu folds to icons, hides pages, and support is one click away', async ({ page }) => {

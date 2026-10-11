@@ -7,6 +7,7 @@ import { Button, Field, Input, Select, Badge, Spinner } from '../components/ui'
 import { useStore } from '../lib/store'
 import { useConfirm } from '../lib/useConfirm'
 import { api, errMessage, type GraphObject } from '../lib/api'
+import { openExternal, safeHttpsUrl } from '../lib/links'
 import type { services } from '../../wailsjs/go/models'
 
 type Tab = 'ca' | 'consents' | 'recommendations' | 'snapshot' | 'drift'
@@ -514,10 +515,10 @@ export function SecurityPage() {
             {steps.map((s, i) => (
               <li key={i} className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-xs">
                 <span className="whitespace-pre-wrap">{s.text}</span>
-                {s.actionUrl?.url && (
-                  <a href={s.actionUrl.url} target="_blank" rel="noreferrer" className="ml-2 inline-flex items-center gap-1 text-[var(--accent2)] hover:underline">
-                    {s.actionUrl.displayName || s.actionUrl.url} <ExternalLink size={11} />
-                  </a>
+                {safeHttpsUrl(s.actionUrl?.url) && (
+                  <button type="button" onClick={() => openExternal(s.actionUrl?.url)} className="ml-2 inline-flex items-center gap-1 text-[var(--accent2)] hover:underline">
+                    {s.actionUrl?.displayName || s.actionUrl?.url} <ExternalLink size={11} />
+                  </button>
                 )}
               </li>
             ))}
@@ -538,8 +539,8 @@ export function SecurityPage() {
                   <span className="min-w-0 flex-1 truncate">{x.displayName || x.subjectId}</span>
                   {x.resourceType && <span className="text-[var(--text-faint)]">{x.resourceType}</span>}
                   {x.status && <Badge kind={statusBadge(x.status)}>{t(`security.statusLabel.${x.status}`, { defaultValue: String(x.status) })}</Badge>}
-                  {x.portalUrl && (
-                    <a href={x.portalUrl} target="_blank" rel="noreferrer" className="text-[var(--accent2)]" aria-label={String(x.displayName || x.subjectId || t('security.openInPortal'))}><ExternalLink size={12} /></a>
+                  {safeHttpsUrl(x.portalUrl) && (
+                    <button type="button" onClick={() => openExternal(x.portalUrl)} className="text-[var(--accent2)]" aria-label={String(x.displayName || x.subjectId || t('security.openInPortal'))}><ExternalLink size={12} /></button>
                   )}
                 </div>
               ))}
