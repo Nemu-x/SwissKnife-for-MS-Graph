@@ -247,16 +247,26 @@ function CatalogPanel({ entry, mark, askConfirm }: {
     }
   }
 
+  // The running preview's id, so Cancel can stop it (the backend bounds it
+  // too: a timeout arrives as planTimeout and is shown like any error).
+  const [previewing, setPreviewing] = useState<string | null>(null)
   const preview = async () => {
+    const id = `${entry.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    setPreviewing(id)
     setBusy(true)
     setResult(null)
     try {
-      setPlan(await api.actions.plan(entry.id, values))
+      setPlan(await api.actions.plan(entry.id, values, id))
     } catch (e) {
-      toast('err', errMessage(e))
+      // A cancel the operator asked for needs no error toast.
+      if (errParsed(e).code !== 'planCanceled') toast('err', errMessage(e))
     } finally {
+      setPreviewing(null)
       setBusy(false)
     }
+  }
+  const cancelPreview = () => {
+    if (previewing) api.actions.cancel(previewing).catch(() => {})
   }
 
   const apply = async (confirm: string) => {
@@ -363,6 +373,9 @@ function CatalogPanel({ entry, mark, askConfirm }: {
         <Button variant="primary" disabled={busy || !ready} onClick={preview}>
           {busy ? <Spinner /> : <Eye size={15} />} {t('actions.preview')}
         </Button>
+      )}
+      {!isRead && !plan && previewing && (
+        <Button variant="subtle" onClick={cancelPreview}>{t('common.cancel')}</Button>
       )}
 
       {plan && (

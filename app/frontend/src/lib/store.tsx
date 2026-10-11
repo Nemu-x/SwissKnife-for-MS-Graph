@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode, useCallback, useRef } from 'react'
-import { api, errMessage, type Status } from './api'
+import { api, errMessage, onSessionExpired, type Status } from './api'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import i18n from '../i18n'
 import { loadWorkspaces, saveWorkspaces, type Workspaces } from './workspaces'
@@ -119,6 +119,14 @@ interface Store {
   toasts: Toast[]
   toast: (kind: Toast['kind'], text: string) => void
   dismiss: (id: number) => void
+
+  // The delegated sign-in expired (any call reported it); cleared by the
+  // next connection or by dismissing the banner.
+  sessionExpired: boolean
+  dismissSessionExpired: () => void
+  // Records a successful connect (also a same-profile reconnect): drops the
+  // previous connection's cached results and the expiry notice.
+  onConnected: (s: Status) => void
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -207,14 +215,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Clear cached domains and page results on disconnect; domain loading is
-  // opt-in (checkbox on Connect).
+  // An expired delegated sign-in reported by any call: one banner app-wide.
+  const [sessionExpired, setSessionExpired] = useState(false)
+  useEffect(() => onSessionExpired(() => setSessionExpired(true)), [])
+
+  // Every successful connect bumps the generation, so a reconnect with the
+  // same profile (signing in again) counts as a new connection too.
+  const [connGen, setConnGen] = useState(0)
+  const onConnected = useCallback((s: Status) => {
+    setStatus(s)
+    setConnGen((g) => g + 1)
+  }, [])
+
+  // Clear cached domains and page results on disconnect and on every new
+  // connection (results belong to the connection they came from); domain
+  // loading is opt-in (checkbox on Connect).
+  const connKey = status?.connected ? `${connGen}|${status.profileId ?? ''}|${status.profileName ?? ''}` : ''
+  const prevConnKey = useRef(connKey)
   useEffect(() => {
-    if (!status?.connected) {
-      setDomains([])
-      setCacheState({})
-    }
-  }, [status?.connected])
+    if (connKey === prevConnKey.current) return
+    const switched = prevConnKey.current !== '' && connKey !== ''
+    prevConnKey.current = connKey
+    // A fresh connection loaded its domains itself (Connect page): keep them.
+    if (!connKey || switched) setDomains([])
+    setCacheState({})
+    // Signed in (again): the expiry notice is answered.
+    if (connKey) setSessionExpired(false)
+  }, [connKey])
 
   // Stream backend progress into the jobs, mounted once at the app root so it
   // keeps flowing regardless of which page (if any) is currently shown.
@@ -502,6 +529,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     toasts,
     toast,
     dismiss: (id) => setToasts((t) => t.filter((x) => x.id !== id)),
+    sessionExpired,
+    dismissSessionExpired: () => setSessionExpired(false),
+    onConnected,
   }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

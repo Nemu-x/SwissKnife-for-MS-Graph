@@ -43,8 +43,13 @@ async function stubWails(page: Page, opts: { connected?: boolean } = {}) {
       Apply: { opId: 'o1', applied: 1, skipped: 0, failed: 0, canceled: false, outcomes: [
         { target: 'ann@contoso.com', field: 'signIn', op: 'set', ok: true, skipped: false }] },
     }
-    // A test can override single bindings through window.__stub.
-    const method = (name: string) => () => Promise.resolve((window as any).__stub?.[name] ?? results[name] ?? null)
+    // A test can override single bindings through window.__stub, or make one
+    // fail (with Wails' plain string error) through window.__reject.
+    const method = (name: string) => () => {
+      const fail = (window as any).__reject?.[name]
+      if (fail) return Promise.reject(fail)
+      return Promise.resolve((window as any).__stub?.[name] ?? results[name] ?? null)
+    }
     const service = new Proxy({}, { get: (_t, m: string) => method(m) })
     const namespace = new Proxy({}, { get: () => service })
     ;(window as any).go = new Proxy({}, { get: () => namespace })
@@ -204,6 +209,23 @@ test('a result can be cleared without leaving the page', async ({ page }) => {
   await clear.click()
   await expect(clear).toBeHidden()
   await expect(page.getByRole('button', { name: /Who changed what/ })).toBeVisible()
+})
+
+test('an expired sign-in on any page offers to sign in again', async ({ page }) => {
+  await stubWails(page, { connected: true })
+  await page.addInitScript(() => {
+    const expired = 'graph: acquire token: sessionExpired: the sign-in session expired or was revoked — sign in again'
+    ;(window as any).__reject = { SignIns: expired, SignInsFiltered: expired }
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Audit', exact: true }).click()
+  await page.getByRole('button', { name: /Sign-in logs \(whole tenant\)/ }).click()
+  await page.getByRole('button', { name: 'Run', exact: true }).click()
+
+  const banner = page.getByTestId('session-expired')
+  await expect(banner).toBeVisible()
+  await banner.getByRole('button', { name: 'Sign in again' }).click()
+  await expect(page.getByText('Connect to a tenant')).toBeVisible()
 })
 
 test('language switch to Russian localizes the UI', async ({ page }) => {

@@ -23,6 +23,7 @@ var ErrNotConnected = errors.New("not connected — connect to a tenant first")
 var ErrReadOnly = errors.New("read-only mode is enabled — writes are blocked")
 
 type Session struct {
+	connMu       sync.Mutex // serialises Connect and Disconnect (hooks included)
 	mu           sync.RWMutex
 	ctx          context.Context
 	client       *graphapi.Client
@@ -133,7 +134,60 @@ func (s *Session) OnDisconnect(fn func(prev *graphapi.Client)) {
 	s.onDisconnect = append(s.onDisconnect, fn)
 }
 
+// Conn is everything one tenant connection consists of.
+type Conn struct {
+	Client      *graphapi.Client
+	ProfileName string
+	Tokens      TokenBroker
+	TenantID    string
+	AppOnly     bool
+	// ProfileID and Policy come from a saved profile (empty when ad hoc).
+	ProfileID    string
+	Policy       Policy
+	DelegatedOrg string
+}
+
+// Connect installs a connection in one step: nobody sees a part of the new
+// connection next to a part of the old one (the policy is in place before
+// the client can be used). A connection still in place is ended first,
+// through Disconnect, so its hooks run (hosts closed, caches dropped,
+// connection-bound operations cancelled) before the new one is visible.
+func (s *Session) Connect(c Conn) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if s.Connected() {
+		s.disconnect()
+	}
+	c.Policy.AllowedGroups = append([]string(nil), c.Policy.AllowedGroups...)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.client, s.profileName, s.tokens = c.Client, c.ProfileName, c.Tokens
+	s.tenantID, s.appOnly = c.TenantID, c.AppOnly
+	s.policy, s.profileID, s.delegatedOrg = c.Policy, c.ProfileID, c.DelegatedOrg
+}
+
+// Current returns the connection as one consistent snapshot (zero when
+// disconnected); read it once instead of field by field when several parts
+// must belong together.
+func (s *Session) Current() Conn {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	p := s.policy
+	p.AllowedGroups = append([]string(nil), p.AllowedGroups...)
+	return Conn{
+		Client: s.client, ProfileName: s.profileName, Tokens: s.tokens,
+		TenantID: s.tenantID, AppOnly: s.appOnly,
+		ProfileID: s.profileID, Policy: p, DelegatedOrg: s.delegatedOrg,
+	}
+}
+
 func (s *Session) Disconnect() {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	s.disconnect()
+}
+
+func (s *Session) disconnect() {
 	s.mu.Lock()
 	hooks := append([]func(*graphapi.Client){}, s.onDisconnect...)
 	prev := s.client

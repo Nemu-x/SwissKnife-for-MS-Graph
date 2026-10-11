@@ -11,6 +11,7 @@ import (
 
 	"swissknife-app/internal/auth"
 	"swissknife-app/internal/graphapi"
+	"swissknife-app/internal/ops"
 	"swissknife-app/internal/secrets"
 	"swissknife-app/internal/session"
 )
@@ -281,6 +282,11 @@ func NewTokenProvider(cr Credentials, prompt auth.DeviceCodePrompt) (*auth.Token
 
 // Connect establishes the session and runs a self-test GET /organization.
 func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
+	// Switching tenants under a running write would finish it against a
+	// connection the operator no longer sees.
+	if err := c.refuseWhileBusy(); err != nil {
+		return nil, err
+	}
 	cr, err := ResolveCredentials(c.store, req)
 	if err != nil {
 		return nil, err
@@ -335,17 +341,37 @@ func (c *ConnectService) Connect(req ConnectRequest) (*Status, error) {
 		name = req.RememberAs
 	}
 
-	// The policy goes in before the client, so no write runs unlimited.
-	c.s.SetPolicy(cr.ProfileID, cr.Policy)
-	c.s.SetClient(gc, name)
-	c.s.SetTokens(provider)
-	c.s.SetIdentity(tenant, mode != string(auth.ModeDeviceCode))
-	c.s.SetDelegatedOrg(cr.DelegatedOrg)
+	// Checked again: an operation may have started during the sign-in.
+	if err := c.refuseWhileBusy(); err != nil {
+		return nil, err
+	}
+	// A connection still in place ends first (its hooks run); the new one
+	// goes in as a whole, policy included, so no write runs unlimited.
+	if c.s.Connected() {
+		c.Disconnect()
+	}
+	c.s.Connect(session.Conn{
+		Client: gc, ProfileName: name, Tokens: provider,
+		TenantID: tenant, AppOnly: mode != string(auth.ModeDeviceCode),
+		ProfileID: cr.ProfileID, Policy: cr.Policy, DelegatedOrg: cr.DelegatedOrg,
+	})
 	c.s.Record("session.connect", tenant, "mode="+mode, nil)
 
 	st := c.GetStatus()
 	st.Org = org
 	return st, nil
+}
+
+// refuseWhileBusy blocks a connection switch while a long or writing
+// operation of the current connection runs.
+func (c *ConnectService) refuseWhileBusy() error {
+	if !c.s.Connected() {
+		return nil
+	}
+	if op := c.s.Ops.Busy(ops.WriteKinds...); op != nil {
+		return &OpError{Code: "connectBusy", Message: "a " + string(op.Kind) + " operation is still running — wait for it to finish or cancel it before switching the connection"}
+	}
+	return nil
 }
 
 // Domains returns the tenant's verified domain names (for UPN autocomplete).

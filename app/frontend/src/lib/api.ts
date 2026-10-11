@@ -49,7 +49,7 @@ export type ConnectRequest = services.ConnectRequest
 const list = (p: Promise<any>) => p.then((v) => (v ?? []) as GraphObject[])
 const one = (p: Promise<any>) => p as Promise<GraphObject>
 
-export const api = {
+const rawApi = {
   connect: {
     profiles: () => Connect.Profiles() as Promise<Profile[]>,
     saveProfile: (p: Partial<Profile>, secret: string) =>
@@ -313,7 +313,9 @@ export const api = {
     // Go marshals an empty list as null: normalise here so no page has to.
     catalog: () => Actions.Catalog().then((v) => (v ?? []).map((e) => ({ ...e, fields: e.fields ?? [] }))) as Promise<engine.CatalogEntry[]>,
     capabilities: () => Actions.Capabilities().then((v) => (v ?? []).map((c) => ({ ...c, impls: c.impls ?? [] }))) as Promise<engine.CapabilityView[]>,
-    plan: (id: string, inputs: Record<string, string>) => Actions.Plan(id, inputs) as Promise<engine.Plan>,
+    // previewId lets cancel() stop the preview while it runs.
+    plan: (id: string, inputs: Record<string, string>, previewId = '') => Actions.Plan(id, inputs, previewId) as Promise<engine.Plan>,
+    cancel: (opOrPreviewId: string) => Actions.Cancel(opOrPreviewId),
     apply: (planId: string, confirm: string) => Actions.Apply(planId, confirm) as Promise<engine.Result>,
     run: (id: string, inputs: Record<string, string>) => Actions.Run(id, inputs) as Promise<engine.ReadResult>,
     runAcross: (id: string, inputs: Record<string, string>, profileIds: string[]) =>
@@ -336,6 +338,38 @@ export const api = {
     test: () => Notify.Test() as Promise<void>,
   },
 }
+
+// An expired delegated sign-in can surface from any call; every page reports
+// it the same way (the store shows one "sign in again" banner).
+const expiredListeners = new Set<() => void>()
+export function onSessionExpired(fn: () => void): () => void {
+  expiredListeners.add(fn)
+  return () => { expiredListeners.delete(fn) }
+}
+export const isSessionExpired = (e: unknown) => errParsed(e).code === 'sessionExpired'
+
+function watchExpiry<T>(o: T): T {
+  const out: any = {}
+  for (const [k, v] of Object.entries(o as any)) {
+    if (typeof v === 'function') {
+      out[k] = (...args: any[]) => {
+        const r = (v as any)(...args)
+        if (!r || typeof r.then !== 'function') return r
+        return r.catch((e: unknown) => {
+          if (isSessionExpired(e)) expiredListeners.forEach((fn) => fn())
+          throw e
+        })
+      }
+    } else if (v && typeof v === 'object') {
+      out[k] = watchExpiry(v)
+    } else {
+      out[k] = v
+    }
+  }
+  return out
+}
+
+export const api = watchExpiry(rawApi)
 
 export function errParsed(e: unknown): ParsedError {
   let msg = ''

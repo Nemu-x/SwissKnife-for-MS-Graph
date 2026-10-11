@@ -12,10 +12,12 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"swissknife-app/internal/graphapi"
 	"swissknife-app/internal/ldapx"
@@ -362,12 +364,14 @@ func (e *Engine) BackendStatus(b Backend) *Reason {
 }
 
 func (e *Engine) env(ctx context.Context) Env {
-	c, _ := e.s.Client()
+	// One snapshot: a connection switch must not hand an implementation
+	// one tenant's client with another tenant's tokens or identity.
+	c := e.s.Current()
 	var dir *ldapx.Client
 	if e.LDAP != nil {
 		dir = e.LDAP()
 	}
-	return Env{Ctx: ctx, Graph: c, Tokens: e.s.Tokens(), TenantID: e.s.TenantID(), DelegatedOrg: e.s.DelegatedOrg(), LDAP: dir, AppOnly: e.s.AppOnly(), PS: e.PS, ReadOnly: e.s.ReadOnly()}
+	return Env{Ctx: ctx, Graph: c.Client, Tokens: c.Tokens, TenantID: c.TenantID, DelegatedOrg: c.DelegatedOrg, LDAP: dir, AppOnly: c.AppOnly, PS: e.PS, ReadOnly: e.s.ReadOnly()}
 }
 
 func (e *Engine) lookup(id string) (Action, error) {
@@ -406,9 +410,20 @@ func contains(list []string, v string) bool {
 	return false
 }
 
-// Plan previews an action. Previewing is allowed in read-only mode — only
-// Apply writes.
+// PlanTimeout bounds a preview, like a read (a hung backend must not leave
+// the operator with an endless spinner).
+const PlanTimeout = 5 * time.Minute
+
+// Plan previews an action, bounded by the app's lifetime and PlanTimeout.
 func (e *Engine) Plan(actionID string, in Inputs) (*Plan, error) {
+	ctx, cancel := context.WithTimeout(e.s.Ctx(), PlanTimeout)
+	defer cancel()
+	return e.PlanCtx(ctx, actionID, in)
+}
+
+// PlanCtx previews an action on ctx (cancel it to abort the preview).
+// Previewing is allowed in read-only mode — only Apply writes.
+func (e *Engine) PlanCtx(ctx context.Context, actionID string, in Inputs) (*Plan, error) {
 	a, err := e.lookup(actionID)
 	if err != nil {
 		return nil, err
@@ -421,13 +436,17 @@ func (e *Engine) Plan(actionID string, in Inputs) (*Plan, error) {
 	if impl == nil {
 		return nil, &Error{Code: "unavailable", Msg: "action unavailable: " + reason.Key}
 	}
-	env := e.env(e.s.Ctx())
+	env := e.env(ctx)
 	if err := e.checkPolicy(env, a, in); err != nil {
-		return nil, err
+		return nil, planCtxErr(ctx, err)
 	}
 	changes, err := impl.Plan(env, in)
 	if err != nil {
-		return nil, e.WrapErr(err)
+		return nil, planCtxErr(ctx, e.WrapErr(err))
+	}
+	if ctx.Err() != nil {
+		// Aborted after the last read: the plan may be incomplete.
+		return nil, planCtxErr(ctx, ctx.Err())
 	}
 	p := &Plan{
 		ActionID: a.ID,
@@ -478,6 +497,18 @@ func (e *Engine) Plan(actionID string, in Inputs) (*Plan, error) {
 		out.Changes[i] = ch
 	}
 	return &out, nil
+}
+
+// planCtxErr reports a preview that failed because its context ended as a
+// translatable timeout or cancellation instead of the backend's own error.
+func planCtxErr(ctx context.Context, err error) error {
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return &Error{Code: "planTimeout", Msg: "the preview took too long and was stopped — try again or narrow the input"}
+	case errors.Is(ctx.Err(), context.Canceled):
+		return &Error{Code: "planCanceled", Msg: "the preview was cancelled"}
+	}
+	return err
 }
 
 // Apply executes a stored plan. confirm must equal the plan's ConfirmTarget

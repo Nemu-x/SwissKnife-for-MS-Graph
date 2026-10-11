@@ -39,9 +39,9 @@ var psDetector = pwsh.NewDetector()
 // when it disconnects.
 func NewEngine(s *session.Session) *engine.Engine {
 	pool := pwsh.NewPool(psDetector, actions.PowerShellCmdlets())
-	// Closing waits for a sign-in that may be in progress; Disconnect is a UI
-	// call and must not hang on it.
-	s.OnDisconnect(func(prev *graphapi.Client) { go pool.CloseFor(prev) })
+	// Closing never waits for a host start or sign-in in flight (those are
+	// discarded when they finish), so it runs before a new connection is set.
+	s.OnDisconnect(func(prev *graphapi.Client) { pool.CloseFor(prev) })
 	dir := func() *ldapx.Client { return directoryFor(s) }
 	e := engine.New(s, engine.GraphProvider{}, exoapi.NewProvider(),
 		workerAware{pwsh.NewExchangeProvider(psDetector), pwsh.FamilyExchange},
@@ -55,8 +55,13 @@ func NewEngine(s *session.Session) *engine.Engine {
 	e.WrapErr = wrapOpErr
 	// The Exchange sign-in name cached for the worker ends with the connection.
 	s.OnDisconnect(func(prev *graphapi.Client) { signIns.Delete(prev) })
-	// A cross-tenant read belongs to the connection that started it.
-	s.OnDisconnect(func(*graphapi.Client) { s.Ops.CancelKind(ops.KindFanOut) })
+	// A cross-tenant read, a preview and a drift check belong to the
+	// connection that started them.
+	s.OnDisconnect(func(*graphapi.Client) {
+		s.Ops.CancelKind(ops.KindFanOut)
+		s.Ops.CancelKind(ops.KindPreview)
+		s.Ops.CancelKind(ops.KindDrift)
+	})
 	// Service writes outside the catalog check their targets through the
 	// session guards; the engine does the lookup.
 	s.SetScopeCheck(func(t session.Target) error {
@@ -218,9 +223,21 @@ func (a *ActionsService) Catalog() []engine.CatalogEntry { return a.e.Catalog() 
 // and why the other implementations cannot run.
 func (a *ActionsService) Capabilities() []engine.CapabilityView { return a.e.Capabilities() }
 
-// Plan previews an action without writing.
-func (a *ActionsService) Plan(actionID string, inputs map[string]string) (*engine.Plan, error) {
-	p, err := a.e.Plan(actionID, inputs)
+// Plan previews an action without writing. previewID names the preview so
+// the UI can stop it with Cancel while it runs ("" = not cancellable by id);
+// it is bounded by engine.PlanTimeout and ends with the connection.
+func (a *ActionsService) Plan(actionID string, inputs map[string]string, previewID string) (*engine.Plan, error) {
+	if previewID != "" {
+		previewID = "preview-" + previewID
+	}
+	op, err := a.s.Ops.Track(a.s.Ctx(), ops.KindPreview, previewID)
+	if err != nil {
+		return nil, err
+	}
+	defer a.s.Ops.Finish(op)
+	ctx, cancel := context.WithTimeout(op.Ctx, engine.PlanTimeout)
+	defer cancel()
+	p, err := a.e.PlanCtx(ctx, actionID, inputs)
 	return p, engineErr(err)
 }
 
@@ -240,8 +257,14 @@ func (a *ActionsService) Run(actionID string, inputs map[string]string) (*engine
 	return r, engineErr(err)
 }
 
-// Cancel aborts a running apply.
-func (a *ActionsService) Cancel(opID string) { a.e.Cancel(opID) }
+// Cancel aborts a running apply by its op id, or a running preview by the
+// previewID it was started with.
+func (a *ActionsService) Cancel(opID string) {
+	a.e.Cancel(opID)
+	if opID != "" {
+		a.e.Cancel("preview-" + opID)
+	}
+}
 
 // engineErr puts engine refusals into the operr envelope so the UI can
 // translate them by code.
