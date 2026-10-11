@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func targets(es []Entry) string {
@@ -40,7 +41,10 @@ func TestTailMissingFile(t *testing.T) {
 
 func TestRotationAtThresholdKeepsThreeFiles(t *testing.T) {
 	l := New(t.TempDir())
-	one := Entry{Action: "a", Target: "000", OK: true}
+	// A fixed time keeps every line the same length (RFC 3339 drops
+	// trailing zeros of the nanoseconds, so "now" varies by a few bytes).
+	at := time.Date(2026, 10, 11, 12, 0, 0, 123456789, time.UTC)
+	one := Entry{Time: at, Action: "a", Target: "000", OK: true}
 	l.Write(one)
 	st, _ := os.Stat(l.Path())
 	lineSize := st.Size()
@@ -48,7 +52,7 @@ func TestRotationAtThresholdKeepsThreeFiles(t *testing.T) {
 	l.maxSize = lineSize * 3 // three entries per file
 
 	for i := 0; i < 20; i++ {
-		l.Write(Entry{Action: "a", Target: fmt.Sprintf("%03d", i), OK: true})
+		l.Write(Entry{Time: at, Action: "a", Target: fmt.Sprintf("%03d", i), OK: true})
 	}
 	for _, p := range []string{l.Path(), l.rotated(1), l.rotated(2), l.rotated(3)} {
 		st, err := os.Stat(p)
