@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"swissknife-app/internal/corrupt"
 	"swissknife-app/internal/engine"
 	"swissknife-app/internal/packs"
 	"swissknife-app/internal/pwsh"
@@ -460,7 +461,14 @@ func (x *PacksService) List() ([]PackInfo, error) {
 		return nil, errors.New("config directory is not set")
 	}
 	e := EngineFor(x.s)
-	return x.infos(reloadPacks(x.s, e), e), nil
+	list := reloadPacks(x.s, e)
+	// An unreadable packs.json was set aside while loading: say so once
+	// (pins, extra keys and disabled packs start over from empty).
+	if err := corrupt.Take(trustFile(x.s)); err != nil {
+		x.s.Record("pack.trustCorrupt", "packs.json", "", err)
+		return nil, err
+	}
+	return x.infos(list, e), nil
 }
 
 // Trust pins a pack's exact contents. digest is what the operator reviewed:

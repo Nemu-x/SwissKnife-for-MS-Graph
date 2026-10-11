@@ -20,6 +20,8 @@ import (
 
 	"github.com/jedisct1/go-minisign"
 	"gopkg.in/yaml.v3"
+
+	"swissknife-app/internal/corrupt"
 )
 
 // Files that carry the signature; they are not part of the digest.
@@ -414,11 +416,16 @@ func validate(files map[string][]byte, m *Manifest) (map[string]string, error) {
 	return scripts, nil
 }
 
-// LoadTrust reads packs.json ("" or missing = empty store).
+// LoadTrust reads packs.json ("" or missing = empty store). A file that does
+// not parse is set aside (corrupt.Quarantine) rather than overwritten by the
+// next save; the owner reports it through corrupt.Take.
 func LoadTrust(path string) Trust {
 	t := Trust{Pinned: map[string]string{}}
 	if b, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(b, &t)
+		if err := json.Unmarshal(b, &t); err != nil {
+			corrupt.Quarantine(path, err)
+			t = Trust{}
+		}
 	}
 	if t.Pinned == nil {
 		t.Pinned = map[string]string{}

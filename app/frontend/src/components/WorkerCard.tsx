@@ -39,7 +39,7 @@ export function WorkerCard() {
         setChecking(true)
         api.worker.check().then((y) => setW((y as Worker) ?? null)).catch(() => {}).finally(() => setChecking(false))
       }
-    }).catch(() => {})
+    }).catch((e) => toast('err', errMessage(e))) // e.g. an unreadable worker.json was set aside
     api.worker.clientFingerprint().then((f) => setMe(f || '')).catch(() => {})
   }, [])
   // PowerShell actions may become available (or not) through the worker.
