@@ -18,12 +18,15 @@ type Error struct {
 	Path    string // the original file
 	MovedTo string // "" when the rename failed
 	Err     error  // the parse error
+	// RenameErr is why the file could not be set aside (MovedTo == "").
+	RenameErr error
 }
 
 func (e *Error) Error() string {
 	name := filepath.Base(e.Path)
 	if e.MovedTo == "" {
-		return fmt.Sprintf("%s could not be read (%v) and could not be set aside; the app continues with an empty one", name, e.Err)
+		return fmt.Sprintf("%s could not be read (%v) and could not be set aside (%v); the app continues with an empty one — "+
+			"copy the file somewhere safe before changing these settings", name, e.Err, e.RenameErr)
 	}
 	return fmt.Sprintf("%s could not be read (%v): it was set aside as %s and the app continues with an empty one — "+
 		"restore it from that copy, or set it up again", name, e.Err, filepath.Base(e.MovedTo))
@@ -40,20 +43,33 @@ var (
 // Quarantine renames the unreadable file at path to
 // <path>.corrupt-<timestamp>, records the problem for Take and returns it.
 func Quarantine(path string, cause error) *Error {
-	e := &Error{Path: path, Err: cause}
-	dst := path + ".corrupt-" + now().Format("20060102-150405")
-	for n := 2; ; n++ {
-		if _, err := os.Lstat(dst); os.IsNotExist(err) {
-			break
-		}
-		dst = fmt.Sprintf("%s.corrupt-%s-%d", path, now().Format("20060102-150405"), n)
-	}
-	if os.Rename(path, dst) == nil {
-		e.MovedTo = dst
-	}
+	e := SetAside(path, cause)
 	mu.Lock()
 	pending[filepath.Clean(path)] = e
 	mu.Unlock()
+	return e
+}
+
+// SetAside is Quarantine for a caller that reports the problem itself:
+// nothing is recorded for Take.
+func SetAside(path string, cause error) *Error {
+	e := &Error{Path: path, Err: cause}
+	stamp := now().Format("20060102-150405")
+	dst := path + ".corrupt-" + stamp
+	// Look for a free name only while the candidate exists; any other Lstat
+	// failure (no access to the folder …) ends the search and lets Rename
+	// report it.
+	for n := 2; n <= 100; n++ {
+		if _, err := os.Lstat(dst); err != nil {
+			break
+		}
+		dst = fmt.Sprintf("%s.corrupt-%s-%d", path, stamp, n)
+	}
+	if err := os.Rename(path, dst); err != nil {
+		e.RenameErr = err
+	} else {
+		e.MovedTo = dst
+	}
 	return e
 }
 
@@ -69,4 +85,15 @@ func Take(path string) error {
 	}
 	delete(pending, key)
 	return e
+}
+
+// Peek returns the unreported problem with path without forgetting it, for
+// callers that only need to explain why something is unavailable.
+func Peek(path string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	if e, ok := pending[filepath.Clean(path)]; ok {
+		return e
+	}
+	return nil
 }

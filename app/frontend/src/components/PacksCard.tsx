@@ -36,11 +36,9 @@ export function PacksCard() {
   const changed = (l: unknown) => { setList((l ?? []) as Pack[]); setCache('catalog.rev', Date.now()) }
 
   const load = () => {
-    api.packs.list().then(changed).catch((e) => {
-      toast('err', errMessage(e))
-      // A set-aside packs.json is reported once: the next read lists the packs.
-      api.packs.list().then(changed).catch(() => {})
-    })
+    api.packs.list().then(changed).catch((e) => toast('err', errMessage(e)))
+      // An unreadable packs.json set aside while loading is reported once.
+      .then(() => api.packs.trustProblem()).catch((e) => toast('err', errMessage(e)))
     api.packs.keys().then((k) => setKeys((k ?? []) as Key[])).catch(() => {})
   }
   useEffect(load, [])

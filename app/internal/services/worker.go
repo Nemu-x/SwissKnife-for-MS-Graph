@@ -243,6 +243,11 @@ func (p workerAware) Status(s *session.Session) *engine.Reason {
 	if _, w := remoteFor(s); hasFamily(w, p.family) {
 		return nil
 	}
+	// The pairing was lost to an unreadable worker.json: say so wherever the
+	// backend shows as unavailable, not only on the Settings card.
+	if s.ConfigDir() != "" && corrupt.Peek(workerFile(s)) != nil {
+		return &engine.Reason{Key: "workerFileCorrupt"}
+	}
 	return r
 }
 

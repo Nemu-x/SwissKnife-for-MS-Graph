@@ -193,11 +193,12 @@ func (s *Server) loadLocked() {
 		if err := json.Unmarshal(b, &list); err != nil {
 			// Set the file aside so the next pairing does not overwrite it,
 			// and say so: every client has to pair again.
-			cerr := corrupt.Quarantine(s.clientsPath(), err)
-			_ = corrupt.Take(s.clientsPath()) // reported right here
-			s.clientsAt = time.Time{}
-			s.log("WARNING: %v", cerr)
+			cerr := corrupt.SetAside(s.clientsPath(), err) // reported right here
+			if cerr.MovedTo != "" {
+				s.clientsAt = time.Time{} // gone: the missing-file case from now on
+			} // else keep its time: it is not re-read (and re-reported) until it changes
 			s.audit("worker.clientsCorrupt", filepath.Base(s.clientsPath()), cerr.MovedTo, cerr)
+			s.log("WARNING: %v", cerr)
 			return
 		}
 		for _, c := range list {

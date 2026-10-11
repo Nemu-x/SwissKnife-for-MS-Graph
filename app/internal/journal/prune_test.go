@@ -3,6 +3,7 @@ package journal
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -52,5 +53,22 @@ func TestHasEndRecordReadsOnlyTheTail(t *testing.T) {
 	l.End("big-1", map[string]any{"copied": 5000})
 	if !hasEndRecord(l.path("big-1")) {
 		t.Fatal("end record not found")
+	}
+
+	// An end record longer than the first tail window is still found.
+	l.Begin("big-2", map[string]any{"kind": "transfer"})
+	l.Event("big-2", "item", map[string]any{"id": "x"})
+	l.End("big-2", map[string]any{"note": strings.Repeat("x", 200<<10)})
+	if !hasEndRecord(l.path("big-2")) {
+		t.Fatal("a long end record was missed")
+	}
+
+	// An empty file is not a finished run.
+	empty := filepath.Join(dir, "empty-3.jsonl")
+	if err := os.WriteFile(empty, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if hasEndRecord(empty) {
+		t.Fatal("an empty file counted as finished")
 	}
 }

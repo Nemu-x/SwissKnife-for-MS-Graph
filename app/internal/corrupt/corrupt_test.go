@@ -41,3 +41,25 @@ func TestQuarantineMovesFileAndReportsOnce(t *testing.T) {
 	}
 	_ = Take(path)
 }
+
+func TestFailedRenameKeepsItsCause(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.json") // nothing to rename
+	e := Quarantine(path, errors.New("bad json"))
+	if e.MovedTo != "" || e.RenameErr == nil || !strings.Contains(e.Error(), "could not be set aside") {
+		t.Fatalf("error = %+v (%v)", e, e)
+	}
+	// Peek explains without consuming; Take then reports once.
+	for i := 0; i < 2; i++ {
+		if Peek(path) == nil {
+			t.Fatal("Peek consumed the problem")
+		}
+	}
+	if Take(path) == nil || Peek(path) != nil {
+		t.Fatal("Take did not consume the problem")
+	}
+	// SetAside records nothing for Take.
+	_ = SetAside(path, errors.New("bad"))
+	if Take(path) != nil {
+		t.Fatal("SetAside recorded a pending problem")
+	}
+}

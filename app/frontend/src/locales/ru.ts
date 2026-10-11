@@ -1512,6 +1512,7 @@ const ru: Dict<typeof en> = {
       exoPermission: 'Exchange не пускает приложение: выдайте Exchange.ManageAsAppV2 (или Exchange.ManageV2 для входа под пользователем) и роль Recipient Management.',
       exoApiNotEnabled: 'Exchange Admin API в этом тенанте пока недоступен (Preview) — это закроет PowerShell-бэкенд.',
       exoUnreachable: 'Exchange Online не ответил — проверьте сеть и попробуйте ещё раз.',
+      workerFileCorrupt: 'Файл сопряжения с воркером (worker.json) не читается и отложен в сторону — сопрягите воркер заново в Настройки → Удалённый воркер.',
       exoApiChanged: 'Exchange Admin API перестал принимать вызов этого приложения (он в Preview и мог измениться) — для этого подключения используется PowerShell-бэкенд.',
     },
     backends: { workflow: 'Сценарий', 'ldap-tls': 'AD (TLS)', 'exo-ps': 'Exchange PS', 'teams-ps': 'Teams PS', graph: 'Graph', 'exo-api': 'Exchange', pwsh: 'PowerShell', compliance: 'Compliance', ldap: 'AD', worker: 'Воркер' },

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -63,8 +64,13 @@ type clientKey struct {
 // a long-running app reconnects, a worker serves several tenants.
 var (
 	clientsMu sync.Mutex
-	clients   = map[clientKey]*Client{}
+	clients   = map[clientKey]*cachedClient{}
 )
+
+type cachedClient struct {
+	c    *Client
+	used time.Time
+}
 
 const maxCachedClients = 16
 
@@ -82,14 +88,23 @@ func FromEnv(env engine.Env) (*Client, error) {
 	key := clientKey{env.Tokens, base}
 	clientsMu.Lock()
 	defer clientsMu.Unlock()
-	if c := clients[key]; c != nil && c.conn == env.Graph {
-		return c, nil
+	if cc := clients[key]; cc != nil && cc.c.conn == env.Graph {
+		cc.used = time.Now()
+		return cc.c, nil
 	}
-	if len(clients) >= maxCachedClients {
-		clear(clients)
+	if _, replacing := clients[key]; !replacing && len(clients) >= maxCachedClients {
+		// Evict only the least recently used connection's client.
+		var oldest clientKey
+		var at time.Time
+		for k, cc := range clients {
+			if at.IsZero() || cc.used.Before(at) {
+				oldest, at = k, cc.used
+			}
+		}
+		delete(clients, oldest)
 	}
 	c := newClient(env, base)
-	clients[key] = c
+	clients[key] = &cachedClient{c: c, used: time.Now()}
 	return c, nil
 }
 
@@ -117,18 +132,33 @@ const maxUnavailableRetries = 3
 // here a POST invokes a Get- or Set- cmdlet with absolute values, which is
 // safe to send again, so a busy or timed-out gateway is retried with backoff.
 func (c *Client) post(ctx context.Context, path string, hdr http.Header, body any, out *json.RawMessage) error {
-	delay := time.Second
+	backoff := time.Second
 	for try := 0; ; try++ {
 		err := c.g.DoWithHeaders(ctx, http.MethodPost, path, nil, hdr, body, out)
 		var ge *graphapi.GraphError
 		if err == nil || try >= maxUnavailableRetries || !errors.As(err, &ge) || ge.StatusCode != 503 && ge.StatusCode != 504 {
 			return err
 		}
-		if serr := sleep(ctx, delay); serr != nil {
+		if serr := sleep(ctx, retryDelay(ge.RetryAfter, backoff)); serr != nil {
+			if ctx.Err() != nil {
+				return ctx.Err() // cancelled while waiting, not a gateway failure
+			}
 			return err
 		}
-		delay *= 2
+		backoff *= 2
 	}
+}
+
+// maxRetryWait caps a server-requested wait, as the Graph client does.
+const maxRetryWait = 60 * time.Second
+
+// retryDelay honours Retry-After when the gateway sends one, else uses the
+// exponential backoff with up to 50% jitter so parallel callers spread out.
+func retryDelay(retryAfter, backoff time.Duration) time.Duration {
+	if retryAfter > 0 {
+		return min(retryAfter, maxRetryWait)
+	}
+	return backoff + time.Duration(rand.Int64N(int64(backoff)/2+1))
 }
 
 // MailboxAnchor is the routing hint for a call bound to one mailbox.
@@ -250,8 +280,12 @@ func endpointGone(err error) bool {
 // with endpointGone; the Provider reports them unavailable.
 var (
 	goneMu sync.Mutex
-	gone   = map[*graphapi.Client]bool{}
+	gone   = map[*graphapi.Client]time.Time{} // → when it was marked
 )
+
+// maxGone bounds the marked connections; past it only the oldest mark is
+// dropped (a long-gone connection), never the others'.
+const maxGone = 64
 
 func markGone(conn *graphapi.Client) {
 	if conn == nil {
@@ -259,16 +293,24 @@ func markGone(conn *graphapi.Client) {
 	}
 	goneMu.Lock()
 	defer goneMu.Unlock()
-	if len(gone) >= maxCachedClients {
-		clear(gone)
+	if _, ok := gone[conn]; !ok && len(gone) >= maxGone {
+		var oldest *graphapi.Client
+		var at time.Time
+		for k, t := range gone {
+			if oldest == nil || t.Before(at) {
+				oldest, at = k, t
+			}
+		}
+		delete(gone, oldest)
 	}
-	gone[conn] = true
+	gone[conn] = time.Now()
 }
 
 func isGone(conn *graphapi.Client) bool {
 	goneMu.Lock()
 	defer goneMu.Unlock()
-	return gone[conn]
+	_, ok := gone[conn]
+	return ok
 }
 
 // Provider reports whether the Admin API answers for the connected tenant.

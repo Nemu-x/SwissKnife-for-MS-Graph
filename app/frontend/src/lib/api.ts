@@ -75,6 +75,7 @@ const rawApi = {
   },
   packs: {
     list: () => Packs.List(),
+    trustProblem: () => Packs.TrustProblem(),
     trust: (name: string, digest: string) => Packs.Trust(name, digest),
     untrust: (name: string) => Packs.Untrust(name),
     disable: (name: string) => Packs.Disable(name),

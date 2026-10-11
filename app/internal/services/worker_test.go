@@ -87,7 +87,7 @@ func TestCmdletsGoToThePairedWorkerWhenThisMachineCannot(t *testing.T) {
 		t.Fatalf("unpair: %v", err)
 	}
 	if w, err := ws.Status(); err != nil || w != nil {
-		t.Fatalf("unpair: %v", err)
+		t.Fatalf("status after unpair = %+v, %v; want nil, nil", w, err)
 	}
 }
 
@@ -122,7 +122,11 @@ func TestWorkerCheckReportsOnlineAndOffline(t *testing.T) {
 		strings.Join(w.Families, ",") != "exo" || strings.Join(w.Unavailable, ",") != "teams" {
 		t.Fatalf("online: %+v %v", w, err)
 	}
-	if st, _ := ws.Status(); st.Online {
+	st, err := ws.Status()
+	if err != nil || st == nil {
+		t.Fatalf("status = %+v, %v", st, err)
+	}
+	if st.Online {
 		t.Fatal("online is known only from a check in this session")
 	}
 	cancel()

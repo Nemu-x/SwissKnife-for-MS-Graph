@@ -461,14 +461,36 @@ func (x *PacksService) List() ([]PackInfo, error) {
 		return nil, errors.New("config directory is not set")
 	}
 	e := EngineFor(x.s)
-	list := reloadPacks(x.s, e)
-	// An unreadable packs.json was set aside while loading: say so once
-	// (pins, extra keys and disabled packs start over from empty).
-	if err := corrupt.Take(trustFile(x.s)); err != nil {
-		x.s.Record("pack.trustCorrupt", "packs.json", "", err)
-		return nil, err
+	return x.infos(reloadPacks(x.s, e), e), nil
+}
+
+// TrustProblem reports, once, that an unreadable packs.json was set aside
+// while loading (pins, extra keys and disabled packs start over from empty).
+// The packs screen asks after listing, so the list itself still shows.
+func (x *PacksService) TrustProblem() error {
+	if x.s.ConfigDir() == "" {
+		return nil
 	}
-	return x.infos(list, e), nil
+	return x.takeTrustProblem()
+}
+
+func (x *PacksService) takeTrustProblem() error {
+	err := corrupt.Take(trustFile(x.s))
+	if err != nil {
+		x.s.Record("pack.trustCorrupt", "packs.json", "", err)
+	}
+	return err
+}
+
+// trustForWrite loads the trust store for a change. When it was just set
+// aside as unreadable the change is refused with that report first, so the
+// operator learns pins and keys were reset before saving over them.
+func (x *PacksService) trustForWrite() (packs.Trust, error) {
+	t := packs.LoadTrust(trustFile(x.s))
+	if err := x.takeTrustProblem(); err != nil {
+		return packs.Trust{}, err
+	}
+	return t, nil
 }
 
 // Trust pins a pack's exact contents. digest is what the operator reviewed:
@@ -484,7 +506,10 @@ func (x *PacksService) Trust(name, digest string) ([]PackInfo, error) {
 		if p.Digest != digest {
 			return nil, errors.New("the pack changed since you reviewed it — review it again")
 		}
-		t := packs.LoadTrust(trustFile(x.s))
+		t, err := x.trustForWrite()
+		if err != nil {
+			return nil, err
+		}
 		t.Pinned[name] = digest
 		if err := packs.SaveTrust(trustFile(x.s), t); err != nil {
 			return nil, err
@@ -503,7 +528,10 @@ func (x *PacksService) Enable(name string) ([]PackInfo, error) { return x.setDis
 func (x *PacksService) setDisabled(name string, off bool) ([]PackInfo, error) {
 	trustMu.Lock()
 	defer trustMu.Unlock()
-	t := packs.LoadTrust(trustFile(x.s))
+	t, err := x.trustForWrite()
+	if err != nil {
+		return nil, err
+	}
 	kept := []string{}
 	for _, n := range t.Disabled {
 		if n != name {
@@ -525,7 +553,10 @@ func (x *PacksService) setDisabled(name string, off bool) ([]PackInfo, error) {
 func (x *PacksService) Untrust(name string) ([]PackInfo, error) {
 	trustMu.Lock()
 	defer trustMu.Unlock()
-	t := packs.LoadTrust(trustFile(x.s))
+	t, err := x.trustForWrite()
+	if err != nil {
+		return nil, err
+	}
 	delete(t.Pinned, name)
 	if err := packs.SaveTrust(trustFile(x.s), t); err != nil {
 		return nil, err
@@ -564,7 +595,10 @@ func (x *PacksService) AddKey(key, name string) ([]KeyInfo, error) {
 	if err := packs.CheckKey(key); err != nil {
 		return nil, fmt.Errorf("not a minisign public key: %w", err)
 	}
-	t := packs.LoadTrust(trustFile(x.s))
+	t, err := x.trustForWrite()
+	if err != nil {
+		return nil, err
+	}
 	known := false
 	for _, k := range t.Keys {
 		known = known || k == key
@@ -588,7 +622,10 @@ func (x *PacksService) AddKey(key, name string) ([]KeyInfo, error) {
 func (x *PacksService) RemoveKey(key string) ([]KeyInfo, error) {
 	trustMu.Lock()
 	defer trustMu.Unlock()
-	t := packs.LoadTrust(trustFile(x.s))
+	t, err := x.trustForWrite()
+	if err != nil {
+		return nil, err
+	}
 	kept := []string{}
 	for _, k := range t.Keys {
 		if k != key {
@@ -724,7 +761,10 @@ func (x *PacksService) SetHub(hub string) (string, error) {
 	}
 	trustMu.Lock()
 	defer trustMu.Unlock()
-	t := packs.LoadTrust(trustFile(x.s))
+	t, err := x.trustForWrite()
+	if err != nil {
+		return "", err
+	}
 	t.Hub = hub
 	if err := packs.SaveTrust(trustFile(x.s), t); err != nil {
 		return "", err

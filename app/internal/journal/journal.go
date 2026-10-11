@@ -291,15 +291,25 @@ func hasEndRecord(path string) bool {
 	if err != nil {
 		return false
 	}
-	const tail = 64 << 10
-	off := max(st.Size()-tail, 0)
-	buf := make([]byte, st.Size()-off)
-	if _, err := f.ReadAt(buf, off); err != nil {
-		return false
+	if st.Size() == 0 {
+		return false // an empty file is not a finished run
 	}
-	lines := strings.Split(strings.TrimSpace(string(buf)), "\n")
-	var end Entry
-	return json.Unmarshal([]byte(strings.TrimSpace(lines[len(lines)-1])), &end) == nil && end.Type == "end"
+	// Read a growing tail until it holds the whole last line: an end record
+	// with a large summary can be longer than the first window.
+	for tail := int64(64 << 10); ; tail *= 4 {
+		off := max(st.Size()-tail, 0)
+		buf := make([]byte, st.Size()-off)
+		if _, err := f.ReadAt(buf, off); err != nil {
+			return false
+		}
+		text := strings.TrimSpace(string(buf))
+		i := strings.LastIndexByte(text, '\n')
+		if i < 0 && off > 0 && tail < 16<<20 {
+			continue // the last line starts before this window
+		}
+		var end Entry
+		return json.Unmarshal([]byte(strings.TrimSpace(text[i+1:])), &end) == nil && end.Type == "end"
+	}
 }
 
 // firstLastLines reads a file's first and last non-empty lines cheaply.

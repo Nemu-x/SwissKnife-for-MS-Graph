@@ -18,8 +18,14 @@ type certExpiryKey struct {
 }
 
 // certExpiryCache spares a keychain read and a PFX decode per profile on every
-// profile listing.
-var certExpiryCache sync.Map // certExpiryKey -> time.Time
+// profile listing. Keyed by path, so a replaced file overwrites its entry
+// instead of adding one.
+var certExpiryCache sync.Map // path -> certExpiryEntry
+
+type certExpiryEntry struct {
+	version  certExpiryKey
+	notAfter time.Time
+}
 
 // annotateCertExpiry fills CertNotAfter on certificate profiles, so the UI can
 // warn before the certificate expires. Best-effort: a missing file or a
@@ -36,8 +42,8 @@ func annotateCertExpiry(store *secrets.Store, list []secrets.Profile) {
 			continue
 		}
 		key := certExpiryKey{p.CertPath, st.Size(), st.ModTime()}
-		if v, ok := certExpiryCache.Load(key); ok {
-			na := v.(time.Time)
+		if v, ok := certExpiryCache.Load(p.CertPath); ok && v.(certExpiryEntry).version == key {
+			na := v.(certExpiryEntry).notAfter
 			p.CertNotAfter = &na
 			continue
 		}
@@ -53,7 +59,7 @@ func annotateCertExpiry(store *secrets.Store, list []secrets.Profile) {
 		if err != nil {
 			continue
 		}
-		certExpiryCache.Store(key, na)
+		certExpiryCache.Store(p.CertPath, certExpiryEntry{key, na})
 		p.CertNotAfter = &na
 	}
 }

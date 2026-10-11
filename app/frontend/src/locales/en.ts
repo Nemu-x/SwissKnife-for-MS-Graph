@@ -1512,6 +1512,7 @@ const en = {
       exoPermission: 'Exchange refused the app: grant Exchange.ManageAsAppV2 (or Exchange.ManageV2 for sign-in profiles) and the Recipient Management role.',
       exoApiNotEnabled: 'The Exchange Admin API is not available in this tenant yet (Preview) — the PowerShell backend will cover this.',
       exoUnreachable: 'Exchange Online did not answer — check the network and try again.',
+      workerFileCorrupt: 'The worker pairing file (worker.json) could not be read and was set aside — pair the worker again in Settings → Remote worker.',
       exoApiChanged: 'The Exchange Admin API stopped accepting a call this app makes (it is in Preview and may have changed) — this connection uses the PowerShell backend instead.',
     },
     backends: { workflow: 'Workflow', 'ldap-tls': 'AD (TLS)', 'exo-ps': 'Exchange PS', 'teams-ps': 'Teams PS', graph: 'Graph', 'exo-api': 'Exchange', pwsh: 'PowerShell', compliance: 'Compliance', ldap: 'AD', worker: 'Worker' },
