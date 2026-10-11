@@ -16,8 +16,10 @@ Copy the pack folder into the `actions` folder of the app's configuration
 
 A pack runs only when one of these holds:
 
-- it is **signed** with minisign by a key you trust (the project's key is built
-  in; add an author's public key in Settings), or
+- it is **signed** with minisign by a key you trust (the project's **pack key**
+  is built in — `pack.pub` in the [Action Hub](https://github.com/Nemu-x/SwissKnife-Action-Hub),
+  key id `454C550D267A0654`, not the release key in `minisign.pub`; add an
+  author's public key in Settings), or
 - you **reviewed and trusted** its exact contents — any later change to any
   file makes its actions unavailable until you trust it again.
 

@@ -39,7 +39,29 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           working-directory: app
-          version: latest
+          # Pinned: a new linter release must not turn CI red without a code change.
+          version: v2.12.2
+
+  # Windows-only code (Credential Manager, elevation, the PowerShell host with
+  # Windows pwsh) only compiles and runs here.
+  backend-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: app/go.sum
+      - name: Placeholder embed dir
+        working-directory: app
+        shell: bash
+        run: mkdir -p frontend/dist && echo "<!doctype html>" > frontend/dist/index.html
+      - name: Vet + test
+        working-directory: app
+        shell: bash
+        run: |
+          go vet ./...
+          go test ./... -count=1
 
   frontend:
     runs-on: ubuntu-24.04
