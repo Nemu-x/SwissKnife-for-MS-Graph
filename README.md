@@ -46,17 +46,18 @@ Authentication is **app-only (client credentials)** or **delegated (device code)
 
 ## Features
 
-**New in 2.0** (in progress on `dev`)
+**New in 2.0**
 
 - **Execution engine** — preview of every change, one confirmation, journal and audit for Graph, Exchange, Teams, PowerShell and LDAP alike; the CLI runs the same actions headless
 - **Exchange & Teams PowerShell as buttons** — mailbox permissions, convert to shared, forwarding, transport rules, Teams policies; PowerShell 7 and the modules install from inside the app
 - **Incident response** — find and purge a phishing mail tenant-wide, suspicious inbox rules, block senders, quarantine, a one-click compromised-account playbook
 - **Reports & Intune explorer** — inactive users, license waste, MFA status, guests, privileged roles, mailbox sizes and forwarding; what Intune assigns to whom, unassigned policies, conflicts
-- **Configuration as code** — snapshots of Conditional Access, Intune, Exchange and Teams config; export to a git folder, diff, restore, drift alerts
+- **Configuration as code** — snapshots of Conditional Access, Intune, Exchange and Teams config; export to a git folder, diff, drift alerts, and restore of any section — or everything since a snapshot in one preview
 - **On-prem Active Directory** — find, disable, unlock, reset passwords and manage groups over LDAPS, side by side with Microsoft 365 (or on its own)
 - **Multi-tenant & GDAP** — run reports across several tenants; partner (GDAP) profiles
 - **Profile limits** — read-only or group-scoped profiles for shared and junior use
-- **Action packs** — add your own actions in PowerShell; signed or reviewed before they run, isolated in their own process
+- **Action packs & Action Hub** — workflows that chain built-in actions (no code) and PowerShell actions that run sandboxed (declared commands only, ConstrainedLanguage); browse and install community packs from the [Action Hub](https://github.com/Nemu-x/SwissKnife-Action-Hub) — signed by the project's pack key, or reviewed by you before they run
+- **Capabilities** — every action has a stable name and shows what it runs through right now (Exchange REST, PowerShell here, or the worker) and why the alternatives can't
 - **Remote worker** — a paired Windows machine runs the PowerShell for a Mac or Linux box (pinned mutual TLS)
 - **Object explorer**, a menu that folds to icons and hides what you do not use, and "what you manage" (Microsoft 365, on-prem AD or both)
 
@@ -132,9 +133,7 @@ Latest release — direct links (always point to the newest version):
 | Linux x64 | [AppImage](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-x86_64.AppImage) · [deb](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.deb) · [rpm](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.rpm) · [tar.gz](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-amd64.tar.gz) |
 | Linux ARM64 | [AppImage](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-aarch64.AppImage) · [deb](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.deb) · [rpm](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.rpm) · [tar.gz](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SwissKnifeGraph-linux-arm64.tar.gz) |
 | Arch (AUR) | `yay -S swissknife-graph-bin` |
-| Windows (winget) | `winget install Nemu-x.SwissKnifeGraph` *(pending first submission)* |
-| Windows (Scoop) | `scoop bucket add nemu-x https://github.com/Nemu-x/scoop-bucket` · `scoop install swissknife-graph` *(pending first submission)* |
-| macOS (Homebrew) | `brew install --cask Nemu-x/tap/swissknife-graph` *(pending first submission)* |
+| Windows (winget) | `winget install Nemu-x.SwissKnifeGraph` *(awaiting approval in winget-pkgs)* |
 
 Verify downloads against [`SHA256SUMS.txt`](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SHA256SUMS.txt), signed with minisign ([`.minisig`](https://github.com/Nemu-x/SwissKnife-for-MS-Graph/releases/latest/download/SHA256SUMS.txt.minisig), public key in [`minisign.pub`](minisign.pub)):
 
@@ -154,7 +153,7 @@ Prerequisites: **Go 1.26+**, **Node 22+**, and the [Wails CLI](https://wails.io)
 ```bash
 cd app
 wails dev      # hot-reload development
-wails build    # production binary → app/build/bin/ (About shows e.g. 0.6.0-dev)
+wails build    # production binary → app/build/bin/ (About shows e.g. 2.0.0-dev)
 
 # bake an exact version into About, like CI does:
 wails build -ldflags "-X main.version=$(git describe --tags --always)"

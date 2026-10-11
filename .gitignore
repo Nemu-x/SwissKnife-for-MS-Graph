@@ -1,13 +1,6 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Build system
+# Build output
 dist/
 build/
-*.spec
 
 # IDE files
 .vscode/
@@ -16,12 +9,8 @@ build/
 # MacOS
 .DS_Store
 
-# PyInstaller temp
+# Logs
 *.log
-
-# Virtualenv
-venv/
-.env/
 
 # Playwright
 app/frontend/test-results/
