@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,13 +74,13 @@ func findExe() string {
 	case "windows":
 		for _, base := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramW6432")} {
 			if base != "" {
-				candidates = append(candidates, filepath.Join(base, "PowerShell", "7", "pwsh.exe"))
+				candidates = append(candidates, versionedExes(filepath.Join(base, "PowerShell"), "pwsh.exe")...)
 			}
 		}
 	case "darwin":
-		candidates = []string{"/usr/local/bin/pwsh", "/opt/homebrew/bin/pwsh", "/usr/local/microsoft/powershell/7/pwsh"}
+		candidates = append([]string{"/usr/local/bin/pwsh", "/opt/homebrew/bin/pwsh"}, versionedExes("/usr/local/microsoft/powershell", "pwsh")...)
 	default:
-		candidates = []string{"/usr/bin/pwsh", "/opt/microsoft/powershell/7/pwsh", "/snap/bin/pwsh"}
+		candidates = append([]string{"/usr/bin/pwsh", "/snap/bin/pwsh"}, versionedExes("/opt/microsoft/powershell", "pwsh")...)
 	}
 	for _, c := range candidates {
 		if st, err := os.Stat(c); err == nil && !st.IsDir() {
@@ -87,6 +88,31 @@ func findExe() string {
 		}
 	}
 	return ""
+}
+
+// versionedExes lists root/<version>/exe for every version folder (7, 8,
+// 7-preview, ...), newest major first; folders without a leading number
+// sort last. Missing roots yield nothing.
+func versionedExes(root, exe string) []string {
+	matches, _ := filepath.Glob(filepath.Join(root, "*", exe))
+	major := func(p string) int {
+		dir := filepath.Base(filepath.Dir(p))
+		end := 0
+		for end < len(dir) && dir[end] >= '0' && dir[end] <= '9' {
+			end++
+		}
+		n, err := strconv.Atoi(dir[:end])
+		if err != nil {
+			return -1
+		}
+		// A plain "7" beats "7-preview" of the same major.
+		if end < len(dir) {
+			return n*2 - 1
+		}
+		return n * 2
+	}
+	sort.SliceStable(matches, func(i, j int) bool { return major(matches[i]) > major(matches[j]) })
+	return matches
 }
 
 const detectScript = `$m = @{}; Get-Module -ListAvailable -Name ExchangeOnlineManagement,MicrosoftTeams | ForEach-Object { $v = $_.Version.ToString(); if (-not $m[$_.Name] -or [version]$v -gt [version]$m[$_.Name]) { $m[$_.Name] = $v } }; @{ version = $PSVersionTable.PSVersion.ToString(); modules = $m } | ConvertTo-Json -Compress`

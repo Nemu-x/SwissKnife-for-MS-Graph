@@ -128,6 +128,45 @@ function Test-PackScript([string]$text, [hashtable]$declared) {
 }
 $initialized = $false
 
+# Requests are parsed with System.Text.Json, not ConvertFrom-Json: with Module
+# Logging on, every cmdlet's parameter bindings go to event 4103, and the
+# request line (a connect request carries access tokens) would be its
+# -InputObject. .NET calls and this script's own functions are not logged.
+# Connect-ExchangeOnline / Connect-MicrosoftTeams still bind the token as a
+# parameter: when Module Logging covers those modules, the policy records it
+# there and nothing in the app can prevent that.
+Add-Type -AssemblyName System.Text.Json
+function ConvertFrom-JsonElement($e) {
+    switch ($e.ValueKind) {
+        'Object' {
+            $h = @{}
+            foreach ($p in $e.EnumerateObject()) { $h[$p.Name] = ConvertFrom-JsonElement $p.Value }
+            return $h
+        }
+        'Array' {
+            $list = [Collections.Generic.List[object]]::new()
+            foreach ($x in $e.EnumerateArray()) { $list.Add((ConvertFrom-JsonElement $x)) }
+            return , $list.ToArray()
+        }
+        'String' { return $e.GetString() }
+        'Number' {
+            $n = 0L
+            if ($e.TryGetInt64([ref]$n)) { return $n }
+            return $e.GetDouble()
+        }
+        'True' { return $true }
+        'False' { return $false }
+        default { return $null }
+    }
+}
+function Read-Request([string]$text) {
+    $doc = [System.Text.Json.JsonDocument]::Parse($text)
+    try {
+        if ($doc.RootElement.ValueKind -ne 'Object') { throw 'a request must be a JSON object' }
+        return ConvertFrom-JsonElement $doc.RootElement
+    } finally { $doc.Dispose() }
+}
+
 function Reply($obj) {
     # The leading newline keeps the marker at a line start even after module
     # output written with -NoNewline.
@@ -151,7 +190,7 @@ while ($true) {
     if ($line.Trim() -eq '') { continue }
     $req = $null
     try {
-        $req = $line | ConvertFrom-Json -AsHashtable
+        $req = Read-Request $line
         switch ($req.op) {
             'init' {
                 # One-shot: the allow-list cannot be widened later.

@@ -1,10 +1,16 @@
 package cli
 
 import (
+	"bufio"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"text/tabwriter"
+
+	"golang.org/x/term"
 
 	"swissknife-app/internal/engine"
 	"swissknife-app/internal/services"
@@ -16,7 +22,8 @@ import (
 //	action <id> field=value ... [--apply] [--confirm <target>]
 //
 // Without --apply only the preview is printed, so a script can show what would
-// change before committing to it — the same two steps as the GUI.
+// change before committing to it — the same two steps as the GUI. Secret
+// fields (passwords) are read from stdin, never taken from the command line.
 func setupAction(fs *flag.FlagSet) func(*env, *globals, []string) int {
 	apply := fs.Bool("apply", false, "apply the previewed changes (default: preview only)")
 	confirm := fs.String("confirm", "", "repeat the target to apply a destructive action")
@@ -41,6 +48,9 @@ func setupAction(fs *flag.FlagSet) func(*env, *globals, []string) int {
 
 		if pos[0] == "list" {
 			return printCatalog(e, g, eng.Catalog())
+		}
+		if err := readSecrets(e, eng.Catalog(), pos[0], in); err != nil {
+			return report(e, err)
 		}
 
 		if isRead(eng.Catalog(), pos[0]) {
@@ -90,6 +100,65 @@ func setupAction(fs *flag.FlagSet) func(*env, *globals, []string) int {
 		}
 		return exitOK
 	}
+}
+
+// readSecrets fills the action's secret fields (passwords) from stdin. A value
+// on the command line is refused: it would land in the shell history and the
+// process list. `field=-`, or leaving a required secret out, reads it from
+// stdin — without echo from a terminal, as one line from a pipe.
+func readSecrets(e *env, list []engine.CatalogEntry, id string, in engine.Inputs) error {
+	var fields []engine.Field
+	for _, a := range list {
+		if a.ID == id {
+			fields = a.Fields
+			break
+		}
+	}
+	var lines *bufio.Reader
+	for _, f := range fields {
+		if f.Kind != engine.FieldSecret {
+			continue
+		}
+		v, given := in[f.Name]
+		if given && v != "-" {
+			return usagef("action: %s is a secret — do not put it on the command line; pass %s=- (or leave it out) and type or pipe it on stdin", f.Name, f.Name)
+		}
+		if !given && !f.Required {
+			continue
+		}
+		s, err := readSecretLine(e, f.Name, &lines)
+		if err != nil {
+			return fmt.Errorf("action: read %s from stdin: %w", f.Name, err)
+		}
+		if s == "" {
+			return usagef("action: no value for %s on stdin", f.Name)
+		}
+		in[f.Name] = s
+	}
+	return nil
+}
+
+// readSecretLine reads one secret: from a terminal with echo off (prompting on
+// stderr), otherwise the next line of stdin. lines is shared between calls so
+// several secrets can be piped one per line.
+func readSecretLine(e *env, name string, lines **bufio.Reader) (string, error) {
+	if e.stdin == nil {
+		return "", errors.New("no input available")
+	}
+	if f, ok := e.stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		_, _ = fmt.Fprintf(e.stderr, "%s: ", name)
+		b, err := term.ReadPassword(int(f.Fd()))
+		_, _ = fmt.Fprintln(e.stderr)
+		return string(b), err
+	}
+	if *lines == nil {
+		*lines = bufio.NewReader(e.stdin)
+	}
+	line, err := (*lines).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) { // EOF: the last line (or nothing)
+		return "", err
+	}
+	return strings.TrimRight(line, "\r\n"), nil
 }
 
 func printCatalog(e *env, g *globals, list []engine.CatalogEntry) int {

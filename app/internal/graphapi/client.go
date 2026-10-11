@@ -107,9 +107,9 @@ func (c *Client) PostForLocationWithHeaders(ctx context.Context, path string, pa
 }
 
 func (c *Client) doRaw(ctx context.Context, method, path string, params url.Values, hdr http.Header, body any) ([]byte, string, error) {
-	u := path
-	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
-		u = c.baseURL + "/" + strings.TrimLeft(path, "/")
+	u, err := c.resolve(path)
+	if err != nil {
+		return nil, "", err
 	}
 	if len(params) > 0 {
 		sep := "?"
@@ -132,7 +132,7 @@ func (c *Client) doRaw(ctx context.Context, method, path string, params url.Valu
 
 	var raw []byte
 	var loc string
-	err := c.withRetry(ctx, method, func() (time.Duration, error) {
+	err = c.withRetry(ctx, method, func() (time.Duration, error) {
 		var retryAfter time.Duration
 		var err error
 		raw, loc, retryAfter, err = c.once(ctx, method, u, hdr, payload)
@@ -142,6 +142,40 @@ func (c *Client) doRaw(ctx context.Context, method, path string, params url.Valu
 		return nil, "", err
 	}
 	return raw, loc, nil
+}
+
+// resolve turns a request path into an absolute URL. Relative paths hang off
+// the base URL. Absolute URLs (@odata.nextLink, operation Location headers,
+// Beta) are accepted only when they point at the base URL's own scheme and
+// host: the request carries the bearer token, so a link taken from a response
+// must never carry it to another server.
+func (c *Client) resolve(path string) (string, error) {
+	lower := strings.ToLower(path)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		return c.baseURL + "/" + strings.TrimLeft(path, "/"), nil
+	}
+	if err := c.checkSameOrigin(path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// checkSameOrigin rejects an absolute URL whose scheme or host differs from
+// the base URL's (so an http:// link is refused against the https base).
+func (c *Client) checkSameOrigin(raw string) error {
+	target, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("graph: invalid URL: %w", err)
+	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil {
+		return fmt.Errorf("graph: invalid base URL: %w", err)
+	}
+	if target.User != nil || !strings.EqualFold(target.Scheme, base.Scheme) || !strings.EqualFold(target.Host, base.Host) {
+		return fmt.Errorf("graph: refusing to send the access token to %s://%s (only %s://%s is allowed)",
+			target.Scheme, target.Host, base.Scheme, base.Host)
+	}
+	return nil
 }
 
 // withRetry runs attempt until it succeeds or retries are exhausted, honoring
@@ -198,6 +232,11 @@ func (c *Client) once(ctx context.Context, method, u string, hdr http.Header, pa
 	var bodyReader io.Reader
 	if payload != nil {
 		bodyReader = bytes.NewReader(payload)
+	}
+	// Defense in depth: every caller resolves u first, but the bearer token
+	// is attached below, so re-check right where it is sent.
+	if err := c.checkSameOrigin(u); err != nil {
+		return nil, "", 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u, bodyReader)
 	if err != nil {

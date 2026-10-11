@@ -42,6 +42,8 @@ const binName = "SwissKnifeGraph"
 // real profile store and OS keychain; tests substitute fakes so the command
 // layer can be exercised against an httptest Graph without a keychain.
 type env struct {
+	// stdin supplies secret inputs (never taken from the command line).
+	stdin   io.Reader
 	stdout  io.Writer
 	stderr  io.Writer
 	version string
@@ -83,6 +85,7 @@ func Run(args []string, version string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	e := &env{
+		stdin:   os.Stdin,
 		stdout:  os.Stdout,
 		stderr:  os.Stderr,
 		version: version,
