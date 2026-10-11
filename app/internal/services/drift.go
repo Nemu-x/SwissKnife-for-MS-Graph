@@ -25,16 +25,16 @@ import (
 
 // DriftWatch is persisted as drift.json in the config directory.
 type DriftWatch struct {
-	BaselineID    string        `json:"baselineId"`
-	EveryHours    int           `json:"everyHours"` // 0 = off
-	NotifyTeams   bool          `json:"notifyTeams"`
-	LastCheck     time.Time     `json:"lastCheck"`
-	LastSignature string        `json:"lastSignature,omitempty"`
+	BaselineID    string    `json:"baselineId"`
+	EveryHours    int       `json:"everyHours"` // 0 = off
+	NotifyTeams   bool      `json:"notifyTeams"`
+	LastCheck     time.Time `json:"lastCheck"`
+	LastSignature string    `json:"lastSignature,omitempty"`
 	// LastSections keeps each section's signature, so a section that could
 	// not be read in a check keeps its previous state instead of flapping.
 	LastSections map[string]string `json:"lastSections,omitempty"`
-	LastSummary   *DriftSummary `json:"lastSummary,omitempty"`
-	LastError     string        `json:"lastError,omitempty"`
+	LastSummary  *DriftSummary     `json:"lastSummary,omitempty"`
+	LastError    string            `json:"lastError,omitempty"`
 }
 
 // DriftSummary is what a check found.
@@ -129,7 +129,7 @@ func sectionSignatures(d *SnapshotDiff) map[string]string {
 					b, _ := json.Marshal(o.Changes)
 					line += string(b)
 				}
-					keys = append(keys, line)
+				keys = append(keys, line)
 			}
 		}
 		if len(keys) > 0 {
@@ -204,7 +204,7 @@ func (x *SnapshotService) checkDrift(manual bool) (*DriftSummary, error) {
 	}
 	secSigs := sectionSignatures(diff)
 	for _, info := range now.Meta.Sections {
-		if info.Skipped {
+		if info.Skipped || info.Truncated {
 			if prev, ok := w.LastSections[info.Name]; ok {
 				secSigs[info.Name] = prev
 			}
